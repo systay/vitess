@@ -32,6 +32,8 @@ import utils
 import tablet
 from mysql_flavor import mysql_flavor
 from protocols_flavor import protocols_flavor
+from utils import TestError
+from vtproto.tabletmanagerdata_pb2 import LockTablesRequest, UnlockTablesRequest
 
 from vtproto import topodata_pb2
 
@@ -837,6 +839,80 @@ class TestTabletManager(unittest.TestCase):
 
     # Cleanup.
     tablet_62344.kill_vttablet()
+
+
+
+def _write_data_to_master():
+    """Write a single row to the master"""
+    tablet_62044.mquery('vt_test_keyspace', "insert into vt_insert_test (msg) values ('test')", write=True)
+
+
+def _check_data_on_replica(count, msg):
+    """Check that the specified tablet has the expected number of rows."""
+    timeout = 10
+    while True:
+        try:
+            result = tablet_62344.mquery(
+                'vt_test_keyspace', 'select count(*) from vt_insert_test')
+            if result[0][0] == count:
+                break
+            else:
+                logging.debug(result[0][0])
+        except MySQLdb.DatabaseError:
+            # ignore exceptions, we'll just timeout (the tablet creation
+            # can take some time to replicate, and we get a 'table vt_insert_test
+            # does not exist exception in some rare cases)
+            logging.exception('exception waiting for data to replicate')
+        timeout = utils.wait_step(msg, timeout)
+
+
+class TestLockTables(unittest.TestCase):
+    """This tests the locking functionality by running rpc calls against the tabletmanager"""
+
+    def setUp(self):
+        for t in tablet_62044, tablet_62344:
+            t.create_db('vt_test_keyspace')
+
+        tablet_62044.init_tablet('replica', 'test_keyspace', '0', start=True)
+        tablet_62344.init_tablet('replica', 'test_keyspace', '0', start=True)
+        utils.run_vtctl(['InitShardMaster', '-force', 'test_keyspace/0',
+                         tablet_62044.tablet_alias])
+        tablet_62044.mquery('vt_test_keyspace', self._create_vt_insert_test)
+
+    def tearDown(self):
+        for t in tablet_62044, tablet_62344:
+            t.kill_vttablet()
+
+        tablet.Tablet.check_vttablet_count()
+        environment.topo_server().wipe()
+        for t in [tablet_62044, tablet_62344]:
+            t.reset_replication()
+            t.set_semi_sync_enabled(master=False, slave=False)
+            t.clean_dbs()
+
+    _create_vt_insert_test = '''create table vt_insert_test (
+  id bigint auto_increment,
+  msg varchar(64),
+  primary key (id)
+  ) Engine=InnoDB'''
+
+    def test_lock_and_unlock(self):
+        # first make sure that our writes to the master make it to the replica
+        _write_data_to_master()
+        _check_data_on_replica(1, "replica getting the data")
+
+        # now lock the replica
+        tablet_manager = tablet_62344.tablet_manager()
+        tablet_manager.LockTables(LockTablesRequest())
+
+        # make sure that writing to the master does not show up on the replica while locked
+        _write_data_to_master()
+        with self.assertRaises(TestError):
+            _check_data_on_replica(2, "the replica should not see these updates")
+
+        # finally, make sure that unlocking the replica leads to the previous write showing up
+        tablet_manager.UnlockTables(UnlockTablesRequest())
+        _check_data_on_replica(2, "after unlocking the replica, we should see these updates")
 
 
 if __name__ == '__main__':

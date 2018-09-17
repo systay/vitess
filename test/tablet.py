@@ -30,7 +30,11 @@ import environment
 from mysql_flavor import mysql_flavor
 from protocols_flavor import protocols_flavor
 from topo_flavor.server import topo_server
+from urlparse import urlparse
 import utils
+
+import grpc
+from vtproto.tabletmanagerservice_pb2_grpc import TabletManagerStub
 
 # Dropping a table inexplicably produces a warning despite
 # the 'IF EXISTS' clause. Squelch these warnings.
@@ -842,6 +846,12 @@ class Tablet(object):
       return 'localhost:%d' % self.grpc_port
     return 'localhost:%d' % self.port
 
+  def tablet_manager(self):
+    """Returns a rpc client able to talk to the TabletManager rpc server in go"""
+    addr = self.rpc_endpoint()
+    p = urlparse('http://' + addr)
+    channel = grpc.insecure_channel('%s:%s' % (p.hostname, p.port))
+    return TabletManagerStub(channel)
 
 def kill_tablets(tablets):
   for t in tablets:
@@ -854,3 +864,5 @@ def kill_tablets(tablets):
     if t.proc is not None:
       t.proc.wait()
       t.proc = None
+
+
