@@ -64,8 +64,6 @@ const multiSplitDiffHTML2 = `
         <INPUT type="text" id="sourceUID" name="sourceUID" value="{{.DefaultSourceUID}}"></BR>
       <LABEL for="excludeTables">Exclude Tables: </LABEL>
         <INPUT type="text" id="excludeTables" name="excludeTables" value=""></BR>
-      <LABEL for="excludeShards">Exclude Shards (just the shard not the keyspace, comma separated, e.g. "-10,10-20"): </LABEL>
-        <INPUT type="text" id="excludeShards" name="excludeShards" value=""></BR>
       <LABEL for="minHealthyRdonlyTablets">Minimum Number of required healthy RDONLY tablets: </LABEL>
         <INPUT type="text" id="minHealthyRdonlyTablets" name="minHealthyRdonlyTablets" value="{{.DefaultMinHealthyRdonlyTablets}}"></BR>
       <LABEL for="parallelDiffsCount">Number of tables to diff in parallel: </LABEL>
@@ -84,7 +82,6 @@ var multiSplitDiffTemplate2 = mustParseTemplate("multiSplitDiff2", multiSplitDif
 
 func commandMultiSplitDiff(wi *Instance, wr *wrangler.Wrangler, subFlags *flag.FlagSet, args []string) (Worker, error) {
 	excludeTables := subFlags.String("exclude_tables", "", "comma separated list of tables to exclude")
-	excludeShards := subFlags.String("exclude_shards", "", "comma separated list of shards to exclude")
 	minHealthyRdonlyTablets := subFlags.Int("min_healthy_rdonly_tablets", defaultMinHealthyRdonlyTablets, "minimum number of healthy RDONLY tablets before taking out one")
 	destTabletTypeStr := subFlags.String("dest_tablet_type", defaultDestTabletType, "destination tablet type (RDONLY or REPLICA) that will be used to compare the shards")
 	parallelDiffsCount := subFlags.Int("parallel_diffs_count", defaultParallelDiffsCount, "number of tables to diff in parallel")
@@ -104,15 +101,11 @@ func commandMultiSplitDiff(wi *Instance, wr *wrangler.Wrangler, subFlags *flag.F
 	if *excludeTables != "" {
 		excludeTableArray = strings.Split(*excludeTables, ",")
 	}
-	var excludeShardsArray []string
-	if *excludeShards != "" {
-		excludeShardsArray = strings.Split(*excludeShards, ",")
-	}
 	destTabletType, ok := topodatapb.TabletType_value[*destTabletTypeStr]
 	if !ok {
 		return nil, fmt.Errorf("command MultiSplitDiff invalid dest_tablet_type: %v", destTabletType)
 	}
-	return NewMultiSplitDiffWorker(wr, wi.cell, keyspace, shard, excludeTableArray, excludeShardsArray, *minHealthyRdonlyTablets, *parallelDiffsCount, *waitForFixedTimeRatherThanGtidSet, topodatapb.TabletType(destTabletType)), nil
+	return NewMultiSplitDiffWorker(wr, wi.cell, keyspace, shard, excludeTableArray, *minHealthyRdonlyTablets, *parallelDiffsCount, *waitForFixedTimeRatherThanGtidSet, topodatapb.TabletType(destTabletType)), nil
 }
 
 // shardSources returns all the shards that are SourceShards of at least one other shard.
@@ -219,11 +212,6 @@ func interactiveMultiSplitDiff(ctx context.Context, wi *Instance, wr *wrangler.W
 	if excludeTables != "" {
 		excludeTableArray = strings.Split(excludeTables, ",")
 	}
-	excludeShards := r.FormValue("excludeShards")
-	var excludeShardsArray []string
-	if excludeShards != "" {
-		excludeShardsArray = strings.Split(excludeShards, ",")
-	}
 	minHealthyRdonlyTabletsStr := r.FormValue("minHealthyRdonlyTablets")
 	parallelDiffsCountStr := r.FormValue("parallelDiffsCount")
 	minHealthyRdonlyTablets, err := strconv.ParseInt(minHealthyRdonlyTabletsStr, 0, 64)
@@ -238,7 +226,7 @@ func interactiveMultiSplitDiff(ctx context.Context, wi *Instance, wr *wrangler.W
 	}
 
 	// start the diff job
-	wrk := NewMultiSplitDiffWorker(wr, wi.cell, keyspace, shard, excludeTableArray, excludeShardsArray, int(minHealthyRdonlyTablets), int(parallelDiffsCount), waitForFixedTimeRatherThanGtidSet, topodatapb.TabletType_RDONLY)
+	wrk := NewMultiSplitDiffWorker(wr, wi.cell, keyspace, shard, excludeTableArray, int(minHealthyRdonlyTablets), int(parallelDiffsCount), waitForFixedTimeRatherThanGtidSet, topodatapb.TabletType_RDONLY)
 	return wrk, nil, nil, nil
 }
 
