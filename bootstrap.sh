@@ -174,7 +174,7 @@ function install_zookeeper() {
   rm -rf "$zk" "$zk.tar.gz"
 }
 zk_ver=3.4.10
-install_dep "Zookeeper" "$zk_ver" "$VTROOT/dist/vt-zookeeper-$zk_ver" install_zookeeper
+#install_dep "Zookeeper" "$zk_ver" "$VTROOT/dist/vt-zookeeper-$zk_ver" install_zookeeper
 
 
 # Download and install etcd, link etcd binary into our root.
