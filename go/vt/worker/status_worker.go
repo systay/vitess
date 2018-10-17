@@ -53,6 +53,9 @@ const (
 	// WorkerStateDiff is set when the worker compares the data.
 	WorkerStateDiff StatusWorkerState = "running the diff"
 
+	// WorkerStateWorking is set when the worker is working.
+	WorkerStateWorking StatusWorkerState = "working"
+
 	// WorkerStateDebugRunning is set when an internal command (e.g. Block or Ping) is currently running.
 	WorkerStateDebugRunning StatusWorkerState = "running an internal debug command"
 

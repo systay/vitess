@@ -174,7 +174,7 @@ function install_zookeeper() {
   rm -rf "$zk" "$zk.tar.gz"
 }
 zk_ver=3.4.10
-install_dep "Zookeeper" "$zk_ver" "$VTROOT/dist/vt-zookeeper-$zk_ver" install_zookeeper
+#install_dep "Zookeeper" "$zk_ver" "$VTROOT/dist/vt-zookeeper-$zk_ver" install_zookeeper
 
 
 # Download and install etcd, link etcd binary into our root.
@@ -266,9 +266,9 @@ install_dep "chromedriver" "2.40" "$VTROOT/dist/chromedriver" install_chromedriv
 # Note: We explicitly do not vendor the tools below because a) we want to stay
 # on their latest version and b) it's easier to "go install" them this way.
 gotools=" \
-       github.com/golang/lint/golint \
        github.com/golang/mock/mockgen \
        github.com/kardianos/govendor \
+       golang.org/x/lint/golint \
        golang.org/x/tools/cmd/cover \
        golang.org/x/tools/cmd/goimports \
        golang.org/x/tools/cmd/goyacc \

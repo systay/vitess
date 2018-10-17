@@ -229,7 +229,7 @@ func (mdw *TabletDiffWorker) pauseReplicationAndOpenTx(ctx context.Context) erro
 	}()
 
 	mdw.wr.Logger().Infof("source tables locked")
-	sourceTarget := createTargetFrom(*mdw.source)
+	sourceTarget := createTargetFrom(mdw.source)
 
 	// 2. Create transactions
 	queryService, err := tabletconn.GetDialer()(mdw.source.Tablet, true)
@@ -286,7 +286,7 @@ func (mdw *TabletDiffWorker) pauseReplicationAndOpenTx(ctx context.Context) erro
 	}
 }
 
-func createTargetFrom(tablet topo.TabletInfo) *query.Target {
+func createTargetFrom(tablet *topo.TabletInfo) *query.Target {
 	return &query.Target{
 		Cell:       tablet.Alias.Cell,
 		Keyspace:   tablet.Keyspace,
