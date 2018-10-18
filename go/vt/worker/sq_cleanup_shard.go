@@ -190,9 +190,6 @@ func (dtw *CleanUpShardWorker) renameTableToDeleted(ctx context.Context, table s
 	if strings.HasPrefix(table, "_") && strings.HasSuffix(table, "_deleted") {
 		return nil
 	}
-	if table == "schema_version" {
-		return nil
-	}
 
 	newName := fmt.Sprintf("_%v_deleted", table)
 	dtw.wr.Logger().Infof("Renaming table %v -> %v", table, newName)
@@ -252,10 +249,8 @@ func (dtw *CleanUpShardWorker) cleanUpShard(ctx context.Context) error {
 	dtw.SetState(WorkerStateWorking)
 
 	shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
-	excludeTables := dtw.excludeTables
-	excludeTables = append(excludeTables, "schema_versions")
 	schemaDefinition, err := dtw.wr.GetSchema(
-		shortCtx, dtw.tablet.Alias, nil /* tables */, excludeTables, false /* includeViews */)
+		shortCtx, dtw.tablet.Alias, nil /* tables */, dtw.excludeTables, false /* includeViews */)
 	cancel()
 	if err != nil {
 		return err
@@ -277,10 +272,6 @@ func (dtw *CleanUpShardWorker) cleanUpShard(ctx context.Context) error {
 		err = dtw.truncateTable(ctx, "_vt.vreplication")
 		if err != nil {
 			dtw.wr.Logger().Warningf("could not truncate _vt.vreplication (it probably doesn't exist): %v", err)
-		}
-		err = dtw.truncateTable(ctx, "schema_version")
-		if err != nil {
-			dtw.wr.Logger().Warningf("could not truncate schema_version: %v", err)
 		}
 		dtw.wr.Logger().Infof("Phase one done, run second phase to actually delete the tables")
 	} else {
