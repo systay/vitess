@@ -85,7 +85,7 @@ const verticalSplitCloneHTML2 = `
         <INPUT type="checkbox" id="disableUniquenessChecks" name="disableUniquenessChecks" value="true"{{if .DefaultDisableUniquenessChecks}} checked{{end}}></BR>
       <LABEL for="maxTPS">Maximum Write Transactions/second (If non-zero, writes on the destination will be throttled. Unlimited by default.): </LABEL>
         <INPUT type="text" id="maxTPS" name="maxTPS" value="{{.DefaultMaxTPS}}"></BR>
-      <LABEL for="maxReplicationLag">Maximum Replication Lag (enables the adapative throttler. Disabled by default.): </LABEL>
+      <LABEL for="maxReplicationLag">Maximum Replication Lag Seconds (enables the adapative throttler. Disabled by default.): </LABEL>
         <INPUT type="text" id="maxReplicationLag" name="maxReplicationLag" value="{{.DefaultMaxReplicationLag}}"></BR>
       <INPUT type="hidden" name="keyspace" value="{{.Keyspace}}"/>
       <INPUT type="submit" value="Clone"/>
@@ -109,7 +109,7 @@ func commandVerticalSplitClone(wi *Instance, wr *wrangler.Wrangler, subFlags *fl
 	minHealthyRdonlyTablets := subFlags.Int("min_healthy_rdonly_tablets", defaultMinHealthyRdonlyTablets, "minimum number of healthy RDONLY tablets before taking out one")
 	disableUniquenessChecks := subFlags.Bool("disable_uniqueness_checks", defaultDisableUniquenessChecks, "disable uniqueness checks during the clone")
 	maxTPS := subFlags.Int64("max_tps", defaultMaxTPS, "if non-zero, limit copy to maximum number of (write) transactions/second on the destination (unlimited by default)")
-	maxReplicationLag := subFlags.Int64("max_replication_lag", defaultMaxReplicationLag, "if set, the adapative throttler will be enabled and automatically adjust the write rate to keep the lag below the set value (disabled by default)")
+	maxReplicationLag := subFlags.Int64("max_replication_lag", defaultMaxReplicationLag, "if set, the adapative throttler will be enabled and automatically adjust the write rate to keep the lag below the set value in seconds (disabled by default)")
 	if err := subFlags.Parse(args); err != nil {
 		return nil, err
 	}
