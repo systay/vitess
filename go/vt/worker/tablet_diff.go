@@ -21,9 +21,9 @@ import (
 	"fmt"
 	"html/template"
 	"sync"
+	"time"
 
 	"golang.org/x/net/context"
-	"vitess.io/vitess/go/vt/proto/query"
 	"vitess.io/vitess/go/vt/proto/tabletmanagerdata"
 
 	// This cmd imports consultopo to register the consul implementation of TopoServer.
@@ -36,7 +36,6 @@ import (
 	_ "vitess.io/vitess/go/vt/vttablet/grpctabletconn"
 	// import the gRPC client implementation for tablet manager
 	_ "vitess.io/vitess/go/vt/vttablet/grpctmclient"
-	"vitess.io/vitess/go/vt/vttablet/tabletconn"
 	"vitess.io/vitess/go/vt/vttablet/tmclient"
 
 	"vitess.io/vitess/go/vt/proto/topodata"
@@ -64,7 +63,7 @@ type TabletDiffWorker struct {
 	sourceAlias *topodatapb.TabletAlias
 
 	// populated during WorkerStateSyncReplication, read-only after that
-	transactions []int64
+	connections  []TableScanner
 	executedGtid string
 }
 
@@ -150,8 +149,8 @@ func (mdw *TabletDiffWorker) run(ctx context.Context) error {
 	}
 
 	// second phase: synchronize replication
-	if err := mdw.pauseReplicationAndOpenTx(ctx); err != nil {
-		return fmt.Errorf("synchronizeReplication() failed: %v", err)
+	if err := mdw.syncTabletState(ctx); err != nil {
+		return fmt.Errorf("init() failed: %v", err)
 	}
 	if err := checkDone(ctx); err != nil {
 		return err
@@ -162,7 +161,6 @@ func (mdw *TabletDiffWorker) run(ctx context.Context) error {
 		return fmt.Errorf("diff() failed: %v", err)
 	}
 
-	//
 	return nil
 }
 
@@ -204,97 +202,6 @@ func (mdw *TabletDiffWorker) init(ctx context.Context) error {
 	return nil
 }
 
-func (mdw *TabletDiffWorker) pauseReplicationAndOpenTx(ctx context.Context) error {
-	mdw.SetState(WorkerStateSyncReplication)
-
-	tm := tmclient.NewTabletManagerClient()
-	defer tm.Close()
-
-	// 1. First we stop replication on the target, so no transactions sneak by
-	err := tm.StopSlave(ctx, mdw.destination.Tablet)
-	if err != nil {
-		return fmt.Errorf("could not stop replication on destination %v\n%v", mdw.destination.Tablet, err)
-	}
-	mdw.wr.Logger().Infof("replication on the destination stopped")
-	wrangler.RecordStartSlaveAction(mdw.cleaner, mdw.destination.Tablet)
-
-	// 2. Lock all tables with a read lock to pause replication
-	err = tm.LockTables(ctx, mdw.source.Tablet)
-	if err != nil {
-		return fmt.Errorf("could not lock tables on source%v\n%v", mdw.destination.Tablet, err)
-	}
-	defer func() {
-		tm.UnlockTables(ctx, mdw.source.Tablet)
-		mdw.wr.Logger().Infof("source tables unlocked")
-	}()
-
-	mdw.wr.Logger().Infof("source tables locked")
-	sourceTarget := createTargetFrom(mdw.source)
-
-	// 2. Create transactions
-	queryService, err := tabletconn.GetDialer()(mdw.source.Tablet, true)
-	mdw.transactions = make([]int64, mdw.concurrentTables)
-	var txPos string
-
-	for i := 0; i < len(mdw.transactions); i++ {
-		tx, err := queryService.Begin(ctx, sourceTarget, &query.ExecuteOptions{
-			// Make sure our tx is not killed by tx sniper
-			Workload:             query.ExecuteOptions_DBA,
-			TransactionIsolation: query.ExecuteOptions_CONSISTENT_SNAPSHOT_READ_ONLY,
-		})
-		if err != nil {
-			return fmt.Errorf("could not open transaction on source %v\n%v", mdw.source.Tablet, err)
-		}
-		mdw.transactions[i] = tx
-		mdw.cleaner.Record("CloseTransaction", topoproto.TabletAliasString(mdw.source.Tablet.Alias), func(ctx context.Context, wr *wrangler.Wrangler) error {
-			return queryService.Rollback(ctx, sourceTarget, tx)
-		})
-
-		current, err := tm.MasterPosition(ctx, mdw.source.Tablet)
-		if err != nil {
-			return fmt.Errorf("could not read executed GTID set on source%v\n%v", mdw.source.Tablet, err)
-		}
-		if i == 0 {
-			txPos = current
-		}
-		if current != txPos {
-			return fmt.Errorf("GTID set has changed since we started creating transactions: %v", current)
-		}
-	}
-
-	mdw.wr.Logger().Infof("transactions created on source")
-	mdw.executedGtid = txPos
-
-	// 3. Resume replication until we reach the source GTID
-	for {
-		mdw.wr.Logger().Infof("stopping replica %v at %v", mdw.sourceAlias, txPos)
-		err = tm.StartSlaveUntilAfter(ctx, mdw.destination.Tablet, txPos, *remoteActionsTimeout)
-		if err != nil {
-			return fmt.Errorf("could not stop replication on destination %v\n%v", mdw.destination.Tablet, err)
-		}
-		newPosition, err := tm.MasterPosition(ctx, mdw.destination.Tablet)
-		if err != nil {
-			return fmt.Errorf("could not check which transaction replica %v is on: %v", mdw.destination.Tablet, err)
-		}
-
-		if txPos == newPosition {
-			mdw.wr.Logger().Infof("replication on the destination has now reached %s", newPosition)
-			return nil
-		}
-
-		mdw.wr.Logger().Infof("replica not at the correct position. Retrying")
-	}
-}
-
-func createTargetFrom(tablet *topo.TabletInfo) *query.Target {
-	return &query.Target{
-		Cell:       tablet.Alias.Cell,
-		Keyspace:   tablet.Keyspace,
-		Shard:      tablet.Shard,
-		TabletType: tablet.Type,
-	}
-}
-
 func (mdw *TabletDiffWorker) diff(ctx context.Context) error {
 	mdw.SetState(WorkerStateDiff)
 	tm := tmclient.NewTabletManagerClient()
@@ -316,9 +223,9 @@ func (mdw *TabletDiffWorker) diff(ctx context.Context) error {
 	wg := &sync.WaitGroup{}
 
 	// Start as many goroutines as we want concurrent diffs happening
-	for _, tx := range mdw.transactions {
+	for _, conn := range mdw.connections {
 		wg.Add(1)
-		go func(txID int64) {
+		go func(conn TableScanner) {
 			defer wg.Done()
 			for table := range tableChan {
 				if !mdw.tableIsExcluded(table.Name) {
@@ -328,14 +235,14 @@ func (mdw *TabletDiffWorker) diff(ctx context.Context) error {
 						return
 					}
 
-					err = mdw.diffSingleTable(ctx, table, txID)
+					err = mdw.diffSingleTable(ctx, table, conn)
 					if err != nil {
 						mdw.wr.Logger().Errorf("failed to diff table `%v`: %v", table.Name, err)
 						diffErrors <- err
 					}
 				}
 			}
-		}(int64(tx))
+		}(conn)
 	}
 
 	wg.Wait()
@@ -350,7 +257,51 @@ func (mdw *TabletDiffWorker) diff(ctx context.Context) error {
 	return finalErr
 }
 
-func (mdw *TabletDiffWorker) diffSingleTable(ctx context.Context, tableDefinition *tabletmanagerdata.TableDefinition, tx int64) error {
+func (mdw *TabletDiffWorker) syncTabletState(ctx context.Context) error {
+	// 1. First we stop replication on the target, so no transactions sneak by
+	tm := tmclient.NewTabletManagerClient()
+	defer tm.Close()
+
+	err := tm.StopSlave(ctx, mdw.destination.Tablet)
+	if err != nil {
+		return fmt.Errorf("could not stop replication on destination %v\n%v", mdw.destination, err)
+	}
+	mdw.wr.Logger().Infof("replication on the destination stopped")
+	wrangler.RecordStartSlaveAction(mdw.cleaner, mdw.destination.Tablet)
+
+	// 2. Next we stop updates to the source so we can create consistent snapshot transactions on the same spot
+	connections, pos, err := CreateConsistentTransactions(ctx, mdw.source, mdw.wr, mdw.cleaner, int(mdw.concurrentTables))
+	if err != nil {
+		return fmt.Errorf("synchronizeReplication() failed: %v", err)
+	}
+	mdw.connections = connections
+	mdw.executedGtid = pos
+
+	// 3. Resume replication until we reach the source GTID
+	for i := 0; i < 20; i++ {
+		mdw.wr.Logger().Infof("stopping replica %v at %v", mdw.source.Alias, pos)
+		err = tm.StartSlaveUntilAfter(ctx, mdw.destination.Tablet, pos, *remoteActionsTimeout)
+		if err != nil {
+			return fmt.Errorf("could not stop replication on destination %v\n%v", mdw.destination.Tablet, err)
+		}
+		newPosition, err := tm.MasterPosition(ctx, mdw.destination.Tablet)
+		if err != nil {
+			return fmt.Errorf("could not check which transaction replica %v is on: %v", mdw.destination.Tablet, err)
+		}
+
+		if pos == newPosition {
+			mdw.wr.Logger().Infof("replication on the destination has now reached %s", newPosition)
+			return nil
+		}
+
+		mdw.wr.Logger().Infof("replica not at the correct position. Retrying")
+		time.Sleep(time.Second)
+	}
+
+	return fmt.Errorf("failed to get replicas to catch up with source")
+}
+
+func (mdw *TabletDiffWorker) diffSingleTable(ctx context.Context, tableDefinition *tabletmanagerdata.TableDefinition, conn TableScanner) error {
 	var destinationQueryResultReader *QueryResultReader
 
 	logger := mdw.wr.Logger()
@@ -360,10 +311,9 @@ func (mdw *TabletDiffWorker) diffSingleTable(ctx context.Context, tableDefinitio
 	}
 	defer destinationQueryResultReader.Close(ctx)
 
-	var sourceQueryResultReader *QueryResultReader
-	sourceQueryResultReader, err = TransactionalTableScan(ctx, logger, mdw.wr.TopoServer(), mdw.sourceAlias, tx, tableDefinition)
+	sourceQueryResultReader, err := conn.ScanTable(ctx, tableDefinition)
 	if err != nil {
-		return fmt.Errorf("TransactionalTableScan(source) failed: %v", err)
+		return err
 	}
 	defer sourceQueryResultReader.Close(ctx)
 

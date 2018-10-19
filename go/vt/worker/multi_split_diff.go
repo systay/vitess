@@ -22,6 +22,8 @@ import (
 	"sync"
 
 	"golang.org/x/net/context"
+	"vitess.io/vitess/go/vt/vttablet/queryservice"
+	"vitess.io/vitess/go/vt/vttablet/tabletconn"
 
 	"vitess.io/vitess/go/vt/concurrency"
 	"vitess.io/vitess/go/vt/mysqlctl/tmutils"
@@ -51,10 +53,10 @@ type MultiSplitDiffWorker struct {
 	shard                             string
 	excludeTables                     []string
 	minHealthyRdonlyTablets           int
-	destinationTabletType             topodatapb.TabletType
 	parallelDiffsCount                int
 	waitForFixedTimeRatherThanGtidSet bool
 	cleaner                           *wrangler.Cleaner
+	useConsistentSnapshot             bool
 
 	// populated during WorkerStateInit, read-only after that
 	keyspaceInfo      *topo.KeyspaceInfo
@@ -65,10 +67,11 @@ type MultiSplitDiffWorker struct {
 	// populated during WorkerStateFindTargets, read-only after that
 	sourceAlias        *topodatapb.TabletAlias
 	destinationAliases []*topodatapb.TabletAlias // matches order of destinationShards
+	scanners           []TableScanner
 }
 
 // NewMultiSplitDiffWorker returns a new MultiSplitDiffWorker object.
-func NewMultiSplitDiffWorker(wr *wrangler.Wrangler, cell, keyspace, shard string, excludeTables []string, minHealthyRdonlyTablets, parallelDiffsCount int, waitForFixedTimeRatherThanGtidSet bool, tabletType topodatapb.TabletType) Worker {
+func NewMultiSplitDiffWorker(wr *wrangler.Wrangler, cell, keyspace, shard string, excludeTables []string, minHealthyRdonlyTablets, parallelDiffsCount int, waitForFixedTimeRatherThanGtidSet bool, useConsistentSnapshot bool) Worker {
 	return &MultiSplitDiffWorker{
 		StatusWorker:                      NewStatusWorker(),
 		wr:                                wr,
@@ -77,10 +80,10 @@ func NewMultiSplitDiffWorker(wr *wrangler.Wrangler, cell, keyspace, shard string
 		shard:                             shard,
 		excludeTables:                     excludeTables,
 		minHealthyRdonlyTablets:           minHealthyRdonlyTablets,
-		destinationTabletType:             tabletType,
 		parallelDiffsCount:                parallelDiffsCount,
+		cleaner:                           &wrangler.Cleaner{},
+		useConsistentSnapshot:             useConsistentSnapshot,
 		waitForFixedTimeRatherThanGtidSet: waitForFixedTimeRatherThanGtidSet,
-		cleaner: &wrangler.Cleaner{},
 	}
 }
 
@@ -302,61 +305,68 @@ func (msdw *MultiSplitDiffWorker) init(ctx context.Context) error {
 	return nil
 }
 
-// findTargets phase:
-// - find one rdonly in source shard
-// - find one rdonly per destination shard
-// - mark them all as 'worker' pointing back to us
-func (msdw *MultiSplitDiffWorker) findTargets(ctx context.Context) error {
-	msdw.SetState(WorkerStateFindTargets)
-
+// finds and sets the source and destination aliases we'll be working on. This method will also
+// mark the tablets as drained so they are taken off the normal load
+func (msdw *MultiSplitDiffWorker) findRdOnlySourceAndTarget(ctx context.Context) error {
 	var err error
 
-	// find an appropriate tablet in the source shard
-	msdw.sourceAlias, err = FindWorkerTablet(
-		ctx,
-		msdw.wr,
-		msdw.cleaner,
-		nil, /* tsc */
-		msdw.cell,
-		msdw.keyspace,
-		msdw.shard,
-		1, /* minHealthyTablets */
-		msdw.destinationTabletType)
+	msdw.sourceAlias, err = FindWorkerTablet(ctx, msdw.wr, msdw.cleaner, nil /*tsc*/, msdw.cell, msdw.keyspace, msdw.shard, 1, topodatapb.TabletType_RDONLY)
+
 	if err != nil {
 		return fmt.Errorf("FindWorkerTablet() failed for %v/%v/%v: %v", msdw.cell, msdw.keyspace, msdw.shard, err)
 	}
 
-	// find an appropriate tablet in each destination shard
 	msdw.destinationAliases = make([]*topodatapb.TabletAlias, len(msdw.destinationShards))
 	for i, destinationShard := range msdw.destinationShards {
 		keyspace := destinationShard.Keyspace()
 		shard := destinationShard.ShardName()
-		destinationAlias, err := FindWorkerTablet(
-			ctx,
-			msdw.wr,
-			msdw.cleaner,
-			nil, /* tsc */
-			msdw.cell,
-			keyspace,
-			shard,
-			msdw.minHealthyRdonlyTablets,
-			topodatapb.TabletType_RDONLY)
+		destinationAlias, err := FindWorkerTablet(ctx, msdw.wr, msdw.cleaner, nil /* tsc */, msdw.cell, keyspace, shard, msdw.minHealthyRdonlyTablets, topodatapb.TabletType_RDONLY)
 		if err != nil {
 			return fmt.Errorf("FindWorkerTablet() failed for %v/%v/%v: %v", msdw.cell, keyspace, shard, err)
 		}
 		msdw.destinationAliases[i] = destinationAlias
 	}
+
+	return nil
+}
+
+// find and sets the source and destination aliases we'll be working on.
+func (msdw *MultiSplitDiffWorker) findReplicaSourceAndMasterTargets(ctx context.Context) error {
+	var err error
+
+	msdw.sourceAlias, err = FindHealthyTablet(ctx, msdw.wr, nil /*tsc*/, msdw.cell, msdw.keyspace, msdw.shard, 1, topodatapb.TabletType_REPLICA)
 	if err != nil {
-		return fmt.Errorf("FindWorkerTablet() failed for %v/%v/%v: %v", msdw.cell, msdw.keyspace, msdw.shard, err)
+		return fmt.Errorf("FindHealthyTablet() failed for %v/%v/%v: %v", msdw.cell, msdw.keyspace, msdw.shard, err)
+	}
+
+	msdw.destinationAliases = make([]*topodatapb.TabletAlias, len(msdw.destinationShards))
+	for i, destinationShard := range msdw.destinationShards {
+		keyspace := destinationShard.Keyspace()
+		shard := destinationShard.ShardName()
+		destinationAlias, err := FindHealthyTablet(ctx, msdw.wr, nil /* tsc */, msdw.cell, keyspace, shard, msdw.minHealthyRdonlyTablets, topodatapb.TabletType_MASTER)
+		if err != nil {
+			return fmt.Errorf("FindHealthyTablet() failed for %v/%v/%v: %v", msdw.cell, keyspace, shard, err)
+		}
+		msdw.destinationAliases[i] = destinationAlias
 	}
 
 	return nil
 }
 
+func (msdw *MultiSplitDiffWorker) findTargets(ctx context.Context) error {
+	msdw.SetState(WorkerStateFindTargets)
+
+	if msdw.useConsistentSnapshot {
+		return msdw.findReplicaSourceAndMasterTargets(ctx)
+	}
+
+	return msdw.findRdOnlySourceAndTarget(ctx)
+}
+
 // ask the master of the destination shard to pause filtered replication,
 // and return the source binlog positions
 // (add a cleanup task to restart filtered replication on master)
-func (msdw *MultiSplitDiffWorker) stopReplicationOnAllDestinationMasters(ctx context.Context, masterInfos []*topo.TabletInfo) ([]string, error) {
+func (msdw *MultiSplitDiffWorker) stopVreplicationOnAllDestinationMasters(ctx context.Context, masterInfos []*topo.TabletInfo) ([]string, error) {
 	destVreplicationPos := make([]string, len(msdw.destinationShards))
 
 	for i, shardInfo := range msdw.destinationShards {
@@ -388,7 +398,7 @@ func (msdw *MultiSplitDiffWorker) stopReplicationOnAllDestinationMasters(ctx con
 	return destVreplicationPos, nil
 }
 
-func (msdw *MultiSplitDiffWorker) getTabletInfoForShard(ctx context.Context, shardInfo *topo.ShardInfo) (*topo.TabletInfo, error) {
+func (msdw *MultiSplitDiffWorker) getMasterTabletInfoForShard(ctx context.Context, shardInfo *topo.ShardInfo) (*topo.TabletInfo, error) {
 	shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
 	masterInfo, err := msdw.wr.TopoServer().GetTablet(shortCtx, shardInfo.MasterAlias)
 	cancel()
@@ -419,11 +429,7 @@ func (msdw *MultiSplitDiffWorker) stopReplicationOnSourceRdOnlyTabletAt(ctx cont
 		// check for each position using WAIT_UNTIL_SQL_THREAD_AFTER_GTIDS and then stop replication.
 
 		msdw.wr.Logger().Infof("Stopping slave %v at a minimum of %v", msdw.sourceAlias, vreplicationPos)
-		// read the tablet
-		sourceTablet, err := msdw.wr.TopoServer().GetTablet(shortCtx, msdw.sourceAlias)
-		if err != nil {
-			return "", err
-		}
+
 		shortCtx, cancel = context.WithTimeout(ctx, *remoteActionsTimeout)
 		msdw.wr.TabletManagerClient().StartSlave(shortCtx, sourceTablet.Tablet)
 		cancel()
@@ -508,7 +514,7 @@ func (msdw *MultiSplitDiffWorker) stopReplicationOnDestinationRdOnlys(ctx contex
 
 // restart filtered replication on the destination master.
 // (remove the cleanup task that does the same)
-func (msdw *MultiSplitDiffWorker) restartReplicationOn(ctx context.Context, shardInfo *topo.ShardInfo, masterInfo *topo.TabletInfo) error {
+func (msdw *MultiSplitDiffWorker) startVreplication(ctx context.Context, shardInfo *topo.ShardInfo, masterInfo *topo.TabletInfo) error {
 	msdw.wr.Logger().Infof("Restarting filtered replication on master %v", shardInfo.MasterAlias)
 	shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
 	_, err := msdw.wr.TabletManagerClient().VReplicationExec(shortCtx, masterInfo.Tablet, binlogplayer.StartVReplication(msdw.sourceUID))
@@ -519,32 +525,74 @@ func (msdw *MultiSplitDiffWorker) restartReplicationOn(ctx context.Context, shar
 	return nil
 }
 
+func (msdw *MultiSplitDiffWorker) createNonTransactionalTableScanners(ctx context.Context, queryService queryservice.QueryService, source *topo.TabletInfo) ([]TableScanner, error) {
+	// If we are not using consistent snapshot, we'll use the NonTransactionalTableScanner,
+	// which does not have any instance state and so can be used by all connections
+	scanners := make([]TableScanner, msdw.parallelDiffsCount)
+	scanner := NonTransactionalTableScanner{
+		queryService: queryService,
+		cleaner:      msdw.cleaner,
+		wr:           msdw.wr,
+		tabletAlias:  source.Alias,
+	}
+
+	for i := 0; i < msdw.parallelDiffsCount; i++ {
+		scanners[i] = scanner
+	}
+
+	return scanners, nil
+}
+
 // synchronizeReplication phase:
 // At this point, the source and the destination tablet are stopped at the same
 // point.
-
 func (msdw *MultiSplitDiffWorker) synchronizeReplication(ctx context.Context) error {
 	msdw.SetState(WorkerStateSyncReplication)
 	var err error
 
+	// 1. Find all the tablets we will need to work with
 	masterInfos := make([]*topo.TabletInfo, len(msdw.destinationAliases))
 	for i, shardInfo := range msdw.destinationShards {
-		masterInfos[i], err = msdw.getTabletInfoForShard(ctx, shardInfo)
+		masterInfos[i], err = msdw.getMasterTabletInfoForShard(ctx, shardInfo)
 		if err != nil {
 			return err
 		}
 	}
 
-	destVreplicationPos, err := msdw.stopReplicationOnAllDestinationMasters(ctx, masterInfos)
+	shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
+	source, err := msdw.wr.TopoServer().GetTablet(shortCtx, msdw.sourceAlias)
+	cancel()
+
+	var mysqlPos string
+
+	// 2. Stop replication on destination
+	destVreplicationPos, err := msdw.stopVreplicationOnAllDestinationMasters(ctx, masterInfos)
 	if err != nil {
 		return err
 	}
 
-	mysqlPos, err := msdw.stopReplicationOnSourceRdOnlyTabletAt(ctx, destVreplicationPos)
-	if err != nil {
-		return err
+	// 3. Pause updates on the source and create consistent snapshot connections
+	if msdw.useConsistentSnapshot {
+		connections, pos, err := CreateConsistentTransactions(ctx, source, msdw.wr, msdw.cleaner, msdw.parallelDiffsCount)
+		if err != nil {
+			return fmt.Errorf("failed to create transactional connections %v", err.Error())
+		}
+		msdw.scanners = connections
+		mysqlPos = pos
+	} else {
+		mysqlPos, err = msdw.stopReplicationOnSourceRdOnlyTabletAt(ctx, destVreplicationPos)
+		if err != nil {
+			return fmt.Errorf("failed to stop replication on source %v", err.Error())
+		}
+
+		queryService, err := tabletconn.GetDialer()(source.Tablet, true)
+		if err != nil {
+			return fmt.Errorf("failed to instanciate query service %v", err.Error())
+		}
+		msdw.scanners, err = msdw.createNonTransactionalTableScanners(ctx, queryService, source)
 	}
 
+	// 4. Make sure all replicas have caught up with the master
 	for i, shardInfo := range msdw.destinationShards {
 		masterInfo := masterInfos[i]
 		destinationAlias := msdw.destinationAliases[i]
@@ -554,24 +602,26 @@ func (msdw *MultiSplitDiffWorker) synchronizeReplication(ctx context.Context) er
 			return err
 		}
 
-		err = msdw.stopReplicationOnDestinationRdOnlys(ctx, destinationAlias, masterPos)
-		if err != nil {
-			return err
-		}
+		if !msdw.useConsistentSnapshot {
+			// We use vreplication to keep the destination shard fixed, not mysql replication
+			err = msdw.stopReplicationOnDestinationRdOnlys(ctx, destinationAlias, masterPos)
+			if err != nil {
+				return err
+			}
 
-		err = msdw.restartReplicationOn(ctx, shardInfo, masterInfo)
-		if err != nil {
-			return err
+			err = msdw.startVreplication(ctx, shardInfo, masterInfo)
+			if err != nil {
+				return err
+			}
 		}
 	}
-
 	return nil
 }
 
-func (msdw *MultiSplitDiffWorker) diffSingleTable(ctx context.Context, wg *sync.WaitGroup, tableDefinition *tabletmanagerdatapb.TableDefinition, keyspaceSchema *vindexes.KeyspaceSchema) error {
+func (msdw *MultiSplitDiffWorker) diffSingleTable(ctx context.Context, wg *sync.WaitGroup, tableDefinition *tabletmanagerdatapb.TableDefinition, keyspaceSchema *vindexes.KeyspaceSchema, sourceScanner TableScanner) error {
 	msdw.wr.Logger().Infof("Starting the diff on table %v", tableDefinition.Name)
 
-	sourceQueryResultReader, err := TableScan(ctx, msdw.wr.Logger(), msdw.wr.TopoServer(), msdw.sourceAlias, tableDefinition)
+	sourceQueryResultReader, err := sourceScanner.ScanTable(ctx, tableDefinition)
 	if err != nil {
 		return fmt.Errorf("TableScan(source) failed: %v", err)
 	}
@@ -616,11 +666,11 @@ func (msdw *MultiSplitDiffWorker) diffSingleTable(ctx context.Context, wg *sync.
 	return nil
 }
 
-func (msdw *MultiSplitDiffWorker) tableDiffingConsumer(ctx context.Context, wg *sync.WaitGroup, tableChan chan *tabletmanagerdatapb.TableDefinition, rec *concurrency.AllErrorRecorder, keyspaceSchema *vindexes.KeyspaceSchema) {
+func (msdw *MultiSplitDiffWorker) tableDiffingConsumer(ctx context.Context, wg *sync.WaitGroup, tableChan chan *tabletmanagerdatapb.TableDefinition, rec *concurrency.AllErrorRecorder, keyspaceSchema *vindexes.KeyspaceSchema, scanner TableScanner) {
 	defer wg.Done()
 
 	for tableDefinition := range tableChan {
-		err := msdw.diffSingleTable(ctx, wg, tableDefinition, keyspaceSchema)
+		err := msdw.diffSingleTable(ctx, wg, tableDefinition, keyspaceSchema, scanner)
 		if err != nil {
 			rec.RecordError(err)
 			msdw.wr.Logger().Errorf("%v", err)
@@ -744,7 +794,7 @@ func (msdw *MultiSplitDiffWorker) diff(ctx context.Context) error {
 	// start as many goroutines we want parallel diffs running
 	for i := 0; i < msdw.parallelDiffsCount; i++ {
 		consumers.Add(1)
-		go msdw.tableDiffingConsumer(ctx, &consumers, tableChan, rec, keyspaceSchema)
+		go msdw.tableDiffingConsumer(ctx, &consumers, tableChan, rec, keyspaceSchema, msdw.scanners[i])
 	}
 
 	// wait for all consumers to wrap up their work

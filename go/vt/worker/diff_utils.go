@@ -26,6 +26,9 @@ import (
 	"strings"
 	"time"
 
+	"vitess.io/vitess/go/vt/vttablet/tmclient"
+	"vitess.io/vitess/go/vt/wrangler"
+
 	"golang.org/x/net/context"
 
 	"github.com/golang/protobuf/proto"
@@ -34,6 +37,7 @@ import (
 	"vitess.io/vitess/go/vt/grpcclient"
 	"vitess.io/vitess/go/vt/key"
 	"vitess.io/vitess/go/vt/logutil"
+	"vitess.io/vitess/go/vt/proto/query"
 	"vitess.io/vitess/go/vt/topo"
 	"vitess.io/vitess/go/vt/topo/topoproto"
 	"vitess.io/vitess/go/vt/vtgate/vindexes"
@@ -262,6 +266,16 @@ func TransactionalTableScan(ctx context.Context, log logutil.Logger, ts *topo.Se
 	}
 	log.Infof("SQL query for %v/%v: %v", topoproto.TabletAliasString(tabletAlias), td.Name, sql)
 	return NewTransactionalQueryResultReaderForTablet(ctx, ts, tabletAlias, sql, txID)
+}
+
+// CreateTargetFrom is a helper function
+func CreateTargetFrom(tablet topo.TabletInfo) *query.Target {
+	return &query.Target{
+		Cell:       tablet.Alias.Cell,
+		Keyspace:   tablet.Keyspace,
+		Shard:      tablet.Shard,
+		TabletType: tablet.Type,
+	}
 }
 
 // TableScanByKeyRange returns a QueryResultReader that gets all the
@@ -632,4 +646,118 @@ func (rd *RowDiffer) Go(log logutil.Logger) (dr DiffReport, err error) {
 		advanceLeft = true
 		advanceRight = true
 	}
+}
+
+// CreateTransactionalTableScanners returns an array of scanners that all share the same view of the data.
+// It will check that no new transactions have been seen between the creation of the underlying transactions,
+// to guarantee that all TransactionalTableScanner are pointing to the same point
+func CreateTransactionalTableScanners(ctx context.Context, numberOfScanners int, wr *wrangler.Wrangler, cleaner *wrangler.Cleaner, queryService queryservice.QueryService, target *query.Target, tabletInfo *topodatapb.Tablet) ([]TableScanner, error) {
+	scanners := make([]TableScanner, numberOfScanners)
+	tm := tmclient.NewTabletManagerClient()
+	var txPos string
+	for i := 0; i < numberOfScanners; i++ {
+
+		tx, err := queryService.Begin(ctx, target, &query.ExecuteOptions{
+			// Make sure our tx is not killed by tx sniper
+			Workload:             query.ExecuteOptions_DBA,
+			TransactionIsolation: query.ExecuteOptions_CONSISTENT_SNAPSHOT_READ_ONLY,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("could not open transaction on source %v\n%v", tabletInfo.Alias, err)
+		}
+
+		// Remember to rollback the transactions
+		cleaner.Record("CloseTransaction", topoproto.TabletAliasString(tabletInfo.Alias), func(ctx context.Context, wr *wrangler.Wrangler) error {
+			return queryService.Rollback(ctx, target, tx)
+		})
+
+		current, err := tm.MasterPosition(ctx, tabletInfo)
+		if err != nil {
+			return nil, fmt.Errorf("could not read executed GTID set on source%v\n%v", tabletInfo, err)
+		}
+
+		// Make sure the database we are working on is not seeing updates while we start the connections
+		if i == 0 {
+			txPos = current
+		} else if current != txPos {
+			return nil, fmt.Errorf("GTID set has changed since we started creating transactions: %v", current)
+		}
+
+		scanners[i] = TransactionalTableScanner{
+			wr:           wr,
+			cleaner:      cleaner,
+			tabletAlias:  tabletInfo.Alias,
+			queryService: queryService,
+			tx:           tx,
+		}
+	}
+
+	return scanners, nil
+}
+
+// TableScanner is a simple abstraction that allows a TableScanner user to remain impervious
+// by the transactionality of the connection
+type TableScanner interface {
+	ScanTable(ctx context.Context, td *tabletmanagerdatapb.TableDefinition) (*QueryResultReader, error)
+}
+
+// TransactionalTableScanner works inside of a transaction set up with CONSISTENT SNAPSHOT
+type TransactionalTableScanner struct {
+	wr           *wrangler.Wrangler
+	cleaner      *wrangler.Cleaner
+	tabletAlias  *topodatapb.TabletAlias
+	queryService queryservice.QueryService
+	tx           int64
+}
+
+// ScanTable performs a full table scan, ordered by the primary keys, if any
+func (tt TransactionalTableScanner) ScanTable(ctx context.Context, td *tabletmanagerdatapb.TableDefinition) (*QueryResultReader, error) {
+	return TransactionalTableScan(ctx, tt.wr.Logger(), tt.wr.TopoServer(), tt.tabletAlias, tt.tx, td)
+}
+
+// NonTransactionalTableScanner just passes through the queries, and relies on paused replication traffic taking care of the consistent snapshot part
+type NonTransactionalTableScanner struct {
+	wr           *wrangler.Wrangler
+	cleaner      *wrangler.Cleaner
+	tabletAlias  *topodatapb.TabletAlias
+	queryService queryservice.QueryService
+}
+
+// ScanTable performs a full table scan, ordered by the primary keys, if any
+func (ntts NonTransactionalTableScanner) ScanTable(ctx context.Context, td *tabletmanagerdatapb.TableDefinition) (*QueryResultReader, error) {
+	return TableScan(ctx, ntts.wr.Logger(), ntts.wr.TopoServer(), ntts.tabletAlias, td)
+}
+
+// CreateConsistentTransactions will momentarily stop updates on the tablet, and then create connections that are all
+// consistent snapshots of the same point in the transaction history
+func CreateConsistentTransactions(ctx context.Context, source *topo.TabletInfo, wr *wrangler.Wrangler, cleaner *wrangler.Cleaner, numberOfScanners int) ([]TableScanner, string, error) {
+	tm := tmclient.NewTabletManagerClient()
+	defer tm.Close()
+
+	// Lock all tables with a read lock to pause replication
+	err := tm.LockTables(ctx, source.Tablet)
+	if err != nil {
+		return nil, "", fmt.Errorf("could not lock tables on source%v\n%v", source.Tablet, err)
+	}
+	defer func() {
+		tm.UnlockTables(ctx, source.Tablet)
+		wr.Logger().Infof("source tables unlocked")
+	}()
+
+	wr.Logger().Infof("source tables locked")
+	sourceTarget := CreateTargetFrom(*source)
+
+	// Create transactions
+	queryService, err := tabletconn.GetDialer()(source.Tablet, true)
+	connections, err := CreateTransactionalTableScanners(ctx, numberOfScanners, wr, cleaner, queryService, sourceTarget, source.Tablet)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to create transactions on source %v", err.Error())
+	}
+	wr.Logger().Infof("transactions created on source")
+	executedGtid, err := tm.MasterPosition(ctx, source.Tablet)
+	if err != nil {
+		return nil, "", fmt.Errorf("could not read executed GTID set on source%v\n%v", source.Tablet, err)
+	}
+
+	return connections, executedGtid, nil
 }
