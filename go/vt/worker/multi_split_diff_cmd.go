@@ -25,6 +25,8 @@ import (
 	"strings"
 	"sync"
 
+	"vitess.io/vitess/go/vt/proto/topodata"
+
 	"golang.org/x/net/context"
 	"vitess.io/vitess/go/vt/concurrency"
 	"vitess.io/vitess/go/vt/topo/topoproto"
@@ -60,6 +62,12 @@ const multiSplitDiffHTML2 = `
     <form action="/Diffs/MultiSplitDiff" method="post">
       <LABEL for="sourceUID">Source shard UID: </LABEL>
         <INPUT type="text" id="sourceUID" name="sourceUID" value="{{.DefaultSourceUID}}"></BR>
+      <LABEL for="tabletType">Tablet Type:</LABEL>
+			<SELECT id="tabletType" name="tabletType">
+  			<OPTION selected value="RDONLY">RDONLY</OPTION>
+  			<OPTION value="REPLICA">REPLICA</OPTION>
+			</SELECT>
+			</BR>
       <LABEL for="excludeTables">Exclude Tables: </LABEL>
         <INPUT type="text" id="excludeTables" name="excludeTables" value=""></BR>
       <LABEL for="minHealthyRdonlyTablets">Minimum Number of required healthy RDONLY tablets: </LABEL>
@@ -69,7 +77,7 @@ const multiSplitDiffHTML2 = `
       <LABEL for="waitForFixedTimeRatherThanGtidSet">Wait for fixed time rather than GTID set: (wait for 1m when syncing up the destination RDONLY tablet rather than using the GTID set. Use this when the GTID set on the RDONLY is broken. Make sure the RDONLY is not behind in replication when using this flag.)</LABEL>
         <INPUT type="checkbox" id="waitForFixedTimeRatherThanGtidSet" name="waitForFixedTimeRatherThanGtidSet" value="true"></BR>
       <LABEL for="useConsistentSnapshot">Use consistent snapshot</LABEL>
-        <INPUT type="checkbox" id="useConsistentSnapshot" name="useConsistentSnapshot" value="true"><a href=''>?</a></BR>
+        <INPUT type="checkbox" id="useConsistentSnapshot" name="useConsistentSnapshot" value="true"><a href="https://dev.mysql.com/doc/refman/5.7/en/glossary.html#glos_consistent_read" target="_blank">?</a></BR>
       <INPUT type="hidden" name="keyspace" value="{{.Keyspace}}"/>
       <INPUT type="hidden" name="shard" value="{{.Shard}}"/>
       <INPUT type="submit" name="submit" value="Split Diff"/>
@@ -81,6 +89,7 @@ var multiSplitDiffTemplate = mustParseTemplate("multiSplitDiff", multiSplitDiffH
 var multiSplitDiffTemplate2 = mustParseTemplate("multiSplitDiff2", multiSplitDiffHTML2)
 
 func commandMultiSplitDiff(wi *Instance, wr *wrangler.Wrangler, subFlags *flag.FlagSet, args []string) (Worker, error) {
+	tabletTypeStr := subFlags.String("tablet_type", "RDONLY", "type of tablet used")
 	excludeTables := subFlags.String("exclude_tables", "", "comma separated list of tables to exclude")
 	minHealthyRdonlyTablets := subFlags.Int("min_healthy_rdonly_tablets", defaultMinHealthyRdonlyTablets, "minimum number of healthy RDONLY tablets before taking out one")
 	parallelDiffsCount := subFlags.Int("parallel_diffs_count", defaultParallelDiffsCount, "number of tables to diff in parallel")
@@ -101,7 +110,13 @@ func commandMultiSplitDiff(wi *Instance, wr *wrangler.Wrangler, subFlags *flag.F
 	if *excludeTables != "" {
 		excludeTableArray = strings.Split(*excludeTables, ",")
 	}
-	return NewMultiSplitDiffWorker(wr, wi.cell, keyspace, shard, excludeTableArray, *minHealthyRdonlyTablets, *parallelDiffsCount, *waitForFixedTimeRatherThanGtidSet, *useConsistentSnapshot), nil
+
+	tabletType, ok := topodata.TabletType_value[*tabletTypeStr]
+	if !ok {
+		return nil, fmt.Errorf("failed to find this tablet type %v", tabletTypeStr)
+	}
+
+	return NewMultiSplitDiffWorker(wr, wi.cell, keyspace, shard, excludeTableArray, *minHealthyRdonlyTablets, *parallelDiffsCount, *waitForFixedTimeRatherThanGtidSet, *useConsistentSnapshot, topodata.TabletType(tabletType)), nil
 }
 
 // shardSources returns all the shards that are SourceShards of at least one other shard.
@@ -223,8 +238,14 @@ func interactiveMultiSplitDiff(ctx context.Context, wi *Instance, wr *wrangler.W
 		return nil, nil, nil, fmt.Errorf("cannot parse minHealthyRdonlyTablets: %s", err)
 	}
 
+	tabletTypeStr := r.FormValue("tabletType")
+	tabletType, ok := topodata.TabletType_value[tabletTypeStr]
+	if !ok {
+		return nil, nil, nil, fmt.Errorf("cannot parse tabletType: %s", tabletTypeStr)
+	}
+
 	// start the diff job
-	wrk := NewMultiSplitDiffWorker(wr, wi.cell, keyspace, shard, excludeTableArray, int(minHealthyRdonlyTablets), int(parallelDiffsCount), waitForFixedTimeRatherThanGtidSet, useConsistentSnapshot)
+	wrk := NewMultiSplitDiffWorker(wr, wi.cell, keyspace, shard, excludeTableArray, int(minHealthyRdonlyTablets), int(parallelDiffsCount), waitForFixedTimeRatherThanGtidSet, useConsistentSnapshot, topodata.TabletType(tabletType))
 	return wrk, nil, nil, nil
 }
 
