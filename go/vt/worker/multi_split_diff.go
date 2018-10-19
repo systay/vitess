@@ -52,7 +52,7 @@ type MultiSplitDiffWorker struct {
 	keyspace                          string
 	shard                             string
 	excludeTables                     []string
-	minHealthyRdonlyTablets           int
+	minHealthyTablets                 int
 	parallelDiffsCount                int
 	waitForFixedTimeRatherThanGtidSet bool
 	cleaner                           *wrangler.Cleaner
@@ -73,7 +73,7 @@ type MultiSplitDiffWorker struct {
 }
 
 // NewMultiSplitDiffWorker returns a new MultiSplitDiffWorker object.
-func NewMultiSplitDiffWorker(wr *wrangler.Wrangler, cell, keyspace, shard string, excludeTables []string, minHealthyRdonlyTablets, parallelDiffsCount int, waitForFixedTimeRatherThanGtidSet bool, useConsistentSnapshot bool, tabletType topodatapb.TabletType) Worker {
+func NewMultiSplitDiffWorker(wr *wrangler.Wrangler, cell, keyspace, shard string, excludeTables []string, minHealthyTablets, parallelDiffsCount int, waitForFixedTimeRatherThanGtidSet bool, useConsistentSnapshot bool, tabletType topodatapb.TabletType) Worker {
 	return &MultiSplitDiffWorker{
 		StatusWorker:                      NewStatusWorker(),
 		wr:                                wr,
@@ -81,7 +81,7 @@ func NewMultiSplitDiffWorker(wr *wrangler.Wrangler, cell, keyspace, shard string
 		keyspace:                          keyspace,
 		shard:                             shard,
 		excludeTables:                     excludeTables,
-		minHealthyRdonlyTablets:           minHealthyRdonlyTablets,
+		minHealthyTablets:                 minHealthyTablets,
 		parallelDiffsCount:                parallelDiffsCount,
 		cleaner:                           &wrangler.Cleaner{},
 		useConsistentSnapshot:             useConsistentSnapshot,
