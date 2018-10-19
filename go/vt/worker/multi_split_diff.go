@@ -576,7 +576,7 @@ func (msdw *MultiSplitDiffWorker) synchronizeSrcAndDestTxState(ctx context.Conte
 		}
 	}
 
-	msdw.destinationScanners = make([][]TableScanner, len(msdw.destinationShards))
+	msdw.destinationScanners = make([][]TableScanner, msdw.parallelDiffsCount)
 
 	// 4. Make sure all replicas have caught up with the master
 	for i, shardInfo := range msdw.destinationShards {
@@ -604,10 +604,14 @@ func (msdw *MultiSplitDiffWorker) synchronizeSrcAndDestTxState(ctx context.Conte
 				return err
 			}
 
-			msdw.destinationScanners[i], _, err = CreateConsistentTransactions(ctx, destTabletInfo, msdw.wr, msdw.cleaner, msdw.parallelDiffsCount)
+			scanners, _, err := CreateConsistentTransactions(ctx, destTabletInfo, msdw.wr, msdw.cleaner, msdw.parallelDiffsCount)
 			if err != nil {
 				return fmt.Errorf("failed to create transactional destination connections")
 			}
+			for j, scanner := range scanners {
+				msdw.destinationScanners[j] = append(msdw.destinationScanners[j], scanner)
+			}
+
 		} else {
 			err = msdw.stopReplicationAt(ctx, destinationAlias, destinationPosition)
 			if err != nil {
