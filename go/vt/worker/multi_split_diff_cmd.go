@@ -70,8 +70,8 @@ const multiSplitDiffHTML2 = `
 			</BR>
       <LABEL for="excludeTables">Exclude Tables: </LABEL>
         <INPUT type="text" id="excludeTables" name="excludeTables" value=""></BR>
-      <LABEL for="minHealthyRdonlyTablets">Minimum Number of required healthy RDONLY tablets: </LABEL>
-        <INPUT type="text" id="minHealthyRdonlyTablets" name="minHealthyRdonlyTablets" value="{{.DefaultMinHealthyRdonlyTablets}}"></BR>
+      <LABEL for="minHealthyTablets">Minimum Number of required healthy tablets: </LABEL>
+        <INPUT type="text" id="minHealthyTablets" name="minHealthyTablets" value="{{.DefaultMinHealthyRdonlyTablets}}"></BR>
       <LABEL for="parallelDiffsCount">Number of tables to diff in parallel: </LABEL>
         <INPUT type="text" id="parallelDiffsCount" name="parallelDiffsCount" value="{{.DefaultParallelDiffsCount}}"></BR>
       <LABEL for="waitForFixedTimeRatherThanGtidSet">Wait for fixed time rather than GTID set: (wait for 1m when syncing up the destination RDONLY tablet rather than using the GTID set. Use this when the GTID set on the RDONLY is broken. Make sure the RDONLY is not behind in replication when using this flag.)</LABEL>
@@ -91,7 +91,7 @@ var multiSplitDiffTemplate2 = mustParseTemplate("multiSplitDiff2", multiSplitDif
 func commandMultiSplitDiff(wi *Instance, wr *wrangler.Wrangler, subFlags *flag.FlagSet, args []string) (Worker, error) {
 	tabletTypeStr := subFlags.String("tablet_type", "RDONLY", "type of tablet used")
 	excludeTables := subFlags.String("exclude_tables", "", "comma separated list of tables to exclude")
-	minHealthyRdonlyTablets := subFlags.Int("min_healthy_rdonly_tablets", defaultMinHealthyRdonlyTablets, "minimum number of healthy RDONLY tablets before taking out one")
+	minHealthyTablets := subFlags.Int("min_healthy_tablets", defaultMinHealthyRdonlyTablets, "minimum number of healthy tablets before taking out one")
 	parallelDiffsCount := subFlags.Int("parallel_diffs_count", defaultParallelDiffsCount, "number of tables to diff in parallel")
 	waitForFixedTimeRatherThanGtidSet := subFlags.Bool("wait_for_fixed_time_rather_than_gtid_set", false, "wait for 1m when syncing up the destination RDONLY tablet rather than using the GTID set. Use this when the GTID set on the RDONLY is broken. Make sure the RDONLY is not behind in replication when using this flag.")
 	useConsistentSnapshot := subFlags.Bool("use_consistent_snapshot", false, "Instead of pausing replication on the source, uses transactions with consistent snapshot to have a stable view of the data.")
@@ -116,7 +116,7 @@ func commandMultiSplitDiff(wi *Instance, wr *wrangler.Wrangler, subFlags *flag.F
 		return nil, fmt.Errorf("failed to find this tablet type %v", tabletTypeStr)
 	}
 
-	return NewMultiSplitDiffWorker(wr, wi.cell, keyspace, shard, excludeTableArray, *minHealthyRdonlyTablets, *parallelDiffsCount, *waitForFixedTimeRatherThanGtidSet, *useConsistentSnapshot, topodata.TabletType(tabletType)), nil
+	return NewMultiSplitDiffWorker(wr, wi.cell, keyspace, shard, excludeTableArray, *minHealthyTablets, *parallelDiffsCount, *waitForFixedTimeRatherThanGtidSet, *useConsistentSnapshot, topodata.TabletType(tabletType)), nil
 }
 
 // shardSources returns all the shards that are SourceShards of at least one other shard.
@@ -223,19 +223,19 @@ func interactiveMultiSplitDiff(ctx context.Context, wi *Instance, wr *wrangler.W
 	if excludeTables != "" {
 		excludeTableArray = strings.Split(excludeTables, ",")
 	}
-	minHealthyRdonlyTabletsStr := r.FormValue("minHealthyRdonlyTablets")
+	minHealthyTabletsStr := r.FormValue("minHealthyTablets")
 	parallelDiffsCountStr := r.FormValue("parallelDiffsCount")
-	minHealthyRdonlyTablets, err := strconv.ParseInt(minHealthyRdonlyTabletsStr, 0, 64)
+	minHealthyTablets, err := strconv.ParseInt(minHealthyTabletsStr, 0, 64)
 	parallelDiffsCount, err := strconv.ParseInt(parallelDiffsCountStr, 0, 64)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("cannot parse minHealthyRdonlyTablets: %s", err)
+		return nil, nil, nil, fmt.Errorf("cannot parse minHealthyTablets: %s", err)
 	}
 	waitForFixedTimeRatherThanGtidSetStr := r.FormValue("waitForFixedTimeRatherThanGtidSet")
 	waitForFixedTimeRatherThanGtidSet := waitForFixedTimeRatherThanGtidSetStr == "true"
 	useConsistentSnapshotStr := r.FormValue("useConsistentSnapshot")
 	useConsistentSnapshot := useConsistentSnapshotStr == "true"
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("cannot parse minHealthyRdonlyTablets: %s", err)
+		return nil, nil, nil, fmt.Errorf("cannot parse minHealthyTablets: %s", err)
 	}
 
 	tabletTypeStr := r.FormValue("tabletType")
@@ -245,7 +245,7 @@ func interactiveMultiSplitDiff(ctx context.Context, wi *Instance, wr *wrangler.W
 	}
 
 	// start the diff job
-	wrk := NewMultiSplitDiffWorker(wr, wi.cell, keyspace, shard, excludeTableArray, int(minHealthyRdonlyTablets), int(parallelDiffsCount), waitForFixedTimeRatherThanGtidSet, useConsistentSnapshot, topodata.TabletType(tabletType))
+	wrk := NewMultiSplitDiffWorker(wr, wi.cell, keyspace, shard, excludeTableArray, int(minHealthyTablets), int(parallelDiffsCount), waitForFixedTimeRatherThanGtidSet, useConsistentSnapshot, topodata.TabletType(tabletType))
 	return wrk, nil, nil, nil
 }
 

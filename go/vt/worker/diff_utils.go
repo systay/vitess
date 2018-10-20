@@ -654,7 +654,8 @@ func (rd *RowDiffer) Go(log logutil.Logger) (dr DiffReport, err error) {
 func CreateTransactionalTableScanners(ctx context.Context, numberOfScanners int, wr *wrangler.Wrangler, cleaner *wrangler.Cleaner, queryService queryservice.QueryService, target *query.Target, tabletInfo *topodatapb.Tablet) ([]TableScanner, error) {
 	scanners := make([]TableScanner, numberOfScanners)
 	tm := tmclient.NewTabletManagerClient()
-	var txPos string
+	defer tm.Close()
+
 	for i := 0; i < numberOfScanners; i++ {
 
 		tx, err := queryService.Begin(ctx, target, &query.ExecuteOptions{
@@ -663,25 +664,13 @@ func CreateTransactionalTableScanners(ctx context.Context, numberOfScanners int,
 			TransactionIsolation: query.ExecuteOptions_CONSISTENT_SNAPSHOT_READ_ONLY,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("could not open transaction on source %v\n%v", tabletInfo.Alias, err)
+			return nil, fmt.Errorf("could not open transaction on %v\n%v", topoproto.TabletAliasString(tabletInfo.Alias), err)
 		}
 
 		// Remember to rollback the transactions
 		cleaner.Record("CloseTransaction", topoproto.TabletAliasString(tabletInfo.Alias), func(ctx context.Context, wr *wrangler.Wrangler) error {
 			return queryService.Rollback(ctx, target, tx)
 		})
-
-		current, err := tm.MasterPosition(ctx, tabletInfo)
-		if err != nil {
-			return nil, fmt.Errorf("could not read executed GTID set on source%v\n%v", tabletInfo, err)
-		}
-
-		// Make sure the database we are working on is not seeing updates while we start the connections
-		if i == 0 {
-			txPos = current
-		} else if current != txPos {
-			return nil, fmt.Errorf("GTID set has changed since we started creating transactions: %v", current)
-		}
 
 		scanners[i] = TransactionalTableScanner{
 			wr:           wr,
@@ -730,33 +719,33 @@ func (ntts NonTransactionalTableScanner) ScanTable(ctx context.Context, td *tabl
 
 // CreateConsistentTransactions will momentarily stop updates on the tablet, and then create connections that are all
 // consistent snapshots of the same point in the transaction history
-func CreateConsistentTransactions(ctx context.Context, source *topo.TabletInfo, wr *wrangler.Wrangler, cleaner *wrangler.Cleaner, numberOfScanners int) ([]TableScanner, string, error) {
+func CreateConsistentTransactions(ctx context.Context, tablet *topo.TabletInfo, wr *wrangler.Wrangler, cleaner *wrangler.Cleaner, numberOfScanners int) ([]TableScanner, string, error) {
 	tm := tmclient.NewTabletManagerClient()
 	defer tm.Close()
 
 	// Lock all tables with a read lock to pause replication
-	err := tm.LockTables(ctx, source.Tablet)
+	err := tm.LockTables(ctx, tablet.Tablet)
 	if err != nil {
-		return nil, "", fmt.Errorf("could not lock tables on source%v\n%v", source.Tablet, err)
+		return nil, "", fmt.Errorf("could not lock tables on %v\n%v", topoproto.TabletAliasString(tablet.Tablet.Alias), err)
 	}
 	defer func() {
-		tm.UnlockTables(ctx, source.Tablet)
-		wr.Logger().Infof("source tables unlocked")
+		tm.UnlockTables(ctx, tablet.Tablet)
+		wr.Logger().Infof("tables unlocked on %v", topoproto.TabletAliasString(tablet.Tablet.Alias))
 	}()
 
-	wr.Logger().Infof("source tables locked")
-	sourceTarget := CreateTargetFrom(*source)
+	wr.Logger().Infof("tables locked on %v", topoproto.TabletAliasString(tablet.Tablet.Alias))
+	target := CreateTargetFrom(*tablet)
 
 	// Create transactions
-	queryService, err := tabletconn.GetDialer()(source.Tablet, true)
-	connections, err := CreateTransactionalTableScanners(ctx, numberOfScanners, wr, cleaner, queryService, sourceTarget, source.Tablet)
+	queryService, err := tabletconn.GetDialer()(tablet.Tablet, true)
+	connections, err := CreateTransactionalTableScanners(ctx, numberOfScanners, wr, cleaner, queryService, target, tablet.Tablet)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to create transactions on source %v", err.Error())
+		return nil, "", fmt.Errorf("failed to create transactions on %v: %v", topoproto.TabletAliasString(tablet.Tablet.Alias), err)
 	}
-	wr.Logger().Infof("transactions created on source")
-	executedGtid, err := tm.MasterPosition(ctx, source.Tablet)
+	wr.Logger().Infof("transactions created on %v", topoproto.TabletAliasString(tablet.Tablet.Alias))
+	executedGtid, err := tm.MasterPosition(ctx, tablet.Tablet)
 	if err != nil {
-		return nil, "", fmt.Errorf("could not read executed GTID set on source%v\n%v", source.Tablet, err)
+		return nil, "", fmt.Errorf("could not read executed GTID set on %v\n%v", topoproto.TabletAliasString(tablet.Tablet.Alias), err)
 	}
 
 	return connections, executedGtid, nil
