@@ -79,7 +79,8 @@ type SplitCloneWorker struct {
 	writeQueryMaxRows       int
 	writeQueryMaxSize       int
 	destinationWriterCount  int
-	minHealthyRdonlyTablets int
+	minHealthyTablets       int
+	tabletType              topodatapb.TabletType
 	disableUniquenessChecks bool
 	maxTPS                  int64
 	maxReplicationLag       int64
@@ -139,20 +140,20 @@ type SplitCloneWorker struct {
 }
 
 // newSplitCloneWorker returns a new worker object for the SplitClone command.
-func newSplitCloneWorker(wr *wrangler.Wrangler, cell, keyspace, shard string, online, offline bool, excludeTables []string, chunkCount, minRowsPerChunk, sourceReaderCount, writeQueryMaxRows, writeQueryMaxSize, destinationWriterCount, minHealthyRdonlyTablets int, disableUniquenessChecks bool, maxTPS, maxReplicationLag int64) (Worker, error) {
-	return newCloneWorker(wr, horizontalResharding, cell, keyspace, shard, online, offline, nil /* tables */, excludeTables, chunkCount, minRowsPerChunk, sourceReaderCount, writeQueryMaxRows, writeQueryMaxSize, destinationWriterCount, minHealthyRdonlyTablets, disableUniquenessChecks, maxTPS, maxReplicationLag)
+func newSplitCloneWorker(wr *wrangler.Wrangler, cell, keyspace, shard string, online, offline bool, excludeTables []string, chunkCount, minRowsPerChunk, sourceReaderCount, writeQueryMaxRows, writeQueryMaxSize, destinationWriterCount, minHealthyTablets int, tabletType topodatapb.TabletType, disableUniquenessChecks bool, maxTPS, maxReplicationLag int64) (Worker, error) {
+	return newCloneWorker(wr, horizontalResharding, cell, keyspace, shard, online, offline, nil /* tables */, excludeTables, chunkCount, minRowsPerChunk, sourceReaderCount, writeQueryMaxRows, writeQueryMaxSize, destinationWriterCount, minHealthyTablets, tabletType, disableUniquenessChecks, maxTPS, maxReplicationLag)
 }
 
 // newVerticalSplitCloneWorker returns a new worker object for the
 // VerticalSplitClone command.
-func newVerticalSplitCloneWorker(wr *wrangler.Wrangler, cell, keyspace, shard string, online, offline bool, tables []string, chunkCount, minRowsPerChunk, sourceReaderCount, writeQueryMaxRows, writeQueryMaxSize, destinationWriterCount, minHealthyRdonlyTablets int, disableUniquenessChecks bool, maxTPS, maxReplicationLag int64) (Worker, error) {
-	return newCloneWorker(wr, verticalSplit, cell, keyspace, shard, online, offline, tables, nil /* excludeTables */, chunkCount, minRowsPerChunk, sourceReaderCount, writeQueryMaxRows, writeQueryMaxSize, destinationWriterCount, minHealthyRdonlyTablets, disableUniquenessChecks, maxTPS, maxReplicationLag)
+func newVerticalSplitCloneWorker(wr *wrangler.Wrangler, cell, keyspace, shard string, online, offline bool, tables []string, chunkCount, minRowsPerChunk, sourceReaderCount, writeQueryMaxRows, writeQueryMaxSize, destinationWriterCount, minHealthyTablets int, tabletType topodatapb.TabletType, disableUniquenessChecks bool, maxTPS, maxReplicationLag int64) (Worker, error) {
+	return newCloneWorker(wr, verticalSplit, cell, keyspace, shard, online, offline, tables, nil /* excludeTables */, chunkCount, minRowsPerChunk, sourceReaderCount, writeQueryMaxRows, writeQueryMaxSize, destinationWriterCount, minHealthyTablets, tabletType, disableUniquenessChecks, maxTPS, maxReplicationLag)
 }
 
 // newCloneWorker returns a new SplitCloneWorker object which is used both by
 // the SplitClone and VerticalSplitClone command.
 // TODO(mberlin): Rename SplitCloneWorker to cloneWorker.
-func newCloneWorker(wr *wrangler.Wrangler, cloneType cloneType, cell, keyspace, shard string, online, offline bool, tables, excludeTables []string, chunkCount, minRowsPerChunk, sourceReaderCount, writeQueryMaxRows, writeQueryMaxSize, destinationWriterCount, minHealthyRdonlyTablets int, disableUniquenessChecks bool, maxTPS, maxReplicationLag int64) (Worker, error) {
+func newCloneWorker(wr *wrangler.Wrangler, cloneType cloneType, cell, keyspace, shard string, online, offline bool, tables, excludeTables []string, chunkCount, minRowsPerChunk, sourceReaderCount, writeQueryMaxRows, writeQueryMaxSize, destinationWriterCount, minHealthyTablets int, tabletType topodatapb.TabletType, disableUniquenessChecks bool, maxTPS, maxReplicationLag int64) (Worker, error) {
 	if cloneType != horizontalResharding && cloneType != verticalSplit {
 		return nil, fmt.Errorf("unknown cloneType: %v This is a bug. Please report", cloneType)
 	}
@@ -182,8 +183,8 @@ func newCloneWorker(wr *wrangler.Wrangler, cloneType cloneType, cell, keyspace, 
 	if destinationWriterCount <= 0 {
 		return nil, fmt.Errorf("destination_writer_count must be > 0: %v", destinationWriterCount)
 	}
-	if minHealthyRdonlyTablets < 0 {
-		return nil, fmt.Errorf("min_healthy_rdonly_tablets must be >= 0: %v", minHealthyRdonlyTablets)
+	if minHealthyTablets < 0 {
+		return nil, fmt.Errorf("min_healthy_rdonly_tablets must be >= 0: %v", minHealthyTablets)
 	}
 	if maxTPS != throttler.MaxRateModuleDisabled {
 		wr.Logger().Infof("throttling enabled and set to a max of %v transactions/second", maxTPS)
@@ -193,6 +194,9 @@ func newCloneWorker(wr *wrangler.Wrangler, cloneType cloneType, cell, keyspace, 
 	}
 	if maxReplicationLag <= 0 {
 		return nil, fmt.Errorf("max_replication_lag must be >= 1s: %v", maxReplicationLag)
+	}
+	if tabletType != topodatapb.TabletType_REPLICA && tabletType != topodatapb.TabletType_RDONLY {
+		return nil, fmt.Errorf("tablet_type must be RDONLY or REPLICA: %v", topodatapb.TabletType_name[int32(tabletType)])
 	}
 
 	scw := &SplitCloneWorker{
@@ -212,7 +216,8 @@ func newCloneWorker(wr *wrangler.Wrangler, cloneType cloneType, cell, keyspace, 
 		writeQueryMaxRows:       writeQueryMaxRows,
 		writeQueryMaxSize:       writeQueryMaxSize,
 		destinationWriterCount:  destinationWriterCount,
-		minHealthyRdonlyTablets: minHealthyRdonlyTablets,
+		minHealthyTablets:       minHealthyTablets,
+		tabletType:              tabletType,
 		disableUniquenessChecks: disableUniquenessChecks,
 		maxTPS:                  maxTPS,
 		maxReplicationLag:       maxReplicationLag,
@@ -743,7 +748,7 @@ func (scw *SplitCloneWorker) findOfflineSourceTablets(ctx context.Context) error
 	scw.offlineSourceAliases = make([]*topodatapb.TabletAlias, len(scw.sourceShards))
 	for i, si := range scw.sourceShards {
 		var err error
-		scw.offlineSourceAliases[i], err = FindWorkerTablet(ctx, scw.wr, scw.cleaner, scw.tsc, scw.cell, si.Keyspace(), si.ShardName(), scw.minHealthyRdonlyTablets, topodatapb.TabletType_RDONLY)
+		scw.offlineSourceAliases[i], err = FindWorkerTablet(ctx, scw.wr, scw.cleaner, scw.tsc, scw.cell, si.Keyspace(), si.ShardName(), scw.minHealthyTablets, scw.tabletType)
 		if err != nil {
 			return fmt.Errorf("FindWorkerTablet() failed for %v/%v/%v: %v", scw.cell, si.Keyspace(), si.ShardName(), err)
 		}
@@ -815,10 +820,10 @@ func (scw *SplitCloneWorker) waitForTablets(ctx context.Context, shardInfos []*t
 		wg.Add(1)
 		go func(keyspace, shard string) {
 			defer wg.Done()
-			// We wait for --min_healthy_rdonly_tablets because we will use several
+			// We wait for --min_healthy_tablets because we will use several
 			// tablets per shard to spread reading the chunks of rows across as many
 			// tablets as possible.
-			if _, err := waitForHealthyTablets(ctx, scw.wr, scw.tsc, scw.cell, keyspace, shard, scw.minHealthyRdonlyTablets, timeout, topodatapb.TabletType_RDONLY); err != nil {
+			if _, err := waitForHealthyTablets(ctx, scw.wr, scw.tsc, scw.cell, keyspace, shard, scw.minHealthyTablets, timeout, scw.tabletType); err != nil {
 				rec.RecordError(err)
 			}
 		}(si.Keyspace(), si.ShardName())
@@ -835,10 +840,10 @@ func (scw *SplitCloneWorker) findFirstSourceTablet(ctx context.Context, state St
 
 	// Pick any healthy serving source tablet.
 	si := scw.sourceShards[0]
-	tablets := scw.tsc.GetHealthyTabletStats(si.Keyspace(), si.ShardName(), topodatapb.TabletType_RDONLY)
+	tablets := scw.tsc.GetHealthyTabletStats(si.Keyspace(), si.ShardName(), scw.tabletType)
 	if len(tablets) == 0 {
 		// We fail fast on this problem and don't retry because at the start all tablets should be healthy.
-		return nil, fmt.Errorf("no healthy RDONLY tablet in source shard (%v) available (required to find out the schema)", topoproto.KeyspaceShardString(si.Keyspace(), si.ShardName()))
+		return nil, fmt.Errorf("no healthy %v tablet in source shard (%v) available (required to find out the schema)", topodatapb.TabletType_name[int32(scw.tabletType)], topoproto.KeyspaceShardString(si.Keyspace(), si.ShardName()))
 	}
 	return tablets[0].Tablet, nil
 }
@@ -894,7 +899,7 @@ func (scw *SplitCloneWorker) getSourceResultReader(ctx context.Context, td *tabl
 			// longer stopped at the same point as we took it offline initially.
 			allowMultipleRetries = false
 		} else {
-			tp = newShardTabletProvider(scw.tsc, scw.tabletTracker, si.Keyspace(), si.ShardName(), topodatapb.TabletType_RDONLY)
+			tp = newShardTabletProvider(scw.tsc, scw.tabletTracker, si.Keyspace(), si.ShardName(), scw.tabletType)
 		}
 		sourceResultReader, err := NewRestartableResultReader(ctx, scw.wr.Logger(), tp, td, chunk, allowMultipleRetries)
 		if err != nil {
