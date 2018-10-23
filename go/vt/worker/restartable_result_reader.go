@@ -23,6 +23,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang/glog"
+
 	"golang.org/x/net/context"
 
 	"vitess.io/vitess/go/sqlescape"
@@ -174,7 +176,7 @@ func (r *RestartableResultReader) startStream() (bool, error) {
 	r.generateQuery()
 	var stream sqltypes.ResultStream
 
-	if r.txID > 0 {
+	if r.txID == 0 {
 		stream = queryservice.ExecuteWithStreamer(r.ctx, r.conn, &querypb.Target{
 			Keyspace:   r.tablet.Keyspace,
 			Shard:      r.tablet.Shard,
@@ -186,8 +188,8 @@ func (r *RestartableResultReader) startStream() (bool, error) {
 			Shard:      r.tablet.Shard,
 			TabletType: r.tablet.Type,
 		}, r.query, make(map[string]*querypb.BindVariable), r.txID, nil)
-
 	}
+
 	// Read the fields information.
 	cols, err := stream.Recv()
 	if err != nil {
@@ -313,6 +315,7 @@ func (r *RestartableResultReader) Fields() []*querypb.Field {
 
 // Close closes the connection to the tablet.
 func (r *RestartableResultReader) Close(ctx context.Context) {
+	glog.Infof("-----> %v", r)
 	if r.conn != nil {
 		r.conn.Close(ctx)
 		r.tp.returnTablet(r.tablet)

@@ -794,9 +794,7 @@ func (scw *SplitCloneWorker) findOfflineSourceTablets(ctx context.Context) error
 	return nil
 }
 
-// findOfflineSourceTablets phase:
-// - find one rdonly in the source shard
-// - mark it as 'worker' pointing back to us
+// findTransactionalSources phase:
 // - get the aliases of all the source tablets
 func (scw *SplitCloneWorker) findTransactionalSources(ctx context.Context) error {
 	scw.setState(WorkerStateFindTargets)
@@ -823,15 +821,6 @@ func (scw *SplitCloneWorker) findTransactionalSources(ctx context.Context) error
 			return fmt.Errorf("cannot read tablet %v: %v", topoproto.TabletAliasString(alias), err)
 		}
 		scw.sourceTablets[i] = ti.Tablet
-
-		shortCtx, cancel = context.WithTimeout(ctx, *remoteActionsTimeout)
-		err = scw.wr.TabletManagerClient().StopSlave(shortCtx, scw.sourceTablets[i])
-		cancel()
-		if err != nil {
-			return fmt.Errorf("cannot stop replication on tablet %v", topoproto.TabletAliasString(alias))
-		}
-
-		wrangler.RecordStartSlaveAction(scw.cleaner, scw.sourceTablets[i])
 	}
 
 	return nil
@@ -948,8 +937,7 @@ func (scw *SplitCloneWorker) getSourceResultReader(ctx context.Context, td *tabl
 		var sourceResultReader ResultReader
 		var err error
 		if state == WorkerStateCloneOffline && scw.useConsistentSnapshot {
-			// TODO: what is this and why? what should we do here? the tx is on a specific tablet already
-			tp := newShardTabletProvider(scw.tsc, scw.tabletTracker, si.Keyspace(), si.ShardName(), topodatapb.TabletType_RDONLY)
+			tp := newShardTabletProvider(scw.tsc, scw.tabletTracker, si.Keyspace(), si.ShardName(), scw.tabletType)
 			sourceResultReader, err = NewTransactionalRestartableResultReader(ctx, scw.wr.Logger(), tp, td, chunk, false, txID)
 		} else {
 			var tp tabletProvider

@@ -648,7 +648,7 @@ func (rd *RowDiffer) Go(log logutil.Logger) (dr DiffReport, err error) {
 	}
 }
 
-// CreateTransactions returns an array of scanners that all share the same view of the data.
+// CreateTransactions returns an array of transactions that all share the same view of the data.
 // It will check that no new transactions have been seen between the creation of the underlying transactions,
 // to guarantee that all TransactionalTableScanner are pointing to the same point
 func CreateTransactions(ctx context.Context, numberOfScanners int, wr *wrangler.Wrangler, cleaner *wrangler.Cleaner, queryService queryservice.QueryService, target *query.Target, tabletInfo *topodatapb.Tablet) ([]int64, error) {
