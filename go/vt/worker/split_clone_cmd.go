@@ -91,6 +91,8 @@ const splitCloneHTML2 = `
       <INPUT type="hidden" name="keyspace" value="{{.Keyspace}}"/>
       <INPUT type="hidden" name="shard" value="{{.Shard}}"/>
       <INPUT type="submit" value="Clone"/>
+      <LABEL for="useConsistentSnapshot">Use consistent snapshot during the offline cloning:</LABEL>
+        <INPUT type="checkbox" id="useConsistentSnapshot" name="useConsistentSnapshot" value="true"{{if .DefaultUseConsistentSnapshot}} checked{{end}}></BR>
     </form>
   </body>
 `
@@ -217,6 +219,7 @@ func interactiveSplitClone(ctx context.Context, wi *Instance, wr *wrangler.Wrang
 		result["DefaultDisableUniquenessChecks"] = defaultDisableUniquenessChecks
 		result["DefaultMaxTPS"] = fmt.Sprintf("%v", defaultMaxTPS)
 		result["DefaultMaxReplicationLag"] = fmt.Sprintf("%v", defaultMaxReplicationLag)
+		result["DefaultUseConsistentSnapshot"] = fmt.Sprintf("%v", defaultUseConsistentSnapshot)
 		return nil, splitCloneTemplate2, result, nil
 	}
 
