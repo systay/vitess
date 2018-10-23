@@ -950,11 +950,13 @@ func (scw *SplitCloneWorker) cloneAChunk(ctx context.Context, td *tabletmanagerd
 	sourceReader, err := scw.getSourceResultReader(ctx, td, state, chunk)
 	if err != nil {
 		processError("%v NewResultMerger for source tablets failed: %v", errPrefix, err)
+		return
 	}
 	defer sourceReader.Close(ctx)
 	destReader, err := scw.getDestinationResultReader(ctx, td, state, chunk)
 	if err != nil {
 		processError("%v NewResultMerger for destinations tablets failed: %v", errPrefix, err)
+		return
 	}
 	defer destReader.Close(ctx)
 	dbNames := make([]string, len(scw.destinationShards))
