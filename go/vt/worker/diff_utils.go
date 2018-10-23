@@ -159,8 +159,8 @@ func (qrr *QueryResultReader) Fields() []*querypb.Field {
 }
 
 // Close closes the connection to the tablet.
-func (qrr *QueryResultReader) Close(ctx context.Context) error {
-	return qrr.conn.Close(ctx)
+func (qrr *QueryResultReader) Close(ctx context.Context) {
+	qrr.conn.Close(ctx)
 }
 
 // v3KeyRangeFilter is a sqltypes.ResultStream implementation that filters
@@ -653,9 +653,6 @@ func (rd *RowDiffer) Go(log logutil.Logger) (dr DiffReport, err error) {
 // to guarantee that all TransactionalTableScanner are pointing to the same point
 func CreateTransactionalTableScanners(ctx context.Context, numberOfScanners int, wr *wrangler.Wrangler, cleaner *wrangler.Cleaner, queryService queryservice.QueryService, target *query.Target, tabletInfo *topodatapb.Tablet) ([]TableScanner, error) {
 	scanners := make([]TableScanner, numberOfScanners)
-	tm := tmclient.NewTabletManagerClient()
-	defer tm.Close()
-
 	for i := 0; i < numberOfScanners; i++ {
 
 		tx, err := queryService.Begin(ctx, target, &query.ExecuteOptions{

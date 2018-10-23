@@ -568,7 +568,7 @@ func (msdw *MultiSplitDiffWorker) synchronizeSrcAndDestTxState(ctx context.Conte
 
 		queryService, err := tabletconn.GetDialer()(source.Tablet, true)
 		if err != nil {
-			return fmt.Errorf("failed to instanciate query service for %v: %v", source.Tablet, err.Error())
+			return fmt.Errorf("failed to instantiate query service for %v: %v", source.Tablet, err.Error())
 		}
 		msdw.sourceScanners, err = msdw.createNonTransactionalTableScanners(ctx, queryService, source)
 		if err != nil {
@@ -599,7 +599,6 @@ func (msdw *MultiSplitDiffWorker) synchronizeSrcAndDestTxState(ctx context.Conte
 
 		if msdw.useConsistentSnapshot {
 			// loop to wait for the destinationAlias tablet in shardInfo to have reached destinationPosition
-			msdw.wr.Logger().Infof("waiting for %v to reach %v", topoproto.TabletAliasString(destTabletInfo.Tablet.Alias), destinationPosition)
 			err = msdw.waitForDestinationTabletToReach(ctx, destTabletInfo.Tablet, destinationPosition)
 			if err != nil {
 				return err
@@ -620,7 +619,7 @@ func (msdw *MultiSplitDiffWorker) synchronizeSrcAndDestTxState(ctx context.Conte
 			}
 			msdw.destinationScanners[i], err = msdw.createNonTransactionalTableScanners(ctx, queryService, destTabletInfo)
 			if err != nil {
-				return fmt.Errorf("failed to stop create tabler scanners for %v using %v : %v", destTabletInfo, queryService, err.Error())
+				return fmt.Errorf("failed to stop create table scanners for %v using %v : %v", destTabletInfo, queryService, err.Error())
 			}
 		}
 
