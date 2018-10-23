@@ -424,6 +424,29 @@ func (scw *SplitCloneWorker) Run(ctx context.Context) error {
 	return nil
 }
 
+func (scw *SplitCloneWorker) disableUniquenessCheckOnDestinationTablets(ctx context.Context) error {
+	for _, si := range scw.destinationShards {
+		tablets := scw.tsc.GetHealthyTabletStats(si.Keyspace(), si.ShardName(), topodatapb.TabletType_MASTER)
+		if len(tablets) != 1 {
+			return fmt.Errorf("should have exactly one MASTER tablet, have %v", len(tablets))
+		}
+		tablet := tablets[0].Tablet
+		cmd := "SET UNIQUE_CHECKS=0"
+		scw.wr.Logger().Infof("disabling uniqueness checks on %v", topoproto.TabletAliasString(tablet.Alias))
+		_, err := scw.wr.TabletManagerClient().ExecuteFetchAsApp(ctx, tablet, true, []byte(cmd), 0)
+		if err != nil {
+			return fmt.Errorf("should have exactly one MASTER tablet, have %v", len(tablets))
+		}
+		scw.cleaner.Record("EnableUniquenessChecks", topoproto.TabletAliasString(tablet.Alias), func(ctx context.Context, wr *wrangler.Wrangler) error {
+			cmd := "SET UNIQUE_CHECKS=1"
+			_, err := scw.wr.TabletManagerClient().ExecuteFetchAsApp(ctx, tablet, true, []byte(cmd), 0)
+			return err
+		})
+	}
+
+	return nil
+}
+
 func (scw *SplitCloneWorker) run(ctx context.Context) error {
 	// Phase 1: read what we need to do.
 	if err := scw.init(ctx); err != nil {
@@ -443,23 +466,9 @@ func (scw *SplitCloneWorker) run(ctx context.Context) error {
 
 	// Turn off uniqueness checks if necessary
 	if scw.disableUniquenessChecks {
-		for _, si := range scw.destinationShards {
-			tablets := scw.tsc.GetHealthyTabletStats(si.Keyspace(), si.ShardName(), topodatapb.TabletType_MASTER)
-			if len(tablets) != 1 {
-				return fmt.Errorf("should have exactly one MASTER tablet, have %v", len(tablets))
-			}
-			tablet := tablets[0].Tablet
-			cmd := "SET UNIQUE_CHECKS=0"
-			scw.wr.Logger().Infof("disabling uniqueness checks on %v", topoproto.TabletAliasString(tablet.Alias))
-			_, err := scw.wr.TabletManagerClient().ExecuteFetchAsApp(ctx, tablet, true, []byte(cmd), 0)
-			if err != nil {
-				return fmt.Errorf("should have exactly one MASTER tablet, have %v", len(tablets))
-			}
-			scw.cleaner.Record("EnableUniquenessChecks", topoproto.TabletAliasString(tablet.Alias), func(ctx context.Context, wr *wrangler.Wrangler) error {
-				cmd := "SET UNIQUE_CHECKS=1"
-				_, err := scw.wr.TabletManagerClient().ExecuteFetchAsApp(ctx, tablet, true, []byte(cmd), 0)
-				return err
-			})
+		err := scw.disableUniquenessCheckOnDestinationTablets(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to turn off uniqueness checks: %v", err.Error())
 		}
 	}
 
@@ -770,8 +779,9 @@ func (scw *SplitCloneWorker) findDestinationMasters(ctx context.Context) error {
 	scw.wr.Logger().Infof("Finding a MASTER tablet for each destination shard...")
 	for _, si := range scw.destinationShards {
 		waitCtx, waitCancel := context.WithTimeout(ctx, *waitForHealthyTabletsTimeout)
-		defer waitCancel()
-		if err := scw.tsc.WaitForTablets(waitCtx, scw.cell, si.Keyspace(), si.ShardName(), topodatapb.TabletType_MASTER); err != nil {
+		err := scw.tsc.WaitForTablets(waitCtx, scw.cell, si.Keyspace(), si.ShardName(), topodatapb.TabletType_MASTER)
+		waitCancel()
+		if err != nil {
 			return fmt.Errorf("cannot find MASTER tablet for destination shard for %v/%v (in cell: %v): %v", si.Keyspace(), si.ShardName(), scw.cell, err)
 		}
 		masters := scw.tsc.GetHealthyTabletStats(si.Keyspace(), si.ShardName(), topodatapb.TabletType_MASTER)
@@ -813,6 +823,157 @@ func (scw *SplitCloneWorker) waitForTablets(ctx context.Context, shardInfos []*t
 	return rec.Error()
 }
 
+func (scw *SplitCloneWorker) findFirstSourceTablet(ctx context.Context, state StatusWorkerState) (*topodatapb.Tablet, error) {
+	if state == WorkerStateCloneOffline {
+		// Use the first source tablet which we took offline.
+		return scw.sourceTablets[0], nil
+	}
+
+	// Pick any healthy serving source tablet.
+	si := scw.sourceShards[0]
+	tablets := scw.tsc.GetHealthyTabletStats(si.Keyspace(), si.ShardName(), topodatapb.TabletType_RDONLY)
+	if len(tablets) == 0 {
+		// We fail fast on this problem and don't retry because at the start all tablets should be healthy.
+		return nil, fmt.Errorf("no healthy RDONLY tablet in source shard (%v) available (required to find out the schema)", topoproto.KeyspaceShardString(si.Keyspace(), si.ShardName()))
+	}
+	return tablets[0].Tablet, nil
+}
+
+func (scw *SplitCloneWorker) getCounters(state StatusWorkerState) ([]*stats.CountersWithSingleLabel, *tableStatusList) {
+	switch state {
+	case WorkerStateCloneOnline:
+		return []*stats.CountersWithSingleLabel{statsOnlineInsertsCounters, statsOnlineUpdatesCounters, statsOnlineDeletesCounters, statsOnlineEqualRowsCounters},
+			scw.tableStatusListOnline
+	case WorkerStateCloneOffline:
+		return []*stats.CountersWithSingleLabel{statsOfflineInsertsCounters, statsOfflineUpdatesCounters, statsOfflineDeletesCounters, statsOfflineEqualRowsCounters},
+			scw.tableStatusListOffline
+	default:
+		panic("should not happen")
+	}
+}
+
+func (scw *SplitCloneWorker) startExecutor(ctx context.Context, wg *sync.WaitGroup, keyspace, shard string, insertChannel chan string, threadID int, processError func(string, ...interface{})) {
+	defer wg.Done()
+	t := scw.getThrottler(keyspace, shard)
+	defer t.ThreadFinished(threadID)
+
+	executor := newExecutor(scw.wr, scw.tsc, t, keyspace, shard, threadID)
+	if err := executor.fetchLoop(ctx, insertChannel); err != nil {
+		processError("executer.FetchLoop failed: %v", err)
+	}
+}
+
+func mergeOrSingle(readers []ResultReader, td *tabletmanagerdatapb.TableDefinition) (ResultReader, error) {
+	if len(readers) == 1 {
+		return readers[0], nil
+	}
+
+	sourceReader, err := NewResultMerger(readers, len(td.PrimaryKeyColumns))
+	if err != nil {
+		return nil, err
+	}
+
+	return sourceReader, nil
+}
+
+func (scw *SplitCloneWorker) getSourceResultReader(ctx context.Context, td *tabletmanagerdatapb.TableDefinition, state StatusWorkerState, chunk chunk) (ResultReader, error) {
+	sourceReaders := make([]ResultReader, len(scw.sourceShards))
+	for shardIndex, si := range scw.sourceShards {
+		var tp tabletProvider
+		allowMultipleRetries := true
+		if state == WorkerStateCloneOffline {
+			tp = newSingleTabletProvider(ctx, scw.wr.TopoServer(), scw.offlineSourceAliases[shardIndex])
+			// allowMultipleRetries is false to avoid that we'll keep retrying
+			// on the same tablet alias for hours. This guards us against the
+			// situation that an offline tablet gets restarted and serves again.
+			// In that case we cannot use it because its replication is no
+			// longer stopped at the same point as we took it offline initially.
+			allowMultipleRetries = false
+		} else {
+			tp = newShardTabletProvider(scw.tsc, scw.tabletTracker, si.Keyspace(), si.ShardName(), topodatapb.TabletType_RDONLY)
+		}
+		sourceResultReader, err := NewRestartableResultReader(ctx, scw.wr.Logger(), tp, td, chunk, allowMultipleRetries)
+		if err != nil {
+			return nil, fmt.Errorf("NewRestartableResultReader for source: %v failed: %v", tp.description(), err)
+		}
+		// TODO: We could end up in a situation where some readers have been created but not all. In this situation, we would not close up all readers
+		sourceReaders[shardIndex] = sourceResultReader
+	}
+	return mergeOrSingle(sourceReaders, td)
+}
+
+func (scw *SplitCloneWorker) getDestinationResultReader(ctx context.Context, td *tabletmanagerdatapb.TableDefinition, state StatusWorkerState, chunk chunk) (ResultReader, error) {
+	destReaders := make([]ResultReader, len(scw.destinationShards))
+	for shardIndex, si := range scw.destinationShards {
+		tp := newShardTabletProvider(scw.tsc, scw.tabletTracker, si.Keyspace(), si.ShardName(), topodatapb.TabletType_MASTER)
+		destResultReader, err := NewRestartableResultReader(ctx, scw.wr.Logger(), tp, td, chunk, true /* allowMultipleRetries */)
+		if err != nil {
+			return nil, fmt.Errorf("NewRestartableResultReader for destination: %v failed: %v", tp.description(), err)
+		}
+		destReaders[shardIndex] = destResultReader
+	}
+	return mergeOrSingle(destReaders, td)
+}
+
+func (scw *SplitCloneWorker) doTheDiffing(ctx context.Context, td *tabletmanagerdatapb.TableDefinition, tableIndex int, chunk chunk, wg *sync.WaitGroup, sema *sync2.Semaphore, processError func(string, ...interface{}), state StatusWorkerState, tableStatusList *tableStatusList, keyResolver keyspaceIDResolver, start time.Time, insertChannels []chan string, statsCounters []*stats.CountersWithSingleLabel) {
+	defer wg.Done()
+	errPrefix := fmt.Sprintf("table=%v chunk=%v", td.Name, chunk)
+
+	var err error
+
+	sema.Acquire()
+	defer sema.Release()
+
+	if err := checkDone(ctx); err != nil {
+		processError("%v: Context expired while this thread was waiting for its turn. Context error: %v", errPrefix, err)
+		return
+	}
+
+	tableStatusList.threadStarted(tableIndex)
+	defer tableStatusList.threadDone(tableIndex)
+
+	if state == WorkerStateCloneOnline {
+		// Wait for enough healthy tablets (they might have become unhealthy
+		// and their replication lag might have increased since we started.)
+		if err := scw.waitForTablets(ctx, scw.sourceShards, *retryDuration); err != nil {
+			processError("%v: No healthy source tablets found (gave up after %v): %v", errPrefix, time.Since(start), err)
+			return
+		}
+	}
+
+	// Set up readers for the diff. There will be one reader for every
+	// source and destination shard.
+	sourceReader, err := scw.getSourceResultReader(ctx, td, state, chunk)
+	if err != nil {
+		processError("%v NewResultMerger for source tablets failed: %v", errPrefix, err)
+	}
+	defer sourceReader.Close(ctx)
+	destReader, err := scw.getDestinationResultReader(ctx, td, state, chunk)
+	if err != nil {
+		processError("%v NewResultMerger for destinations tablets failed: %v", errPrefix, err)
+	}
+	defer destReader.Close(ctx)
+	dbNames := make([]string, len(scw.destinationShards))
+	for i, si := range scw.destinationShards {
+		keyspaceAndShard := topoproto.KeyspaceShardString(si.Keyspace(), si.ShardName())
+		dbNames[i] = scw.destinationDbNames[keyspaceAndShard]
+	}
+	// Compare the data and reconcile any differences.
+	differ, err := NewRowDiffer2(ctx, sourceReader, destReader, td, tableStatusList, tableIndex,
+		scw.destinationShards, keyResolver,
+		insertChannels, ctx.Done(), dbNames, scw.writeQueryMaxRows, scw.writeQueryMaxSize, statsCounters)
+	if err != nil {
+		processError("%v: NewRowDiffer2 failed: %v", errPrefix, err)
+		return
+	}
+	// Ignore the diff report because all diffs should get reconciled.
+	_ /* DiffReport */, err = differ.Diff()
+	if err != nil {
+		processError("%v: RowDiffer2 failed: %v", errPrefix, err)
+		return
+	}
+}
+
 // copy phase:
 //	- copy the data from source tablets to destination masters (with replication on)
 // Assumes that the schema has already been created on each destination tablet
@@ -827,30 +988,12 @@ func (scw *SplitCloneWorker) clone(ctx context.Context, state StatusWorkerState)
 		statsStateDurationsNs.Set(string(state), time.Now().Sub(start).Nanoseconds())
 	}()
 
-	var firstSourceTablet *topodatapb.Tablet
-	if state == WorkerStateCloneOffline {
-		// Use the first source tablet which we took offline.
-		firstSourceTablet = scw.sourceTablets[0]
-	} else {
-		// Pick any healthy serving source tablet.
-		si := scw.sourceShards[0]
-		tablets := scw.tsc.GetHealthyTabletStats(si.Keyspace(), si.ShardName(), topodatapb.TabletType_RDONLY)
-		if len(tablets) == 0 {
-			// We fail fast on this problem and don't retry because at the start all tablets should be healthy.
-			return fmt.Errorf("no healthy RDONLY tablet in source shard (%v) available (required to find out the schema)", topoproto.KeyspaceShardString(si.Keyspace(), si.ShardName()))
-		}
-		firstSourceTablet = tablets[0].Tablet
+	var firstSourceTablet, err = scw.findFirstSourceTablet(ctx, state)
+	if err != nil {
+		return err
 	}
-	var statsCounters []*stats.CountersWithSingleLabel
-	var tableStatusList *tableStatusList
-	switch state {
-	case WorkerStateCloneOnline:
-		statsCounters = []*stats.CountersWithSingleLabel{statsOnlineInsertsCounters, statsOnlineUpdatesCounters, statsOnlineDeletesCounters, statsOnlineEqualRowsCounters}
-		tableStatusList = scw.tableStatusListOnline
-	case WorkerStateCloneOffline:
-		statsCounters = []*stats.CountersWithSingleLabel{statsOfflineInsertsCounters, statsOfflineUpdatesCounters, statsOfflineDeletesCounters, statsOfflineEqualRowsCounters}
-		tableStatusList = scw.tableStatusListOffline
-	}
+
+	statsCounters, tableStatusList := scw.getCounters(state)
 
 	// The throttlers exist only for the duration of this clone() call.
 	// That means a SplitClone invocation with both online and offline phases
@@ -867,22 +1010,19 @@ func (scw *SplitCloneWorker) clone(ctx context.Context, state StatusWorkerState)
 	scw.wr.Logger().Infof("Source tablet 0 has %v tables to copy", len(sourceSchemaDefinition.TableDefinitions))
 	tableStatusList.initialize(sourceSchemaDefinition)
 
-	// In parallel, setup the channels to send SQL data chunks to for each destination tablet:
-	//
-	// mu protects the context for cancelation, and firstError
-	mu := sync.Mutex{}
 	var firstError error
 
 	ctx, cancelCopy := context.WithCancel(ctx)
 	defer cancelCopy()
 	processError := func(format string, args ...interface{}) {
-		mu.Lock()
+		// in theory we could have two threads see firstError as null and both write to the variable
+		// that should not cause any problems though - canceling and logging is concurrently safe,
+		// and overwriting the variable will not cause any problems
+		scw.wr.Logger().Errorf(format, args...)
 		if firstError == nil {
-			scw.wr.Logger().Errorf(format, args...)
 			firstError = fmt.Errorf(format, args...)
 			cancelCopy()
 		}
-		mu.Unlock()
 	}
 
 	// NOTE: Code below this point must *not* use "return" to exit this Go routine
@@ -895,6 +1035,7 @@ func (scw *SplitCloneWorker) clone(ctx context.Context, state StatusWorkerState)
 	// races between "defer throttler.ThreadFinished()" (must be executed first)
 	// and "defer scw.closeThrottlers()". Otherwise, vtworker will panic.
 
+	// In parallel, setup the channels to send SQL data chunks to for each destination tablet:
 	insertChannels := make([]chan string, len(scw.destinationShards))
 	destinationWaitGroup := sync.WaitGroup{}
 	for shardIndex, si := range scw.destinationShards {
@@ -906,15 +1047,7 @@ func (scw *SplitCloneWorker) clone(ctx context.Context, state StatusWorkerState)
 
 		for j := 0; j < scw.destinationWriterCount; j++ {
 			destinationWaitGroup.Add(1)
-			go func(keyspace, shard string, insertChannel chan string, throttler *throttler.Throttler, threadID int) {
-				defer destinationWaitGroup.Done()
-				defer throttler.ThreadFinished(threadID)
-
-				executor := newExecutor(scw.wr, scw.tsc, throttler, keyspace, shard, threadID)
-				if err := executor.fetchLoop(ctx, insertChannel); err != nil {
-					processError("executer.FetchLoop failed: %v", err)
-				}
-			}(si.Keyspace(), si.ShardName(), insertChannels[shardIndex], scw.getThrottler(si.Keyspace(), si.ShardName()), j)
+			go scw.startExecutor(ctx, &destinationWaitGroup, si.Keyspace(), si.ShardName(), insertChannels[shardIndex], j, processError)
 		}
 	}
 
@@ -942,112 +1075,7 @@ func (scw *SplitCloneWorker) clone(ctx context.Context, state StatusWorkerState)
 
 		for _, c := range chunks {
 			sourceWaitGroup.Add(1)
-			go func(td *tabletmanagerdatapb.TableDefinition, tableIndex int, chunk chunk) {
-				defer sourceWaitGroup.Done()
-				errPrefix := fmt.Sprintf("table=%v chunk=%v", td.Name, chunk)
-
-				// We need our own error per Go routine to avoid races.
-				var err error
-
-				sema.Acquire()
-				defer sema.Release()
-
-				if err := checkDone(ctx); err != nil {
-					processError("%v: Context expired while this thread was waiting for its turn. Context error: %v", errPrefix, err)
-					return
-				}
-
-				tableStatusList.threadStarted(tableIndex)
-				defer tableStatusList.threadDone(tableIndex)
-
-				if state == WorkerStateCloneOnline {
-					// Wait for enough healthy tablets (they might have become unhealthy
-					// and their replication lag might have increased since we started.)
-					if err := scw.waitForTablets(ctx, scw.sourceShards, *retryDuration); err != nil {
-						processError("%v: No healthy source tablets found (gave up after %v): %v", errPrefix, time.Since(start), err)
-						return
-					}
-				}
-
-				// Set up readers for the diff. There will be one reader for every
-				// source and destination shard.
-				sourceReaders := make([]ResultReader, len(scw.sourceShards))
-				destReaders := make([]ResultReader, len(scw.destinationShards))
-				for shardIndex, si := range scw.sourceShards {
-					var tp tabletProvider
-					allowMultipleRetries := true
-					if state == WorkerStateCloneOffline {
-						tp = newSingleTabletProvider(ctx, scw.wr.TopoServer(), scw.offlineSourceAliases[shardIndex])
-						// allowMultipleRetries is false to avoid that we'll keep retrying
-						// on the same tablet alias for hours. This guards us against the
-						// situation that an offline tablet gets restarted and serves again.
-						// In that case we cannot use it because its replication is no
-						// longer stopped at the same point as we took it offline initially.
-						allowMultipleRetries = false
-					} else {
-						tp = newShardTabletProvider(scw.tsc, scw.tabletTracker, si.Keyspace(), si.ShardName(), topodatapb.TabletType_RDONLY)
-					}
-					sourceResultReader, err := NewRestartableResultReader(ctx, scw.wr.Logger(), tp, td, chunk, allowMultipleRetries)
-					if err != nil {
-						processError("%v: NewRestartableResultReader for source: %v failed: %v", errPrefix, tp.description(), err)
-						return
-					}
-					defer sourceResultReader.Close(ctx)
-					sourceReaders[shardIndex] = sourceResultReader
-				}
-
-				for shardIndex, si := range scw.destinationShards {
-					tp := newShardTabletProvider(scw.tsc, scw.tabletTracker, si.Keyspace(), si.ShardName(), topodatapb.TabletType_MASTER)
-					destResultReader, err := NewRestartableResultReader(ctx, scw.wr.Logger(), tp, td, chunk, true /* allowMultipleRetries */)
-					if err != nil {
-						processError("%v: NewRestartableResultReader for destination: %v failed: %v", errPrefix, tp.description(), err)
-						return
-					}
-					defer destResultReader.Close(ctx)
-					destReaders[shardIndex] = destResultReader
-				}
-
-				var sourceReader ResultReader
-				var destReader ResultReader
-				if len(sourceReaders) >= 2 {
-					sourceReader, err = NewResultMerger(sourceReaders, len(td.PrimaryKeyColumns))
-					if err != nil {
-						processError("%v: NewResultMerger for source tablets failed: %v", errPrefix, err)
-						return
-					}
-				} else {
-					sourceReader = sourceReaders[0]
-				}
-				if len(destReaders) >= 2 {
-					destReader, err = NewResultMerger(destReaders, len(td.PrimaryKeyColumns))
-					if err != nil {
-						processError("%v: NewResultMerger for destination tablets failed: %v", errPrefix, err)
-						return
-					}
-				} else {
-					destReader = destReaders[0]
-				}
-
-				dbNames := make([]string, len(scw.destinationShards))
-				for i, si := range scw.destinationShards {
-					keyspaceAndShard := topoproto.KeyspaceShardString(si.Keyspace(), si.ShardName())
-					dbNames[i] = scw.destinationDbNames[keyspaceAndShard]
-				}
-				// Compare the data and reconcile any differences.
-				differ, err := NewRowDiffer2(ctx, sourceReader, destReader, td, tableStatusList, tableIndex,
-					scw.destinationShards, keyResolver,
-					insertChannels, ctx.Done(), dbNames, scw.writeQueryMaxRows, scw.writeQueryMaxSize, statsCounters)
-				if err != nil {
-					processError("%v: NewRowDiffer2 failed: %v", errPrefix, err)
-					return
-				}
-				// Ignore the diff report because all diffs should get reconciled.
-				_ /* DiffReport */, err = differ.Diff()
-				if err != nil {
-					processError("%v: RowDiffer2 failed: %v", errPrefix, err)
-					return
-				}
-			}(td, tableIndex, c)
+			go scw.doTheDiffing(ctx, td, tableIndex, c, &sourceWaitGroup, sema, processError, state, tableStatusList, keyResolver, start, insertChannels, statsCounters)
 		}
 	}
 	sourceWaitGroup.Wait()

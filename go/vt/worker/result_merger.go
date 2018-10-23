@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"io"
 
+	"golang.org/x/net/context"
+
 	"github.com/golang/protobuf/proto"
 
 	"vitess.io/vitess/go/sqltypes"
@@ -102,6 +104,13 @@ func NewResultMerger(inputs []ResultReader, pkFieldCount int) (*ResultMerger, er
 // It is part of the ResultReader interface.
 func (rm *ResultMerger) Fields() []*querypb.Field {
 	return rm.fields
+}
+
+// Close closes all inputs
+func (rm *ResultMerger) Close(ctx context.Context) {
+	for _, i := range rm.inputs {
+		i.Close(ctx)
+	}
 }
 
 // Next returns the next Result in the sorted, merged stream.
