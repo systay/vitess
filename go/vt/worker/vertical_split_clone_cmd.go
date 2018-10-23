@@ -25,6 +25,8 @@ import (
 	"strings"
 	"sync"
 
+	"vitess.io/vitess/go/vt/proto/topodata"
+
 	"golang.org/x/net/context"
 	"vitess.io/vitess/go/vt/concurrency"
 	"vitess.io/vitess/go/vt/topo/topoproto"
@@ -79,8 +81,14 @@ const verticalSplitCloneHTML2 = `
         <INPUT type="text" id="writeQueryMaxSize" name="writeQueryMaxSize" value="{{.DefaultWriteQueryMaxSize}}"></BR>
       <LABEL for="destinationWriterCount">Destination Writer Count: </LABEL>
         <INPUT type="text" id="destinationWriterCount" name="destinationWriterCount" value="{{.DefaultDestinationWriterCount}}"></BR>
-      <LABEL for="minHealthyRdonlyTablets">Minimum Number of required healthy RDONLY tablets: </LABEL>
-        <INPUT type="text" id="minHealthyRdonlyTablets" name="minHealthyRdonlyTablets" value="{{.DefaultMinHealthyRdonlyTablets}}"></BR>
+      <LABEL for="tabletType">Tablet Type:</LABEL>
+			<SELECT id="tabletType" name="tabletType">
+  			<OPTION selected value="RDONLY">RDONLY</OPTION>
+  			<OPTION value="REPLICA">REPLICA</OPTION>
+			</SELECT>
+			</BR>
+      <LABEL for="minHealthyTablets">Minimum Number of required healthy tablets of specified tablet type: </LABEL>
+        <INPUT type="text" id="minHealthyTablets" name="minHealthyTablets" value="{{.DefaultMinHealthyRdonlyTablets}}"></BR>
       <LABEL for="disableUniquenessChecks">Disable uniqueness checks during the clone:</LABEL>
         <INPUT type="checkbox" id="disableUniquenessChecks" name="disableUniquenessChecks" value="true"{{if .DefaultDisableUniquenessChecks}} checked{{end}}></BR>
       <LABEL for="maxTPS">Maximum Write Transactions/second (If non-zero, writes on the destination will be throttled. Unlimited by default.): </LABEL>
@@ -106,7 +114,8 @@ func commandVerticalSplitClone(wi *Instance, wr *wrangler.Wrangler, subFlags *fl
 	writeQueryMaxRows := subFlags.Int("write_query_max_rows", defaultWriteQueryMaxRows, "maximum number of rows per write query")
 	writeQueryMaxSize := subFlags.Int("write_query_max_size", defaultWriteQueryMaxSize, "maximum size (in bytes) per write query")
 	destinationWriterCount := subFlags.Int("destination_writer_count", defaultDestinationWriterCount, "number of concurrent RPCs to execute on the destination")
-	minHealthyRdonlyTablets := subFlags.Int("min_healthy_rdonly_tablets", defaultMinHealthyRdonlyTablets, "minimum number of healthy RDONLY tablets before taking out one")
+	minHealthyTablets := subFlags.Int("min_healthy_rdonly_tablets", defaultMinHealthyRdonlyTablets, "minimum number of healthy RDONLY tablets before taking out one")
+	tabletTypeStr := subFlags.String("tablet_type", "RDONLY", "tablet type to use (RDONLY or REPLICA)")
 	disableUniquenessChecks := subFlags.Bool("disable_uniqueness_checks", defaultDisableUniquenessChecks, "disable uniqueness checks during the clone")
 	maxTPS := subFlags.Int64("max_tps", defaultMaxTPS, "if non-zero, limit copy to maximum number of (write) transactions/second on the destination (unlimited by default)")
 	maxReplicationLag := subFlags.Int64("max_replication_lag", defaultMaxReplicationLag, "if set, the adapative throttler will be enabled and automatically adjust the write rate to keep the lag below the set value in seconds (disabled by default)")
@@ -128,7 +137,11 @@ func commandVerticalSplitClone(wi *Instance, wr *wrangler.Wrangler, subFlags *fl
 	if *tables != "" {
 		tableArray = strings.Split(*tables, ",")
 	}
-	worker, err := newVerticalSplitCloneWorker(wr, wi.cell, keyspace, shard, *online, *offline, tableArray, *chunkCount, *minRowsPerChunk, *sourceReaderCount, *writeQueryMaxRows, *writeQueryMaxSize, *destinationWriterCount, *minHealthyRdonlyTablets, *disableUniquenessChecks, *maxTPS, *maxReplicationLag)
+	tabletType, ok := topodata.TabletType_value[*tabletTypeStr]
+	if !ok {
+		return nil, fmt.Errorf("command SplitClone invalid tablet_type: %v", tabletType)
+	}
+	worker, err := newVerticalSplitCloneWorker(wr, wi.cell, keyspace, shard, *online, *offline, tableArray, *chunkCount, *minRowsPerChunk, *sourceReaderCount, *writeQueryMaxRows, *writeQueryMaxSize, *destinationWriterCount, *minHealthyTablets, topodata.TabletType(tabletType), *disableUniquenessChecks, *maxTPS, *maxReplicationLag)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create worker: %v", err)
 	}
@@ -252,10 +265,10 @@ func interactiveVerticalSplitClone(ctx context.Context, wi *Instance, wr *wrangl
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("cannot parse destinationWriterCount: %s", err)
 	}
-	minHealthyRdonlyTabletsStr := r.FormValue("minHealthyRdonlyTablets")
-	minHealthyRdonlyTablets, err := strconv.ParseInt(minHealthyRdonlyTabletsStr, 0, 64)
+	minHealthyTabletsStr := r.FormValue("minHealthyTablets")
+	minHealthyTablets, err := strconv.ParseInt(minHealthyTabletsStr, 0, 64)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("cannot parse minHealthyRdonlyTablets: %s", err)
+		return nil, nil, nil, fmt.Errorf("cannot parse minHealthyTablets: %s", err)
 	}
 	disableUniquenessChecksStr := r.FormValue("disableUniquenessChecks")
 	disableUniquenessChecks := disableUniquenessChecksStr == "true"
@@ -268,6 +281,11 @@ func interactiveVerticalSplitClone(ctx context.Context, wi *Instance, wr *wrangl
 	maxReplicationLag, err := strconv.ParseInt(maxReplicationLagStr, 0, 64)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("cannot parse maxReplicationLag: %s", err)
+	}
+	tabletTypeStr := r.FormValue("tabletType")
+	tabletType, ok := topodata.TabletType_value[tabletTypeStr]
+	if !ok {
+		return nil, nil, nil, fmt.Errorf("cannot parse tabletType: %v", tabletType)
 	}
 
 	// Figure out the shard
@@ -286,7 +304,7 @@ func interactiveVerticalSplitClone(ctx context.Context, wi *Instance, wr *wrangl
 	}
 
 	// start the clone job
-	wrk, err := newVerticalSplitCloneWorker(wr, wi.cell, keyspace, shard, online, offline, tableArray, int(chunkCount), int(minRowsPerChunk), int(sourceReaderCount), int(writeQueryMaxRows), int(writeQueryMaxSize), int(destinationWriterCount), int(minHealthyRdonlyTablets), disableUniquenessChecks, maxTPS, maxReplicationLag)
+	wrk, err := newVerticalSplitCloneWorker(wr, wi.cell, keyspace, shard, online, offline, tableArray, int(chunkCount), int(minRowsPerChunk), int(sourceReaderCount), int(writeQueryMaxRows), int(writeQueryMaxSize), int(destinationWriterCount), int(minHealthyTablets), topodata.TabletType(tabletType), disableUniquenessChecks, maxTPS, maxReplicationLag)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("cannot create worker: %v", err)
 	}
