@@ -270,7 +270,7 @@ func (mdw *TabletDiffWorker) syncTabletState(ctx context.Context) error {
 	wrangler.RecordStartSlaveAction(mdw.cleaner, mdw.destination.Tablet)
 
 	// 2. Next we stop updates to the source so we can create consistent snapshot transactions on the same spot
-	connections, pos, err := CreateConsistentTransactions(ctx, mdw.source, mdw.wr, mdw.cleaner, int(mdw.concurrentTables))
+	connections, pos, err := CreateConsistentTableScanners(ctx, mdw.source, mdw.wr, mdw.cleaner, int(mdw.concurrentTables))
 	if err != nil {
 		return fmt.Errorf("synchronizeReplication() failed: %v", err)
 	}

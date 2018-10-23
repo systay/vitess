@@ -269,7 +269,7 @@ func TransactionalTableScan(ctx context.Context, log logutil.Logger, ts *topo.Se
 }
 
 // CreateTargetFrom is a helper function
-func CreateTargetFrom(tablet topo.TabletInfo) *query.Target {
+func CreateTargetFrom(tablet *topodatapb.Tablet) *query.Target {
 	return &query.Target{
 		Cell:       tablet.Alias.Cell,
 		Keyspace:   tablet.Keyspace,
@@ -648,11 +648,11 @@ func (rd *RowDiffer) Go(log logutil.Logger) (dr DiffReport, err error) {
 	}
 }
 
-// CreateTransactionalTableScanners returns an array of scanners that all share the same view of the data.
+// CreateTransactions returns an array of scanners that all share the same view of the data.
 // It will check that no new transactions have been seen between the creation of the underlying transactions,
 // to guarantee that all TransactionalTableScanner are pointing to the same point
-func CreateTransactionalTableScanners(ctx context.Context, numberOfScanners int, wr *wrangler.Wrangler, cleaner *wrangler.Cleaner, queryService queryservice.QueryService, target *query.Target, tabletInfo *topodatapb.Tablet) ([]TableScanner, error) {
-	scanners := make([]TableScanner, numberOfScanners)
+func CreateTransactions(ctx context.Context, numberOfScanners int, wr *wrangler.Wrangler, cleaner *wrangler.Cleaner, queryService queryservice.QueryService, target *query.Target, tabletInfo *topodatapb.Tablet) ([]int64, error) {
+	scanners := make([]int64, numberOfScanners)
 	for i := 0; i < numberOfScanners; i++ {
 
 		tx, err := queryService.Begin(ctx, target, &query.ExecuteOptions{
@@ -666,16 +666,14 @@ func CreateTransactionalTableScanners(ctx context.Context, numberOfScanners int,
 
 		// Remember to rollback the transactions
 		cleaner.Record("CloseTransaction", topoproto.TabletAliasString(tabletInfo.Alias), func(ctx context.Context, wr *wrangler.Wrangler) error {
+			queryService, err := tabletconn.GetDialer()(tabletInfo, true)
+			if err != nil {
+				return err
+			}
 			return queryService.Rollback(ctx, target, tx)
 		})
 
-		scanners[i] = TransactionalTableScanner{
-			wr:           wr,
-			cleaner:      cleaner,
-			tabletAlias:  tabletInfo.Alias,
-			queryService: queryService,
-			tx:           tx,
-		}
+		scanners[i] = tx
 	}
 
 	return scanners, nil
@@ -714,9 +712,34 @@ func (ntts NonTransactionalTableScanner) ScanTable(ctx context.Context, td *tabl
 	return TableScan(ctx, ntts.wr.Logger(), ntts.wr.TopoServer(), ntts.tabletAlias, td)
 }
 
-// CreateConsistentTransactions will momentarily stop updates on the tablet, and then create connections that are all
+// CreateConsistentTableScanners will momentarily stop updates on the tablet, and then create connections that are all
 // consistent snapshots of the same point in the transaction history
-func CreateConsistentTransactions(ctx context.Context, tablet *topo.TabletInfo, wr *wrangler.Wrangler, cleaner *wrangler.Cleaner, numberOfScanners int) ([]TableScanner, string, error) {
+func CreateConsistentTableScanners(ctx context.Context, tablet *topo.TabletInfo, wr *wrangler.Wrangler, cleaner *wrangler.Cleaner, numberOfScanners int) ([]TableScanner, string, error) {
+	txs, gtid, err := CreateConsistentTransactions(ctx, tablet, wr, cleaner, numberOfScanners)
+	if err != nil {
+		return nil, "", err
+	}
+
+	queryService, err := tabletconn.GetDialer()(tablet.Tablet, true)
+	defer queryService.Close(ctx)
+
+	scanners := make([]TableScanner, numberOfScanners)
+	for i, tx := range txs {
+		scanners[i] = TransactionalTableScanner{
+			wr:           wr,
+			cleaner:      cleaner,
+			tabletAlias:  tablet.Alias,
+			queryService: queryService,
+			tx:           tx,
+		}
+	}
+
+	return scanners, gtid, nil
+}
+
+// CreateConsistentTransactions creates a number of consistent snapshot transactions,
+// all starting from the same spot in the tx log
+func CreateConsistentTransactions(ctx context.Context, tablet *topo.TabletInfo, wr *wrangler.Wrangler, cleaner *wrangler.Cleaner, numberOfScanners int) ([]int64, string, error) {
 	tm := tmclient.NewTabletManagerClient()
 	defer tm.Close()
 
@@ -726,16 +749,19 @@ func CreateConsistentTransactions(ctx context.Context, tablet *topo.TabletInfo, 
 		return nil, "", fmt.Errorf("could not lock tables on %v\n%v", topoproto.TabletAliasString(tablet.Tablet.Alias), err)
 	}
 	defer func() {
+		tm := tmclient.NewTabletManagerClient()
+		defer tm.Close()
 		tm.UnlockTables(ctx, tablet.Tablet)
 		wr.Logger().Infof("tables unlocked on %v", topoproto.TabletAliasString(tablet.Tablet.Alias))
 	}()
 
 	wr.Logger().Infof("tables locked on %v", topoproto.TabletAliasString(tablet.Tablet.Alias))
-	target := CreateTargetFrom(*tablet)
+	target := CreateTargetFrom(tablet.Tablet)
 
 	// Create transactions
 	queryService, err := tabletconn.GetDialer()(tablet.Tablet, true)
-	connections, err := CreateTransactionalTableScanners(ctx, numberOfScanners, wr, cleaner, queryService, target, tablet.Tablet)
+	defer queryService.Close(ctx)
+	connections, err := CreateTransactions(ctx, numberOfScanners, wr, cleaner, queryService, target, tablet.Tablet)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to create transactions on %v: %v", topoproto.TabletAliasString(tablet.Tablet.Alias), err)
 	}

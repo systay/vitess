@@ -23,13 +23,15 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"vitess.io/vitess/go/vt/vttablet/tabletconn"
+
 	"vitess.io/vitess/go/vt/binlog/binlogplayer"
 
 	"golang.org/x/net/context"
 
 	"vitess.io/vitess/go/event"
 	"vitess.io/vitess/go/stats"
-	"vitess.io/vitess/go/sync2"
 	"vitess.io/vitess/go/vt/concurrency"
 	"vitess.io/vitess/go/vt/discovery"
 	"vitess.io/vitess/go/vt/throttler"
@@ -62,13 +64,14 @@ var servingTypes = []topodatapb.TabletType{topodatapb.TabletType_MASTER, topodat
 type SplitCloneWorker struct {
 	StatusWorker
 
-	wr                  *wrangler.Wrangler
-	cloneType           cloneType
-	cell                string
-	destinationKeyspace string
-	shard               string
-	online              bool
-	offline             bool
+	wr                    *wrangler.Wrangler
+	cloneType             cloneType
+	cell                  string
+	destinationKeyspace   string
+	shard                 string
+	online                bool
+	offline               bool
+	useConsistentSnapshot bool
 	// verticalSplit only: List of tables which should be split out.
 	tables []string
 	// horizontalResharding only: List of tables which will be skipped.
@@ -140,20 +143,20 @@ type SplitCloneWorker struct {
 }
 
 // newSplitCloneWorker returns a new worker object for the SplitClone command.
-func newSplitCloneWorker(wr *wrangler.Wrangler, cell, keyspace, shard string, online, offline bool, excludeTables []string, chunkCount, minRowsPerChunk, sourceReaderCount, writeQueryMaxRows, writeQueryMaxSize, destinationWriterCount, minHealthyTablets int, tabletType topodatapb.TabletType, disableUniquenessChecks bool, maxTPS, maxReplicationLag int64) (Worker, error) {
-	return newCloneWorker(wr, horizontalResharding, cell, keyspace, shard, online, offline, nil /* tables */, excludeTables, chunkCount, minRowsPerChunk, sourceReaderCount, writeQueryMaxRows, writeQueryMaxSize, destinationWriterCount, minHealthyTablets, tabletType, disableUniquenessChecks, maxTPS, maxReplicationLag)
+func newSplitCloneWorker(wr *wrangler.Wrangler, cell, keyspace, shard string, online, offline bool, excludeTables []string, chunkCount, minRowsPerChunk, sourceReaderCount, writeQueryMaxRows, writeQueryMaxSize, destinationWriterCount, minHealthyTablets int, tabletType topodatapb.TabletType, disableUniquenessChecks bool, maxTPS, maxReplicationLag int64, useConsistentSnapshot bool) (Worker, error) {
+	return newCloneWorker(wr, horizontalResharding, cell, keyspace, shard, online, offline, nil /* tables */, excludeTables, chunkCount, minRowsPerChunk, sourceReaderCount, writeQueryMaxRows, writeQueryMaxSize, destinationWriterCount, minHealthyTablets, tabletType, disableUniquenessChecks, maxTPS, maxReplicationLag, useConsistentSnapshot)
 }
 
 // newVerticalSplitCloneWorker returns a new worker object for the
 // VerticalSplitClone command.
-func newVerticalSplitCloneWorker(wr *wrangler.Wrangler, cell, keyspace, shard string, online, offline bool, tables []string, chunkCount, minRowsPerChunk, sourceReaderCount, writeQueryMaxRows, writeQueryMaxSize, destinationWriterCount, minHealthyTablets int, tabletType topodatapb.TabletType, disableUniquenessChecks bool, maxTPS, maxReplicationLag int64) (Worker, error) {
-	return newCloneWorker(wr, verticalSplit, cell, keyspace, shard, online, offline, tables, nil /* excludeTables */, chunkCount, minRowsPerChunk, sourceReaderCount, writeQueryMaxRows, writeQueryMaxSize, destinationWriterCount, minHealthyTablets, tabletType, disableUniquenessChecks, maxTPS, maxReplicationLag)
+func newVerticalSplitCloneWorker(wr *wrangler.Wrangler, cell, keyspace, shard string, online, offline bool, tables []string, chunkCount, minRowsPerChunk, sourceReaderCount, writeQueryMaxRows, writeQueryMaxSize, destinationWriterCount, minHealthyTablets int, tabletType topodatapb.TabletType, disableUniquenessChecks bool, maxTPS, maxReplicationLag int64, useConsistentSnapshot bool) (Worker, error) {
+	return newCloneWorker(wr, verticalSplit, cell, keyspace, shard, online, offline, tables, nil /* excludeTables */, chunkCount, minRowsPerChunk, sourceReaderCount, writeQueryMaxRows, writeQueryMaxSize, destinationWriterCount, minHealthyTablets, tabletType, disableUniquenessChecks, maxTPS, maxReplicationLag, useConsistentSnapshot)
 }
 
 // newCloneWorker returns a new SplitCloneWorker object which is used both by
 // the SplitClone and VerticalSplitClone command.
 // TODO(mberlin): Rename SplitCloneWorker to cloneWorker.
-func newCloneWorker(wr *wrangler.Wrangler, cloneType cloneType, cell, keyspace, shard string, online, offline bool, tables, excludeTables []string, chunkCount, minRowsPerChunk, sourceReaderCount, writeQueryMaxRows, writeQueryMaxSize, destinationWriterCount, minHealthyTablets int, tabletType topodatapb.TabletType, disableUniquenessChecks bool, maxTPS, maxReplicationLag int64) (Worker, error) {
+func newCloneWorker(wr *wrangler.Wrangler, cloneType cloneType, cell, keyspace, shard string, online, offline bool, tables, excludeTables []string, chunkCount, minRowsPerChunk, sourceReaderCount, writeQueryMaxRows, writeQueryMaxSize, destinationWriterCount, minHealthyTablets int, tabletType topodatapb.TabletType, disableUniquenessChecks bool, maxTPS, maxReplicationLag int64, useConsistentSnapshot bool) (Worker, error) {
 	if cloneType != horizontalResharding && cloneType != verticalSplit {
 		return nil, fmt.Errorf("unknown cloneType: %v This is a bug. Please report", cloneType)
 	}
@@ -229,6 +232,7 @@ func newCloneWorker(wr *wrangler.Wrangler, cloneType cloneType, cell, keyspace, 
 
 		tableStatusListOnline:  &tableStatusList{},
 		tableStatusListOffline: &tableStatusList{},
+		useConsistentSnapshot:  useConsistentSnapshot,
 	}
 	scw.initializeEventDescriptor()
 	return scw, nil
@@ -512,9 +516,15 @@ func (scw *SplitCloneWorker) run(ctx context.Context) error {
 			time.Sleep(1 * time.Second)
 		}
 
-		// 4a: Take source tablets out of serving for an exact snapshot.
-		if err := scw.findOfflineSourceTablets(ctx); err != nil {
-			return fmt.Errorf("findSourceTablets() failed: %v", err)
+		// 4a: Make sure the sources are producing a stable view of the data
+		if scw.useConsistentSnapshot {
+			if err := scw.findTransactionalSources(ctx); err != nil {
+				return fmt.Errorf("findSourceTablets() failed: %v", err)
+			}
+		} else {
+			if err := scw.findOfflineSourceTablets(ctx); err != nil {
+				return fmt.Errorf("findSourceTablets() failed: %v", err)
+			}
 		}
 		if err := checkDone(ctx); err != nil {
 			return err
@@ -621,6 +631,10 @@ func (scw *SplitCloneWorker) initShardsForHorizontalResharding(ctx context.Conte
 	} else {
 		scw.sourceShards = os.Right
 		scw.destinationShards = os.Left
+	}
+
+	if scw.useConsistentSnapshot && len(scw.sourceShards) > 1 {
+		return fmt.Errorf("cannot use consistent snapshot against multiple source shards")
 	}
 
 	return nil
@@ -780,6 +794,49 @@ func (scw *SplitCloneWorker) findOfflineSourceTablets(ctx context.Context) error
 	return nil
 }
 
+// findOfflineSourceTablets phase:
+// - find one rdonly in the source shard
+// - mark it as 'worker' pointing back to us
+// - get the aliases of all the source tablets
+func (scw *SplitCloneWorker) findTransactionalSources(ctx context.Context) error {
+	scw.setState(WorkerStateFindTargets)
+
+	// find an appropriate tablet in the source shards
+	scw.offlineSourceAliases = make([]*topodatapb.TabletAlias, len(scw.sourceShards))
+	for i, si := range scw.sourceShards {
+		var err error
+		scw.offlineSourceAliases[i], err = FindHealthyTablet(ctx, scw.wr, scw.tsc, scw.cell, si.Keyspace(), si.ShardName(), scw.minHealthyTablets, scw.tabletType)
+		if err != nil {
+			return fmt.Errorf("FindHealthyTablet() failed for %v/%v/%v: %v", scw.cell, si.Keyspace(), si.ShardName(), err)
+		}
+		scw.wr.Logger().Infof("Using tablet %v as source for %v/%v", topoproto.TabletAliasString(scw.offlineSourceAliases[i]), si.Keyspace(), si.ShardName())
+	}
+	scw.setFormattedOfflineSources(scw.offlineSourceAliases)
+
+	// get the tablet info for them, and stop their replication
+	scw.sourceTablets = make([]*topodatapb.Tablet, len(scw.offlineSourceAliases))
+	for i, alias := range scw.offlineSourceAliases {
+		shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
+		ti, err := scw.wr.TopoServer().GetTablet(shortCtx, alias)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("cannot read tablet %v: %v", topoproto.TabletAliasString(alias), err)
+		}
+		scw.sourceTablets[i] = ti.Tablet
+
+		shortCtx, cancel = context.WithTimeout(ctx, *remoteActionsTimeout)
+		err = scw.wr.TabletManagerClient().StopSlave(shortCtx, scw.sourceTablets[i])
+		cancel()
+		if err != nil {
+			return fmt.Errorf("cannot stop replication on tablet %v", topoproto.TabletAliasString(alias))
+		}
+
+		wrangler.RecordStartSlaveAction(scw.cleaner, scw.sourceTablets[i])
+	}
+
+	return nil
+}
+
 // findDestinationMasters finds for each destination shard the current master.
 func (scw *SplitCloneWorker) findDestinationMasters(ctx context.Context) error {
 	scw.setState(WorkerStateFindTargets)
@@ -885,25 +942,33 @@ func mergeOrSingle(readers []ResultReader, td *tabletmanagerdatapb.TableDefiniti
 	return sourceReader, nil
 }
 
-func (scw *SplitCloneWorker) getSourceResultReader(ctx context.Context, td *tabletmanagerdatapb.TableDefinition, state StatusWorkerState, chunk chunk) (ResultReader, error) {
+func (scw *SplitCloneWorker) getSourceResultReader(ctx context.Context, td *tabletmanagerdatapb.TableDefinition, state StatusWorkerState, chunk chunk, txID int64) (ResultReader, error) {
 	sourceReaders := make([]ResultReader, len(scw.sourceShards))
 	for shardIndex, si := range scw.sourceShards {
-		var tp tabletProvider
-		allowMultipleRetries := true
-		if state == WorkerStateCloneOffline {
-			tp = newSingleTabletProvider(ctx, scw.wr.TopoServer(), scw.offlineSourceAliases[shardIndex])
-			// allowMultipleRetries is false to avoid that we'll keep retrying
-			// on the same tablet alias for hours. This guards us against the
-			// situation that an offline tablet gets restarted and serves again.
-			// In that case we cannot use it because its replication is no
-			// longer stopped at the same point as we took it offline initially.
-			allowMultipleRetries = false
+		var sourceResultReader ResultReader
+		var err error
+		if state == WorkerStateCloneOffline && scw.useConsistentSnapshot {
+			// TODO: what is this and why? what should we do here? the tx is on a specific tablet already
+			tp := newShardTabletProvider(scw.tsc, scw.tabletTracker, si.Keyspace(), si.ShardName(), topodatapb.TabletType_RDONLY)
+			sourceResultReader, err = NewTransactionalRestartableResultReader(ctx, scw.wr.Logger(), tp, td, chunk, false, txID)
 		} else {
-			tp = newShardTabletProvider(scw.tsc, scw.tabletTracker, si.Keyspace(), si.ShardName(), scw.tabletType)
-		}
-		sourceResultReader, err := NewRestartableResultReader(ctx, scw.wr.Logger(), tp, td, chunk, allowMultipleRetries)
-		if err != nil {
-			return nil, fmt.Errorf("NewRestartableResultReader for source: %v failed: %v", tp.description(), err)
+			var tp tabletProvider
+			allowMultipleRetries := true
+			if state == WorkerStateCloneOffline {
+				tp = newSingleTabletProvider(ctx, scw.wr.TopoServer(), scw.offlineSourceAliases[shardIndex])
+				// allowMultipleRetries is false to avoid that we'll keep retrying
+				// on the same tablet alias for hours. This guards us against the
+				// situation that an offline tablet gets restarted and serves again.
+				// In that case we cannot use it because its replication is no
+				// longer stopped at the same point as we took it offline initially.
+				allowMultipleRetries = false
+			} else {
+				tp = newShardTabletProvider(scw.tsc, scw.tabletTracker, si.Keyspace(), si.ShardName(), scw.tabletType)
+			}
+			sourceResultReader, err = NewRestartableResultReader(ctx, scw.wr.Logger(), tp, td, chunk, allowMultipleRetries)
+			if err != nil {
+				return nil, fmt.Errorf("NewRestartableResultReader for source: %v failed: %v", tp.description(), err)
+			}
 		}
 		// TODO: We could end up in a situation where some readers have been created but not all. In this situation, we would not close up all readers
 		sourceReaders[shardIndex] = sourceResultReader
@@ -924,14 +989,10 @@ func (scw *SplitCloneWorker) getDestinationResultReader(ctx context.Context, td 
 	return mergeOrSingle(destReaders, td)
 }
 
-func (scw *SplitCloneWorker) cloneAChunk(ctx context.Context, td *tabletmanagerdatapb.TableDefinition, tableIndex int, chunk chunk, wg *sync.WaitGroup, sema *sync2.Semaphore, processError func(string, ...interface{}), state StatusWorkerState, tableStatusList *tableStatusList, keyResolver keyspaceIDResolver, start time.Time, insertChannels []chan string, statsCounters []*stats.CountersWithSingleLabel) {
-	defer wg.Done()
+func (scw *SplitCloneWorker) cloneAChunk(ctx context.Context, td *tabletmanagerdatapb.TableDefinition, tableIndex int, chunk chunk, processError func(string, ...interface{}), state StatusWorkerState, tableStatusList *tableStatusList, keyResolver keyspaceIDResolver, start time.Time, insertChannels []chan string, txID int64, statsCounters []*stats.CountersWithSingleLabel) {
 	errPrefix := fmt.Sprintf("table=%v chunk=%v", td.Name, chunk)
 
 	var err error
-
-	sema.Acquire()
-	defer sema.Release()
 
 	if err := checkDone(ctx); err != nil {
 		processError("%v: Context expired while this thread was waiting for its turn. Context error: %v", errPrefix, err)
@@ -952,7 +1013,7 @@ func (scw *SplitCloneWorker) cloneAChunk(ctx context.Context, td *tabletmanagerd
 
 	// Set up readers for the diff. There will be one reader for every
 	// source and destination shard.
-	sourceReader, err := scw.getSourceResultReader(ctx, td, state, chunk)
+	sourceReader, err := scw.getSourceResultReader(ctx, td, state, chunk, txID)
 	if err != nil {
 		processError("%v NewResultMerger for source tablets failed: %v", errPrefix, err)
 		return
@@ -985,30 +1046,62 @@ func (scw *SplitCloneWorker) cloneAChunk(ctx context.Context, td *tabletmanagerd
 	}
 }
 
-func (scw *SplitCloneWorker) cloneData(ctx context.Context, state StatusWorkerState, sourceSchemaDefinition *tabletmanagerdatapb.SchemaDefinition, wg *sync.WaitGroup, processError func(string, ...interface{}), firstSourceTablet *topodatapb.Tablet, tableStatusList *tableStatusList, start time.Time, statsCounters []*stats.CountersWithSingleLabel, insertChannels []chan string) error {
-	sema := sync2.NewSemaphore(scw.sourceReaderCount, 0)
+type workUnit struct {
+	td       *tabletmanagerdatapb.TableDefinition
+	chunk    chunk
+	threadID int
+	resolver keyspaceIDResolver
+}
+
+func (scw *SplitCloneWorker) startCloningData(ctx context.Context, state StatusWorkerState, sourceSchemaDefinition *tabletmanagerdatapb.SchemaDefinition,
+	processError func(string, ...interface{}), firstSourceTablet *topodatapb.Tablet, tableStatusList *tableStatusList,
+	start time.Time, statsCounters []*stats.CountersWithSingleLabel, insertChannels []chan string) (*sync.WaitGroup, error) {
+	consumers := sync.WaitGroup{}
+
+	workPipeline := make(chan workUnit, 10) // We'll use a small buffer so producers do not run too far ahead of consumers
+	queryService, err := tabletconn.GetDialer()(firstSourceTablet, true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create queryService: %v", err)
+	}
+	defer queryService.Close(ctx)
+
+	txIDs, err := CreateTransactions(ctx, scw.sourceReaderCount, scw.wr, scw.cleaner, queryService, CreateTargetFrom(firstSourceTablet), firstSourceTablet)
+	// Let's start the work consumers
+	for _, txID := range txIDs {
+		consumers.Add(1)
+		go func() {
+			defer consumers.Done()
+			for work := range workPipeline {
+				scw.cloneAChunk(ctx, work.td, work.threadID, work.chunk, processError, state, tableStatusList, work.resolver, start, insertChannels, txID, statsCounters)
+			}
+		}()
+	}
+
+	// And now let's start producing work units
 	for tableIndex, td := range sourceSchemaDefinition.TableDefinitions {
 		td = reorderColumnsPrimaryKeyFirst(td)
 
 		keyResolver, err := scw.createKeyResolver(td)
 		if err != nil {
-			return fmt.Errorf("cannot resolve sharding keys for keyspace %v: %v", scw.destinationKeyspace, err)
+			return nil, fmt.Errorf("cannot resolve sharding keys for keyspace %v: %v", scw.destinationKeyspace, err)
 		}
 
 		// TODO(mberlin): We're going to chunk *all* source shards based on the MIN
 		// and MAX values of the *first* source shard. Is this going to be a problem?
 		chunks, err := generateChunks(ctx, scw.wr, firstSourceTablet, td, scw.chunkCount, scw.minRowsPerChunk)
 		if err != nil {
-			return fmt.Errorf("failed to split table into chunks: %v", err)
+			return nil, fmt.Errorf("failed to split table into chunks: %v", err)
 		}
 		tableStatusList.setThreadCount(tableIndex, len(chunks))
 
 		for _, c := range chunks {
-			wg.Add(1)
-			go scw.cloneAChunk(ctx, td, tableIndex, c, wg, sema, processError, state, tableStatusList, keyResolver, start, insertChannels, statsCounters)
+			workPipeline <- workUnit{td: td, chunk: c, threadID: tableIndex, resolver: keyResolver}
 		}
 	}
-	return nil
+
+	close(workPipeline)
+
+	return &consumers, nil
 }
 
 // copy phase:
@@ -1090,9 +1183,11 @@ func (scw *SplitCloneWorker) clone(ctx context.Context, state StatusWorkerState)
 
 	// Now for each table, read data chunks and send them to all
 	// insertChannels
-	sourceWaitGroup := sync.WaitGroup{}
-	scw.cloneData(ctx, state, sourceSchemaDefinition, &sourceWaitGroup, processError, firstSourceTablet, tableStatusList, start, statsCounters, insertChannels)
-	sourceWaitGroup.Wait()
+	readers, err := scw.startCloningData(ctx, state, sourceSchemaDefinition, processError, firstSourceTablet, tableStatusList, start, statsCounters, insertChannels)
+	if err != nil {
+		return fmt.Errorf("failed to startCloningData : %v", err)
+	}
+	readers.Wait()
 
 	for shardIndex := range scw.destinationShards {
 		close(insertChannels[shardIndex])

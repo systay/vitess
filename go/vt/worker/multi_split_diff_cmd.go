@@ -94,7 +94,7 @@ func commandMultiSplitDiff(wi *Instance, wr *wrangler.Wrangler, subFlags *flag.F
 	minHealthyTablets := subFlags.Int("min_healthy_tablets", defaultMinHealthyRdonlyTablets, "minimum number of healthy tablets before taking out one")
 	parallelDiffsCount := subFlags.Int("parallel_diffs_count", defaultParallelDiffsCount, "number of tables to diff in parallel")
 	waitForFixedTimeRatherThanGtidSet := subFlags.Bool("wait_for_fixed_time_rather_than_gtid_set", false, "wait for 1m when syncing up the destination RDONLY tablet rather than using the GTID set. Use this when the GTID set on the RDONLY is broken. Make sure the RDONLY is not behind in replication when using this flag.")
-	useConsistentSnapshot := subFlags.Bool("use_consistent_snapshot", false, "Instead of pausing replication on the source, uses transactions with consistent snapshot to have a stable view of the data.")
+	useConsistentSnapshot := subFlags.Bool("use_consistent_snapshot", defaultUseConsistentSnapshot, "Instead of pausing replication on the source, uses transactions with consistent snapshot to have a stable view of the data.")
 	if err := subFlags.Parse(args); err != nil {
 		return nil, err
 	}
@@ -233,7 +233,7 @@ func interactiveMultiSplitDiff(ctx context.Context, wi *Instance, wr *wrangler.W
 	waitForFixedTimeRatherThanGtidSetStr := r.FormValue("waitForFixedTimeRatherThanGtidSet")
 	waitForFixedTimeRatherThanGtidSet := waitForFixedTimeRatherThanGtidSetStr == "true"
 	useConsistentSnapshotStr := r.FormValue("useConsistentSnapshot")
-	useConsistentSnapshot := useConsistentSnapshotStr == "true"
+	useConsistentSnapshot, err := strconv.ParseBool(useConsistentSnapshotStr)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("cannot parse minHealthyTablets: %s", err)
 	}

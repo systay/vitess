@@ -554,7 +554,7 @@ func (msdw *MultiSplitDiffWorker) synchronizeSrcAndDestTxState(ctx context.Conte
 
 	// 3. Pause updates on the source and create consistent snapshot connections
 	if msdw.useConsistentSnapshot {
-		connections, pos, err := CreateConsistentTransactions(ctx, source, msdw.wr, msdw.cleaner, msdw.parallelDiffsCount)
+		connections, pos, err := CreateConsistentTableScanners(ctx, source, msdw.wr, msdw.cleaner, msdw.parallelDiffsCount)
 		if err != nil {
 			return fmt.Errorf("failed to create transactional connections %v", err.Error())
 		}
@@ -604,7 +604,7 @@ func (msdw *MultiSplitDiffWorker) synchronizeSrcAndDestTxState(ctx context.Conte
 				return err
 			}
 
-			scanners, _, err := CreateConsistentTransactions(ctx, destTabletInfo, msdw.wr, msdw.cleaner, msdw.parallelDiffsCount)
+			scanners, _, err := CreateConsistentTableScanners(ctx, destTabletInfo, msdw.wr, msdw.cleaner, msdw.parallelDiffsCount)
 			if err != nil {
 				return fmt.Errorf("failed to create transactional destination connections: %v", err)
 			}
