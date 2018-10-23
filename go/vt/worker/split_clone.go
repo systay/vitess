@@ -23,13 +23,13 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"vitess.io/vitess/go/vt/binlog/binlogplayer"
 
 	"golang.org/x/net/context"
 
 	"vitess.io/vitess/go/event"
 	"vitess.io/vitess/go/stats"
 	"vitess.io/vitess/go/sync2"
-	"vitess.io/vitess/go/vt/binlog/binlogplayer"
 	"vitess.io/vitess/go/vt/concurrency"
 	"vitess.io/vitess/go/vt/discovery"
 	"vitess.io/vitess/go/vt/throttler"
@@ -520,6 +520,10 @@ func (scw *SplitCloneWorker) run(ctx context.Context) error {
 		if err := scw.clone(ctx, WorkerStateCloneOffline); err != nil {
 			return fmt.Errorf("offline clone() failed: %v", err)
 		}
+		if err := scw.setUpVReplication(ctx); err != nil {
+			return fmt.Errorf("failed to set up replication: %v", err)
+		}
+
 		d := time.Since(start)
 		if err := checkDone(ctx); err != nil {
 			return err
@@ -915,7 +919,7 @@ func (scw *SplitCloneWorker) getDestinationResultReader(ctx context.Context, td 
 	return mergeOrSingle(destReaders, td)
 }
 
-func (scw *SplitCloneWorker) doTheDiffing(ctx context.Context, td *tabletmanagerdatapb.TableDefinition, tableIndex int, chunk chunk, wg *sync.WaitGroup, sema *sync2.Semaphore, processError func(string, ...interface{}), state StatusWorkerState, tableStatusList *tableStatusList, keyResolver keyspaceIDResolver, start time.Time, insertChannels []chan string, statsCounters []*stats.CountersWithSingleLabel) {
+func (scw *SplitCloneWorker) cloneAChunk(ctx context.Context, td *tabletmanagerdatapb.TableDefinition, tableIndex int, chunk chunk, wg *sync.WaitGroup, sema *sync2.Semaphore, processError func(string, ...interface{}), state StatusWorkerState, tableStatusList *tableStatusList, keyResolver keyspaceIDResolver, start time.Time, insertChannels []chan string, statsCounters []*stats.CountersWithSingleLabel) {
 	defer wg.Done()
 	errPrefix := fmt.Sprintf("table=%v chunk=%v", td.Name, chunk)
 
@@ -972,6 +976,32 @@ func (scw *SplitCloneWorker) doTheDiffing(ctx context.Context, td *tabletmanager
 		processError("%v: RowDiffer2 failed: %v", errPrefix, err)
 		return
 	}
+}
+
+func (scw *SplitCloneWorker) cloneData(ctx context.Context, state StatusWorkerState, sourceSchemaDefinition *tabletmanagerdatapb.SchemaDefinition, wg *sync.WaitGroup, processError func(string, ...interface{}), firstSourceTablet *topodatapb.Tablet, tableStatusList *tableStatusList, start time.Time, statsCounters []*stats.CountersWithSingleLabel, insertChannels []chan string) error {
+	sema := sync2.NewSemaphore(scw.sourceReaderCount, 0)
+	for tableIndex, td := range sourceSchemaDefinition.TableDefinitions {
+		td = reorderColumnsPrimaryKeyFirst(td)
+
+		keyResolver, err := scw.createKeyResolver(td)
+		if err != nil {
+			return fmt.Errorf("cannot resolve sharding keys for keyspace %v: %v", scw.destinationKeyspace, err)
+		}
+
+		// TODO(mberlin): We're going to chunk *all* source shards based on the MIN
+		// and MAX values of the *first* source shard. Is this going to be a problem?
+		chunks, err := generateChunks(ctx, scw.wr, firstSourceTablet, td, scw.chunkCount, scw.minRowsPerChunk)
+		if err != nil {
+			return fmt.Errorf("failed to split table into chunks: %v", err)
+		}
+		tableStatusList.setThreadCount(tableIndex, len(chunks))
+
+		for _, c := range chunks {
+			wg.Add(1)
+			go scw.cloneAChunk(ctx, td, tableIndex, c, wg, sema, processError, state, tableStatusList, keyResolver, start, insertChannels, statsCounters)
+		}
+	}
+	return nil
 }
 
 // copy phase:
@@ -1054,97 +1084,89 @@ func (scw *SplitCloneWorker) clone(ctx context.Context, state StatusWorkerState)
 	// Now for each table, read data chunks and send them to all
 	// insertChannels
 	sourceWaitGroup := sync.WaitGroup{}
-	sema := sync2.NewSemaphore(scw.sourceReaderCount, 0)
-	for tableIndex, td := range sourceSchemaDefinition.TableDefinitions {
-		td = reorderColumnsPrimaryKeyFirst(td)
-
-		keyResolver, err := scw.createKeyResolver(td)
-		if err != nil {
-			processError("cannot resolve sharding keys for keyspace %v: %v", scw.destinationKeyspace, err)
-			break
-		}
-
-		// TODO(mberlin): We're going to chunk *all* source shards based on the MIN
-		// and MAX values of the *first* source shard. Is this going to be a problem?
-		chunks, err := generateChunks(ctx, scw.wr, firstSourceTablet, td, scw.chunkCount, scw.minRowsPerChunk)
-		if err != nil {
-			processError("failed to split table into chunks: %v", err)
-			break
-		}
-		tableStatusList.setThreadCount(tableIndex, len(chunks))
-
-		for _, c := range chunks {
-			sourceWaitGroup.Add(1)
-			go scw.doTheDiffing(ctx, td, tableIndex, c, &sourceWaitGroup, sema, processError, state, tableStatusList, keyResolver, start, insertChannels, statsCounters)
-		}
-	}
+	scw.cloneData(ctx, state, sourceSchemaDefinition, &sourceWaitGroup, processError, firstSourceTablet, tableStatusList, start, statsCounters, insertChannels)
 	sourceWaitGroup.Wait()
 
 	for shardIndex := range scw.destinationShards {
 		close(insertChannels[shardIndex])
 	}
 	destinationWaitGroup.Wait()
-	if firstError != nil {
-		return firstError
+
+	return firstError
+}
+
+func (scw *SplitCloneWorker) setUpVReplication(ctx context.Context) error {
+	wg := sync.WaitGroup{}
+	// Create and populate the vreplication table to give filtered replication
+	// a starting point.
+	queries := make([]string, 0, 4)
+	queries = append(queries, binlogplayer.CreateVReplicationTable()...)
+
+	// get the current position from the sources
+	sourcePositions := make([]string, len(scw.sourceShards))
+	for shardIndex := range scw.sourceShards {
+		shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
+		status, err := scw.wr.TabletManagerClient().SlaveStatus(shortCtx, scw.sourceTablets[shardIndex])
+		cancel()
+		if err != nil {
+			return err
+		}
+		sourcePositions[shardIndex] = status.Position
 	}
 
-	if state == WorkerStateCloneOffline {
-		// Create and populate the vreplication table to give filtered replication
-		// a starting point.
-		queries := make([]string, 0, 4)
-		queries = append(queries, binlogplayer.CreateVReplicationTable()...)
+	cancelableCtx, cancel := context.WithCancel(ctx)
+	rec := concurrency.AllErrorRecorder{}
+	handleError := func(e error) {
+		rec.RecordError(e)
+		cancel()
+	}
 
-		// get the current position from the sources
-		sourcePositions := make([]string, len(scw.sourceShards))
-		for shardIndex := range scw.sourceShards {
-			shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
-			status, err := scw.wr.TabletManagerClient().SlaveStatus(shortCtx, scw.sourceTablets[shardIndex])
-			cancel()
-			if err != nil {
-				return err
+	for _, si := range scw.destinationShards {
+		wg.Add(1)
+		go func(keyspace, shard string, kr *topodatapb.KeyRange) {
+			defer wg.Done()
+			scw.wr.Logger().Infof("Making and populating vreplication table")
+
+			exc := newExecutor(scw.wr, scw.tsc, nil, keyspace, shard, 0)
+			for shardIndex, src := range scw.sourceShards {
+				// Check if any error occurred in any other gorouties:
+				select {
+				case <-cancelableCtx.Done():
+					return // Error somewhere, terminate
+				default:
+				}
+
+				bls := &binlogdatapb.BinlogSource{
+					Keyspace: src.Keyspace(),
+					Shard:    src.ShardName(),
+				}
+				if scw.tables == nil {
+					bls.KeyRange = kr
+				} else {
+					bls.Tables = scw.tables
+				}
+				// TODO(mberlin): Fill in scw.maxReplicationLag once the adapative throttler is enabled by default.
+				qr, err := exc.vreplicationExec(cancelableCtx, binlogplayer.CreateVReplication("SplitClone", bls, sourcePositions[shardIndex], scw.maxTPS, throttler.ReplicationLagModuleDisabled, time.Now().Unix()))
+				if err != nil {
+					handleError(fmt.Errorf("vreplication queries failed: %v", err))
+					cancel()
+					return
+				}
+				if err := scw.wr.SourceShardAdd(cancelableCtx, keyspace, shard, uint32(qr.InsertID), src.Keyspace(), src.ShardName(), src.Shard.KeyRange, scw.tables); err != nil {
+					handleError(fmt.Errorf("could not add source shard: %v", err))
+					break
+				}
 			}
-			sourcePositions[shardIndex] = status.Position
-		}
+			// refreshState will cause the destination to become non-serving because
+			// it's now participating in the resharding workflow.
+			if err := exc.refreshState(ctx); err != nil {
+				handleError(fmt.Errorf("RefreshState failed on tablet %v/%v: %v", keyspace, shard, err))
+			}
+		}(si.Keyspace(), si.ShardName(), si.KeyRange)
+	}
+	wg.Wait()
 
-		for _, si := range scw.destinationShards {
-			destinationWaitGroup.Add(1)
-			go func(keyspace, shard string, kr *topodatapb.KeyRange) {
-				defer destinationWaitGroup.Done()
-				scw.wr.Logger().Infof("Making and populating vreplication table")
-
-				exc := newExecutor(scw.wr, scw.tsc, nil, keyspace, shard, 0)
-				for shardIndex, src := range scw.sourceShards {
-					bls := &binlogdatapb.BinlogSource{
-						Keyspace: src.Keyspace(),
-						Shard:    src.ShardName(),
-					}
-					if scw.tables == nil {
-						bls.KeyRange = kr
-					} else {
-						bls.Tables = scw.tables
-					}
-					// TODO(mberlin): Fill in scw.maxReplicationLag once the adapative
-					//                throttler is enabled by default.
-					qr, err := exc.vreplicationExec(ctx, binlogplayer.CreateVReplication("SplitClone", bls, sourcePositions[shardIndex], scw.maxTPS, throttler.ReplicationLagModuleDisabled, time.Now().Unix()))
-					if err != nil {
-						processError("vreplication queries failed: %v", err)
-						break
-					}
-					if err := scw.wr.SourceShardAdd(ctx, keyspace, shard, uint32(qr.InsertID), src.Keyspace(), src.ShardName(), src.Shard.KeyRange, scw.tables); err != nil {
-						processError("could not add source shard: %v", err)
-						break
-					}
-				}
-				// refreshState will cause the destination to become non-serving because
-				// it's now participating in the resharding workflow.
-				if err := exc.refreshState(ctx); err != nil {
-					processError("RefreshState failed on tablet %v/%v: %v", keyspace, shard, err)
-				}
-			}(si.Keyspace(), si.ShardName(), si.KeyRange)
-		}
-		destinationWaitGroup.Wait()
-	} // clonePhase == offline
-	return firstError
+	return rec.Error()
 }
 
 func (scw *SplitCloneWorker) getSourceSchema(ctx context.Context, tablet *topodatapb.Tablet) (*tabletmanagerdatapb.SchemaDefinition, error) {

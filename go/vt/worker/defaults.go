@@ -54,4 +54,5 @@ const (
 	defaultParallelDiffsCount      = 8
 	defaultMaxTPS                  = throttler.MaxRateModuleDisabled
 	defaultMaxReplicationLag       = throttler.ReplicationLagModuleDisabled
+	defaultUseConsistentSnapshot   = false
 )
