@@ -104,6 +104,9 @@ type SplitCloneWorker struct {
 
 	// populated during WorkerStateFindTargets, read-only after that
 	sourceTablets []*topodatapb.Tablet
+	lastPos       string // contains the GTID position for the source
+	transactions  []int64
+
 	// shardWatchers contains a TopologyWatcher for each source and destination
 	// shard. It updates the list of tablets in the healthcheck if replicas are
 	// added/removed.
@@ -121,15 +124,15 @@ type SplitCloneWorker struct {
 	// Throttlers will be added/removed during WorkerStateClone(Online|Offline).
 	throttlers map[string]*throttler.Throttler
 
-	// offlineSourceAliases has the list of tablets (per source shard) we took
+	// sourceAliases has the list of tablets (per source shard) we took
 	// offline for the WorkerStateCloneOffline phase.
 	// Populated shortly before WorkerStateCloneOffline, read-only after that.
-	offlineSourceAliases []*topodatapb.TabletAlias
+	sourceAliases []*topodatapb.TabletAlias
 
 	// formattedOfflineSourcesMu guards all fields in this group.
 	formattedOfflineSourcesMu sync.Mutex
 	// formattedOfflineSources is a space separated list of
-	// "offlineSourceAliases". It is used by the StatusAs* methods to output the
+	// "sourceAliases". It is used by the StatusAs* methods to output the
 	// used source tablets during the offline clone phase.
 	formattedOfflineSources string
 
@@ -759,20 +762,20 @@ func (scw *SplitCloneWorker) findOfflineSourceTablets(ctx context.Context) error
 	scw.setState(WorkerStateFindTargets)
 
 	// find an appropriate tablet in the source shards
-	scw.offlineSourceAliases = make([]*topodatapb.TabletAlias, len(scw.sourceShards))
+	scw.sourceAliases = make([]*topodatapb.TabletAlias, len(scw.sourceShards))
 	for i, si := range scw.sourceShards {
 		var err error
-		scw.offlineSourceAliases[i], err = FindWorkerTablet(ctx, scw.wr, scw.cleaner, scw.tsc, scw.cell, si.Keyspace(), si.ShardName(), scw.minHealthyTablets, scw.tabletType)
+		scw.sourceAliases[i], err = FindWorkerTablet(ctx, scw.wr, scw.cleaner, scw.tsc, scw.cell, si.Keyspace(), si.ShardName(), scw.minHealthyTablets, scw.tabletType)
 		if err != nil {
 			return fmt.Errorf("FindWorkerTablet() failed for %v/%v/%v: %v", scw.cell, si.Keyspace(), si.ShardName(), err)
 		}
-		scw.wr.Logger().Infof("Using tablet %v as source for %v/%v", topoproto.TabletAliasString(scw.offlineSourceAliases[i]), si.Keyspace(), si.ShardName())
+		scw.wr.Logger().Infof("Using tablet %v as source for %v/%v", topoproto.TabletAliasString(scw.sourceAliases[i]), si.Keyspace(), si.ShardName())
 	}
-	scw.setFormattedOfflineSources(scw.offlineSourceAliases)
+	scw.setFormattedOfflineSources(scw.sourceAliases)
 
 	// get the tablet info for them, and stop their replication
-	scw.sourceTablets = make([]*topodatapb.Tablet, len(scw.offlineSourceAliases))
-	for i, alias := range scw.offlineSourceAliases {
+	scw.sourceTablets = make([]*topodatapb.Tablet, len(scw.sourceAliases))
+	for i, alias := range scw.sourceAliases {
 		shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
 		ti, err := scw.wr.TopoServer().GetTablet(shortCtx, alias)
 		cancel()
@@ -799,30 +802,36 @@ func (scw *SplitCloneWorker) findOfflineSourceTablets(ctx context.Context) error
 func (scw *SplitCloneWorker) findTransactionalSources(ctx context.Context) error {
 	scw.setState(WorkerStateFindTargets)
 
-	// find an appropriate tablet in the source shards
-	scw.offlineSourceAliases = make([]*topodatapb.TabletAlias, len(scw.sourceShards))
-	for i, si := range scw.sourceShards {
-		var err error
-		scw.offlineSourceAliases[i], err = FindHealthyTablet(ctx, scw.wr, scw.tsc, scw.cell, si.Keyspace(), si.ShardName(), scw.minHealthyTablets, scw.tabletType)
-		if err != nil {
-			return fmt.Errorf("FindHealthyTablet() failed for %v/%v/%v: %v", scw.cell, si.Keyspace(), si.ShardName(), err)
-		}
-		scw.wr.Logger().Infof("Using tablet %v as source for %v/%v", topoproto.TabletAliasString(scw.offlineSourceAliases[i]), si.Keyspace(), si.ShardName())
+	if len(scw.sourceShards) > 1 {
+		return fmt.Errorf("consistent snapshot can only be used with a single source shard")
 	}
-	scw.setFormattedOfflineSources(scw.offlineSourceAliases)
+	var err error
 
-	// get the tablet info for them, and stop their replication
-	scw.sourceTablets = make([]*topodatapb.Tablet, len(scw.offlineSourceAliases))
-	for i, alias := range scw.offlineSourceAliases {
-		shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
-		ti, err := scw.wr.TopoServer().GetTablet(shortCtx, alias)
-		cancel()
-		if err != nil {
-			return fmt.Errorf("cannot read tablet %v: %v", topoproto.TabletAliasString(alias), err)
-		}
-		scw.sourceTablets[i] = ti.Tablet
+	// find an appropriate tablet in the source shard
+	si := scw.sourceShards[0]
+	scw.sourceAliases = make([]*topodatapb.TabletAlias, 1)
+	scw.sourceAliases[0], err = FindHealthyTablet(ctx, scw.wr, scw.tsc, scw.cell, si.Keyspace(), si.ShardName(), scw.minHealthyTablets, scw.tabletType)
+	if err != nil {
+		return fmt.Errorf("FindHealthyTablet() failed for %v/%v/%v: %v", scw.cell, si.Keyspace(), si.ShardName(), err)
 	}
+	scw.wr.Logger().Infof("Using tablet %v as source for %v/%v", topoproto.TabletAliasString(scw.sourceAliases[0]), si.Keyspace(), si.ShardName())
+	scw.setFormattedOfflineSources(scw.sourceAliases)
 
+	// get the tablet info
+	scw.sourceTablets = make([]*topodatapb.Tablet, 1)
+	shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
+	ti, err := scw.wr.TopoServer().GetTablet(shortCtx, scw.sourceAliases[0])
+	cancel()
+	if err != nil {
+		return fmt.Errorf("cannot read tablet %v: %v", topoproto.TabletAliasString(scw.sourceAliases[0]), err)
+	}
+	scw.sourceTablets[0] = ti.Tablet
+
+	// stop replication and create transactions to work on
+	txs, gtid, err := CreateConsistentTransactions(ctx, ti, scw.wr, scw.cleaner, scw.sourceReaderCount)
+	scw.wr.Logger().Infof("created %v transactions", len(txs))
+	scw.lastPos = gtid
+	scw.transactions = txs
 	return nil
 }
 
@@ -910,7 +919,7 @@ func (scw *SplitCloneWorker) getCounters(state StatusWorkerState) ([]*stats.Coun
 func (scw *SplitCloneWorker) startExecutor(ctx context.Context, wg *sync.WaitGroup, keyspace, shard string, insertChannel chan string, threadID int, processError func(string, ...interface{})) {
 	defer wg.Done()
 	t := scw.getThrottler(keyspace, shard)
-	defer t.ThreadFinished(threadID)
+	//defer t.ThreadFinished(threadID)
 
 	executor := newExecutor(scw.wr, scw.tsc, t, keyspace, shard, threadID)
 	if err := executor.fetchLoop(ctx, insertChannel); err != nil {
@@ -937,13 +946,16 @@ func (scw *SplitCloneWorker) getSourceResultReader(ctx context.Context, td *tabl
 		var sourceResultReader ResultReader
 		var err error
 		if state == WorkerStateCloneOffline && scw.useConsistentSnapshot {
+			if txID < 1 {
+				return nil, fmt.Errorf("tried using consistent snapshot without a valid transaction")
+			}
 			tp := newShardTabletProvider(scw.tsc, scw.tabletTracker, si.Keyspace(), si.ShardName(), scw.tabletType)
 			sourceResultReader, err = NewTransactionalRestartableResultReader(ctx, scw.wr.Logger(), tp, td, chunk, false, txID)
 		} else {
 			var tp tabletProvider
 			allowMultipleRetries := true
 			if state == WorkerStateCloneOffline {
-				tp = newSingleTabletProvider(ctx, scw.wr.TopoServer(), scw.offlineSourceAliases[shardIndex])
+				tp = newSingleTabletProvider(ctx, scw.wr.TopoServer(), scw.sourceAliases[shardIndex])
 				// allowMultipleRetries is false to avoid that we'll keep retrying
 				// on the same tablet alias for hours. This guards us against the
 				// situation that an offline tablet gets restarted and serves again.
@@ -1053,9 +1065,15 @@ func (scw *SplitCloneWorker) startCloningData(ctx context.Context, state StatusW
 	}
 	defer queryService.Close(ctx)
 
-	txIDs, err := CreateTransactions(ctx, scw.sourceReaderCount, scw.wr, scw.cleaner, queryService, CreateTargetFrom(firstSourceTablet), firstSourceTablet)
 	// Let's start the work consumers
-	for _, txID := range txIDs {
+	for i := 0; i < scw.sourceReaderCount; i++ {
+		var txID int64
+		if scw.useConsistentSnapshot && state == WorkerStateCloneOffline {
+			txID = scw.transactions[i]
+		} else {
+			txID = -1
+		}
+
 		consumers.Add(1)
 		go func() {
 			defer consumers.Done()

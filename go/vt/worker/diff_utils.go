@@ -648,10 +648,10 @@ func (rd *RowDiffer) Go(log logutil.Logger) (dr DiffReport, err error) {
 	}
 }
 
-// CreateTransactions returns an array of transactions that all share the same view of the data.
+// createTransactions returns an array of transactions that all share the same view of the data.
 // It will check that no new transactions have been seen between the creation of the underlying transactions,
 // to guarantee that all TransactionalTableScanner are pointing to the same point
-func CreateTransactions(ctx context.Context, numberOfScanners int, wr *wrangler.Wrangler, cleaner *wrangler.Cleaner, queryService queryservice.QueryService, target *query.Target, tabletInfo *topodatapb.Tablet) ([]int64, error) {
+func createTransactions(ctx context.Context, numberOfScanners int, wr *wrangler.Wrangler, cleaner *wrangler.Cleaner, queryService queryservice.QueryService, target *query.Target, tabletInfo *topodatapb.Tablet) ([]int64, error) {
 	scanners := make([]int64, numberOfScanners)
 	for i := 0; i < numberOfScanners; i++ {
 
@@ -761,7 +761,7 @@ func CreateConsistentTransactions(ctx context.Context, tablet *topo.TabletInfo, 
 	// Create transactions
 	queryService, err := tabletconn.GetDialer()(tablet.Tablet, true)
 	defer queryService.Close(ctx)
-	connections, err := CreateTransactions(ctx, numberOfScanners, wr, cleaner, queryService, target, tablet.Tablet)
+	connections, err := createTransactions(ctx, numberOfScanners, wr, cleaner, queryService, target, tablet.Tablet)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to create transactions on %v: %v", topoproto.TabletAliasString(tablet.Tablet.Alias), err)
 	}
