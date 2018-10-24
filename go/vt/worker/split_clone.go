@@ -1212,16 +1212,20 @@ func (scw *SplitCloneWorker) setUpVReplication(ctx context.Context) error {
 
 	// get the current position from the sources
 	sourcePositions := make([]string, len(scw.sourceShards))
-	for shardIndex := range scw.sourceShards {
-		shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
-		status, err := scw.wr.TabletManagerClient().SlaveStatus(shortCtx, scw.sourceTablets[shardIndex])
-		cancel()
-		if err != nil {
-			return err
-		}
-		sourcePositions[shardIndex] = status.Position
-	}
 
+	if scw.useConsistentSnapshot {
+		sourcePositions[0] = scw.lastPos
+	} else {
+		for shardIndex := range scw.sourceShards {
+			shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
+			status, err := scw.wr.TabletManagerClient().SlaveStatus(shortCtx, scw.sourceTablets[shardIndex])
+			cancel()
+			if err != nil {
+				return err
+			}
+			sourcePositions[shardIndex] = status.Position
+		}
+	}
 	cancelableCtx, cancel := context.WithCancel(ctx)
 	rec := concurrency.AllErrorRecorder{}
 	handleError := func(e error) {
