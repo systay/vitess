@@ -33,7 +33,7 @@ import tablet
 from mysql_flavor import mysql_flavor
 from protocols_flavor import protocols_flavor
 from utils import TestError
-from vtproto.tabletmanagerdata_pb2 import LockTablesRequest, UnlockTablesRequest
+from vtproto.tabletmanagerdata_pb2 import LockTablesRequest, UnlockTablesRequest, StopSlaveRequest, MasterPositionRequest, StartSlaveUntilAfterRequest
 
 from vtproto import topodata_pb2
 
@@ -866,8 +866,9 @@ def _check_data_on_replica(count, msg):
         timeout = utils.wait_step(msg, timeout)
 
 
-class TestLockTables(unittest.TestCase):
-    """This tests the locking functionality by running rpc calls against the tabletmanager"""
+class TestServiceTestOfTabletManager(unittest.TestCase):
+    """This tests the locking functionality by running rpc calls against the tabletmanager,
+    in contrast to testing the tabletmanager through the vtcl"""
 
     def setUp(self):
         for t in tablet_62044, tablet_62344:
@@ -878,6 +879,8 @@ class TestLockTables(unittest.TestCase):
         utils.run_vtctl(['InitShardMaster', '-force', 'test_keyspace/0',
                          tablet_62044.tablet_alias])
         tablet_62044.mquery('vt_test_keyspace', self._create_vt_insert_test)
+        for t in [tablet_62044, tablet_62344]:
+            t.set_semi_sync_enabled(master=False, slave=False)
 
     def tearDown(self):
         for t in tablet_62044, tablet_62344:
@@ -914,6 +917,43 @@ class TestLockTables(unittest.TestCase):
         tablet_manager.UnlockTables(UnlockTablesRequest())
         _check_data_on_replica(2, "after unlocking the replica, we should see these updates")
 
+    def test_start_slave_until_after(self):
+        master = tablet_62044
+        replica = tablet_62344
+        replica.start_vttablet()
+        master.start_vttablet()
+
+        # first we stop replication to the replica, so we can move forward step by step.
+        replica_tablet_manager = replica.tablet_manager()
+        replica_tablet_manager.StopSlave(StopSlaveRequest())
+
+        master_tablet_manager = master.tablet_manager()
+        _write_data_to_master()
+        pos1 = master_tablet_manager.MasterPosition(MasterPositionRequest())
+
+        _write_data_to_master()
+        pos2 = master_tablet_manager.MasterPosition(MasterPositionRequest())
+
+        _write_data_to_master()
+        pos3 = master_tablet_manager.MasterPosition(MasterPositionRequest())
+
+        # Now, we'll resume stepwise position by position and make sure that we see the expected data
+        _check_data_on_replica(0, "no data has yet reached the replica")
+
+        # timeout is given in nanoseconds. we want to wait no more than 10 seconds
+        timeout = int(10*1e9)
+
+        replica_tablet_manager.StartSlaveUntilAfter(
+            StartSlaveUntilAfterRequest(position=pos1.position, wait_timeout=timeout))
+        _check_data_on_replica(1, "first row is now visible")
+
+        replica_tablet_manager.StartSlaveUntilAfter(
+            StartSlaveUntilAfterRequest(position=pos2.position, wait_timeout=timeout))
+        _check_data_on_replica(2, "second row is now visible")
+
+        replica_tablet_manager.StartSlaveUntilAfter(
+            StartSlaveUntilAfterRequest(position=pos3.position, wait_timeout=timeout))
+        _check_data_on_replica(3, "third row is now visible")
 
 if __name__ == '__main__':
   utils.main()
