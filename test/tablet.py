@@ -639,10 +639,10 @@ class Tablet(object):
             break
           else:
             logging.debug(
-                '  vttablet %s in state %s != %s', self.tablet_alias, s,
+                '  vttablet %s in state: %s, expected: %s', self.tablet_alias, s,
                 expected)
       timeout = utils.wait_step(
-          'waiting for %s state %s (last seen state: %s)' %
+          '%s state %s (last seen state: %s)' %
           (self.tablet_alias, expected, last_seen_state),
           timeout, sleep_time=0.1)
 

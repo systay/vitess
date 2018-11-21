@@ -109,8 +109,7 @@ func (agent *ActionAgent) UnlockTables(ctx context.Context) error {
 	defer agent.mutex.Unlock()
 
 	if agent._lockTablesConnection == nil {
-		// tables are already unlocked, so there is nothing to do
-		return nil
+		return fmt.Errorf("tables were not locked")
 	}
 
 	return agent.unlockTablesHoldingMutex()

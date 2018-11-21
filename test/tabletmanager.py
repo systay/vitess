@@ -32,8 +32,6 @@ import utils
 import tablet
 from mysql_flavor import mysql_flavor
 from protocols_flavor import protocols_flavor
-from utils import TestError
-from vtproto.tabletmanagerdata_pb2 import LockTablesRequest, UnlockTablesRequest, StopSlaveRequest, MasterPositionRequest, StartSlaveUntilAfterRequest
 
 from vtproto import topodata_pb2
 
@@ -840,120 +838,6 @@ class TestTabletManager(unittest.TestCase):
     # Cleanup.
     tablet_62344.kill_vttablet()
 
-
-
-def _write_data_to_master():
-    """Write a single row to the master"""
-    tablet_62044.mquery('vt_test_keyspace', "insert into vt_insert_test (msg) values ('test')", write=True)
-
-
-def _check_data_on_replica(count, msg):
-    """Check that the specified tablet has the expected number of rows."""
-    timeout = 10
-    while True:
-        try:
-            result = tablet_62344.mquery(
-                'vt_test_keyspace', 'select count(*) from vt_insert_test')
-            if result[0][0] == count:
-                break
-            else:
-                logging.debug(result[0][0])
-        except MySQLdb.DatabaseError:
-            # ignore exceptions, we'll just timeout (the tablet creation
-            # can take some time to replicate, and we get a 'table vt_insert_test
-            # does not exist exception in some rare cases)
-            logging.exception('exception waiting for data to replicate')
-        timeout = utils.wait_step(msg, timeout)
-
-
-class TestServiceTestOfTabletManager(unittest.TestCase):
-    """This tests the locking functionality by running rpc calls against the tabletmanager,
-    in contrast to testing the tabletmanager through the vtcl"""
-
-    def setUp(self):
-        for t in tablet_62044, tablet_62344:
-            t.create_db('vt_test_keyspace')
-
-        tablet_62044.init_tablet('replica', 'test_keyspace', '0', start=True)
-        tablet_62344.init_tablet('replica', 'test_keyspace', '0', start=True)
-        utils.run_vtctl(['InitShardMaster', '-force', 'test_keyspace/0',
-                         tablet_62044.tablet_alias])
-        tablet_62044.mquery('vt_test_keyspace', self._create_vt_insert_test)
-        for t in [tablet_62044, tablet_62344]:
-            t.set_semi_sync_enabled(master=False, slave=False)
-
-    def tearDown(self):
-        for t in tablet_62044, tablet_62344:
-            t.kill_vttablet()
-
-        tablet.Tablet.check_vttablet_count()
-        environment.topo_server().wipe()
-        for t in [tablet_62044, tablet_62344]:
-            t.reset_replication()
-            t.set_semi_sync_enabled(master=False, slave=False)
-            t.clean_dbs()
-
-    _create_vt_insert_test = '''create table vt_insert_test (
-  id bigint auto_increment,
-  msg varchar(64),
-  primary key (id)
-  ) Engine=InnoDB'''
-
-    def test_lock_and_unlock(self):
-        # first make sure that our writes to the master make it to the replica
-        _write_data_to_master()
-        _check_data_on_replica(1, "replica getting the data")
-
-        # now lock the replica
-        tablet_manager = tablet_62344.tablet_manager()
-        tablet_manager.LockTables(LockTablesRequest())
-
-        # make sure that writing to the master does not show up on the replica while locked
-        _write_data_to_master()
-        with self.assertRaises(TestError):
-            _check_data_on_replica(2, "the replica should not see these updates")
-
-        # finally, make sure that unlocking the replica leads to the previous write showing up
-        tablet_manager.UnlockTables(UnlockTablesRequest())
-        _check_data_on_replica(2, "after unlocking the replica, we should see these updates")
-
-    def test_start_slave_until_after(self):
-        master = tablet_62044
-        replica = tablet_62344
-        replica.start_vttablet()
-        master.start_vttablet()
-
-        # first we stop replication to the replica, so we can move forward step by step.
-        replica_tablet_manager = replica.tablet_manager()
-        replica_tablet_manager.StopSlave(StopSlaveRequest())
-
-        master_tablet_manager = master.tablet_manager()
-        _write_data_to_master()
-        pos1 = master_tablet_manager.MasterPosition(MasterPositionRequest())
-
-        _write_data_to_master()
-        pos2 = master_tablet_manager.MasterPosition(MasterPositionRequest())
-
-        _write_data_to_master()
-        pos3 = master_tablet_manager.MasterPosition(MasterPositionRequest())
-
-        # Now, we'll resume stepwise position by position and make sure that we see the expected data
-        _check_data_on_replica(0, "no data has yet reached the replica")
-
-        # timeout is given in nanoseconds. we want to wait no more than 10 seconds
-        timeout = int(10*1e9)
-
-        replica_tablet_manager.StartSlaveUntilAfter(
-            StartSlaveUntilAfterRequest(position=pos1.position, wait_timeout=timeout))
-        _check_data_on_replica(1, "first row is now visible")
-
-        replica_tablet_manager.StartSlaveUntilAfter(
-            StartSlaveUntilAfterRequest(position=pos2.position, wait_timeout=timeout))
-        _check_data_on_replica(2, "second row is now visible")
-
-        replica_tablet_manager.StartSlaveUntilAfter(
-            StartSlaveUntilAfterRequest(position=pos3.position, wait_timeout=timeout))
-        _check_data_on_replica(3, "third row is now visible")
 
 if __name__ == '__main__':
   utils.main()
