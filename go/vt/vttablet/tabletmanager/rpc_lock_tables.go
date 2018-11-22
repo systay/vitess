@@ -18,6 +18,7 @@ package tabletmanager
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"strings"
 	"time"
@@ -28,6 +29,10 @@ import (
 	"vitess.io/vitess/go/sqlescape"
 
 	"golang.org/x/net/context"
+)
+
+var (
+	lockTablesTimeout = flag.Duration("lock_tables_timeout", 1*time.Minute, "How long to keep the table locked before timing out")
 )
 
 // LockTables will lock all tables with read locks, effectively pausing replication while the lock is held (idempotent)
@@ -59,7 +64,7 @@ func (agent *ActionAgent) LockTables(ctx context.Context) error {
 	glog.Infof("[%v] Tables locked", conn.ConnectionID)
 
 	agent._lockTablesConnection = conn
-	agent._lockTablesTimer = time.AfterFunc(time.Minute, func() {
+	agent._lockTablesTimer = time.AfterFunc(*lockTablesTimeout, func() {
 		// Here we'll sleep until the timeout time has elapsed.
 		// If the table locks have not been released yet, we'll release them here
 		agent.mutex.Lock()

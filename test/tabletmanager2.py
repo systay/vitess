@@ -24,6 +24,7 @@ import os
 import environment
 import tablet
 import utils
+import time
 from utils import TestError
 from vtproto.tabletmanagerdata_pb2 import LockTablesRequest, UnlockTablesRequest, StopSlaveRequest, \
     MasterPositionRequest, StartSlaveUntilAfterRequest
@@ -120,15 +121,13 @@ class TestServiceTestOfTabletManager(unittest.TestCase):
 
     def _check_data_on_replica(self, count, msg):
         """Check that the specified tablet has the expected number of rows."""
-        timeout = 10
+        timeout = 3
         while True:
             try:
                 result = self.replica.mquery(
                     'vt_test_keyspace', 'select count(*) from vt_insert_test')
                 if result[0][0] == count:
                     break
-                else:
-                    logging.debug(result[0][0])
             except MySQLdb.DatabaseError:
                 # ignore exceptions, we'll just timeout (the tablet creation
                 # can take some time to replicate, and we get a 'table vt_insert_test
@@ -198,6 +197,31 @@ class TestServiceTestOfTabletManager(unittest.TestCase):
         replica_tablet_manager.StartSlaveUntilAfter(
             StartSlaveUntilAfterRequest(position=pos3.position, wait_timeout=timeout))
         self._check_data_on_replica(3, "third row is now visible")
+
+    def test_lock_and_timeout(self):
+        """Test that the lock times out and updates can be seen even though nothing is unlocked"""
+
+        # first make sure that our writes to the master make it to the replica
+        self._write_data_to_master()
+        self._check_data_on_replica(1, "replica getting the data")
+
+        # now lock the replica
+        tablet_manager = self.replica.tablet_manager()
+        tablet_manager.LockTables(LockTablesRequest())
+
+        # make sure that writing to the master does not show up on the replica while locked
+        self._write_data_to_master()
+        with self.assertRaises(TestError):
+            self._check_data_on_replica(2, "the replica should not see these updates")
+
+        # the tests sets the lock timeout to 5 seconds, so sleeping 10 should be safe
+        time.sleep(10)
+
+        self._check_data_on_replica(2, "the replica should now see these updates")
+
+        # finally, trying to unlock should clearly tell us we did not have the lock
+        with self.assertRaises(Exception):
+            tablet_manager.UnlockTables(UnlockTablesRequest())
 
 
 if __name__ == '__main__':
