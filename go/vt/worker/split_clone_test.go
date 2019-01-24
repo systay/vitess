@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -27,7 +28,6 @@ import (
 	"time"
 
 	"golang.org/x/net/context"
-
 	"vitess.io/vitess/go/mysql"
 	"vitess.io/vitess/go/mysql/fakesqldb"
 	"vitess.io/vitess/go/sqltypes"
@@ -1096,3 +1096,38 @@ func verifyOfflineCounters(inserts, updates, deletes, equal int64) error {
 	}
 	return rec.Error()
 }
+
+func TestFindLeaks(t *testing.T) {
+
+	type Test struct {
+		name string
+		f    func(*testing.T)
+	}
+
+	tests := [...]Test{
+		{name: "TestSplitCloneV2_Offline", f: TestSplitCloneV2_Offline},
+		{name: "TestSplitCloneV2_Offline_HighChunkCount", f: TestSplitCloneV2_Offline_HighChunkCount},
+		{name: "TestSplitCloneV2_Offline_RestartStreamingQuery", f: TestSplitCloneV2_Offline_RestartStreamingQuery},
+		{name: "TestSplitCloneV2_Offline_FailOverStreamingQuery_NotAllowed", f: TestSplitCloneV2_Offline_FailOverStreamingQuery_NotAllowed},
+		{name: "TestSplitCloneV2_Online_FailOverStreamingQuery", f: TestSplitCloneV2_Online_FailOverStreamingQuery},
+		{name: "TestSplitCloneV2_Online_TabletsUnavailableDuringRestart", f: TestSplitCloneV2_Online_TabletsUnavailableDuringRestart},
+		{name: "TestSplitCloneV2_Online", f: TestSplitCloneV2_Online},
+		{name: "TestSplitCloneV2_Online_Offline", f: TestSplitCloneV2_Online_Offline},
+		{name: "TestSplitCloneV2_Offline_Reconciliation", f: TestSplitCloneV2_Offline_Reconciliation},
+		{name: "TestSplitCloneV2_Throttled", f: TestSplitCloneV2_Throttled},
+		{name: "TestSplitCloneV2_RetryDueToReadonly", f: TestSplitCloneV2_RetryDueToReadonly},
+		{name: "TestSplitCloneV2_RetryDueToReparent", f: TestSplitCloneV2_RetryDueToReparent},
+		{name: "TestSplitCloneV2_NoMasterAvailable", f: TestSplitCloneV2_NoMasterAvailable},
+		{name: "TestSplitCloneV3", f: TestSplitCloneV3},
+	}
+
+	for _, test := range tests {
+		before := runtime.NumGoroutine()
+
+		t.Run(test.name, test.f)
+
+		now := runtime.NumGoroutine()
+		fmt.Printf("number of goroutines before starting test %d, and after %d. The delta is %d\n", before, now, now - before)
+	}
+}
+
