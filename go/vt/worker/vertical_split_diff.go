@@ -69,7 +69,7 @@ type VerticalSplitDiffWorker struct {
 }
 
 // NewVerticalSplitDiffWorker returns a new VerticalSplitDiffWorker object.
-func NewVerticalSplitDiffWorker(wr *wrangler.Wrangler, cell, keyspace, shard string, minHealthyRdonlyTablets, parallelDiffsCount int, destintationTabletType topodatapb.TabletType) Worker {
+func NewVerticalSplitDiffWorker(wr *wrangler.Wrangler, cell, keyspace, shard string, minHealthyRdonlyTablets, parallelDiffsCount int, destinationTabletType topodatapb.TabletType) Worker {
 	return &VerticalSplitDiffWorker{
 		StatusWorker:            NewStatusWorker(),
 		wr:                      wr,
@@ -77,7 +77,7 @@ func NewVerticalSplitDiffWorker(wr *wrangler.Wrangler, cell, keyspace, shard str
 		keyspace:                keyspace,
 		shard:                   shard,
 		minHealthyRdonlyTablets: minHealthyRdonlyTablets,
-		destinationTabletType:   destintationTabletType,
+		destinationTabletType:   destinationTabletType,
 		parallelDiffsCount:      parallelDiffsCount,
 		cleaner:                 &wrangler.Cleaner{},
 	}
@@ -159,6 +159,7 @@ func (vsdw *VerticalSplitDiffWorker) run(ctx context.Context) error {
 
 	// third phase: synchronize replication
 	differ := NewPausedReplicationDiffer(vsdw.wr.Logger())
+	vsdw.SetState(WorkerStateSyncReplication)
 	if err := differ.StabilizeSourceAndDestination(ctx, vsdw.wr.TopoServer(), vsdw.wr.TabletManagerClient(), vsdw.shardInfo, vsdw.sourceAlias, vsdw.destinationAlias); err != nil {
 		return vterrors.Wrap(err, "synchronizeReplication() failed")
 	}
@@ -167,7 +168,8 @@ func (vsdw *VerticalSplitDiffWorker) run(ctx context.Context) error {
 	}
 
 	// fourth phase: diff
-	if err := vsdw.diff(ctx); err != nil {
+	vsdw.SetState(WorkerStateDiff)
+	if err := differ.Diff(ctx, vsdw.wr, vsdw.sourceAlias, vsdw.destinationAlias, vsdw.shardInfo, vsdw.markAsWillFail, vsdw.parallelDiffsCount); err != nil {
 		return vterrors.Wrap(err, "diff() failed")
 	}
 	if err := checkDone(ctx); err != nil {
@@ -244,114 +246,6 @@ func (vsdw *VerticalSplitDiffWorker) findTargets(ctx context.Context) error {
 	return nil
 }
 
-// diff phase: will create a list of messages regarding the diff.
-// - get the schema on all tablets
-// - if some table schema mismatches, record them (use existing schema diff tools).
-// - for each table in destination, run a diff pipeline.
-
-func (vsdw *VerticalSplitDiffWorker) diff(ctx context.Context) error {
-	vsdw.SetState(WorkerStateDiff)
-
-	vsdw.wr.Logger().Infof("Gathering schema information...")
-	wg := sync.WaitGroup{}
-	rec := &concurrency.AllErrorRecorder{}
-	wg.Add(1)
-	go func() {
-		var err error
-		shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
-		vsdw.destinationSchemaDefinition, err = vsdw.wr.GetSchema(
-			shortCtx, vsdw.destinationAlias, vsdw.shardInfo.SourceShards[0].Tables, nil /* excludeTables */, false /* includeViews */)
-		cancel()
-		if err != nil {
-			vsdw.markAsWillFail(rec, err)
-		}
-		vsdw.wr.Logger().Infof("Got schema from destination %v", topoproto.TabletAliasString(vsdw.destinationAlias))
-		wg.Done()
-	}()
-	wg.Add(1)
-	go func() {
-		var err error
-		shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
-		vsdw.sourceSchemaDefinition, err = vsdw.wr.GetSchema(
-			shortCtx, vsdw.sourceAlias, vsdw.shardInfo.SourceShards[0].Tables, nil /* excludeTables */, false /* includeViews */)
-		cancel()
-		if err != nil {
-			vsdw.markAsWillFail(rec, err)
-		}
-		vsdw.wr.Logger().Infof("Got schema from source %v", topoproto.TabletAliasString(vsdw.sourceAlias))
-		wg.Done()
-	}()
-	wg.Wait()
-	if rec.HasErrors() {
-		return rec.Error()
-	}
-
-	// Check the schema
-	vsdw.wr.Logger().Infof("Diffing the schema...")
-	rec = &concurrency.AllErrorRecorder{}
-	tmutils.DiffSchema("destination", vsdw.destinationSchemaDefinition, "source", vsdw.sourceSchemaDefinition, rec)
-	if rec.HasErrors() {
-		vsdw.wr.Logger().Warningf("Different schemas: %v", rec.Error())
-	} else {
-		vsdw.wr.Logger().Infof("Schema match, good.")
-	}
-
-	// run the diffs, 8 at a time
-	vsdw.wr.Logger().Infof("Running the diffs...")
-	sem := sync2.NewSemaphore(vsdw.parallelDiffsCount, 0)
-	for _, tableDefinition := range vsdw.destinationSchemaDefinition.TableDefinitions {
-		wg.Add(1)
-		go func(tableDefinition *tabletmanagerdatapb.TableDefinition) {
-			defer wg.Done()
-			sem.Acquire()
-			defer sem.Release()
-
-			vsdw.wr.Logger().Infof("Starting the diff on table %v", tableDefinition.Name)
-			sourceQueryResultReader, err := TableScan(ctx, vsdw.wr.Logger(), vsdw.wr.TopoServer(), vsdw.sourceAlias, tableDefinition)
-			if err != nil {
-				newErr := vterrors.Wrap(err, "TableScan(source) failed")
-				vsdw.markAsWillFail(rec, newErr)
-				vsdw.wr.Logger().Error(newErr)
-				return
-			}
-			defer sourceQueryResultReader.Close(ctx)
-
-			destinationQueryResultReader, err := TableScan(ctx, vsdw.wr.Logger(), vsdw.wr.TopoServer(), vsdw.destinationAlias, tableDefinition)
-			if err != nil {
-				newErr := vterrors.Wrap(err, "TableScan(destination) failed")
-				vsdw.markAsWillFail(rec, newErr)
-				vsdw.wr.Logger().Error(newErr)
-				return
-			}
-			defer destinationQueryResultReader.Close(ctx)
-
-			differ, err := NewRowDiffer(sourceQueryResultReader, destinationQueryResultReader, tableDefinition)
-			if err != nil {
-				newErr := vterrors.Wrap(err, "NewRowDiffer() failed")
-				vsdw.markAsWillFail(rec, newErr)
-				vsdw.wr.Logger().Error(newErr)
-				return
-			}
-
-			report, err := differ.Go(vsdw.wr.Logger())
-			if err != nil {
-				vsdw.wr.Logger().Errorf2(err, "Differ.Go failed")
-			} else {
-				if report.HasDifferences() {
-					err := fmt.Errorf("table %v has differences: %v", tableDefinition.Name, report.String())
-					vsdw.markAsWillFail(rec, err)
-					vsdw.wr.Logger().Error(err)
-				} else {
-					vsdw.wr.Logger().Infof("Table %v checks out (%v rows processed, %v qps)", tableDefinition.Name, report.processedRows, report.processingQPS)
-				}
-			}
-		}(tableDefinition)
-	}
-	wg.Wait()
-
-	return rec.Error()
-}
-
 // markAsWillFail records the error and changes the state of the worker to reflect this
 func (vsdw *VerticalSplitDiffWorker) markAsWillFail(er concurrency.ErrorRecorder, err error) {
 	er.RecordError(err)
@@ -365,6 +259,14 @@ type Differ interface {
 		shardInfo *topo.ShardInfo,
 		sourceAlias *topodatapb.TabletAlias,
 		destinationAlias *topodatapb.TabletAlias) error
+
+	Diff(ctx context.Context,
+		wr *wrangler.Wrangler,
+		sourceAlias *topodatapb.TabletAlias,
+		destinationAlias *topodatapb.TabletAlias,
+		shardInfo *topo.ShardInfo,
+		markAsWillFail func(rec concurrency.ErrorRecorder, err error),
+		parallelDiffsCount int) error
 }
 
 type PausedReplicationDiffer struct {
@@ -429,7 +331,7 @@ func (prd *PausedReplicationDiffer) StabilizeSourceAndDestination(ctx context.Co
 	}
 	qr := sqltypes.Proto3ToResult(p3qr)
 	if len(qr.Rows) != 1 || len(qr.Rows[0]) != 1 {
-		return fmt.Errorf("Unexpected result while reading position: %v", qr)
+		return fmt.Errorf("unexpected result while reading position: %v", qr)
 	}
 	vreplicationPos := qr.Rows[0][0].ToString()
 
@@ -493,4 +395,119 @@ func (prd *PausedReplicationDiffer) StabilizeSourceAndDestination(ctx context.Co
 	}
 
 	return nil
+}
+
+// diff phase: will create a list of messages regarding the diff.
+// - get the schema on all tablets
+// - if some table schema mismatches, record them (use existing schema diff tools).
+// - for each table in destination, run a diff pipeline.
+func (prd *PausedReplicationDiffer) Diff(ctx context.Context,
+	wr *wrangler.Wrangler,
+	sourceAlias *topodatapb.TabletAlias,
+	destinationAlias *topodatapb.TabletAlias,
+	shardInfo *topo.ShardInfo,
+	markAsWillFail func(rec concurrency.ErrorRecorder, err error),
+	parallelDiffsCount int) error {
+	prd.logger.Infof("Gathering schema information...")
+	wg := sync.WaitGroup{}
+	rec := &concurrency.AllErrorRecorder{}
+
+	var destinationSchemaDefinition *tabletmanagerdatapb.SchemaDefinition
+	var sourceSchemaDefinition *tabletmanagerdatapb.SchemaDefinition
+
+	wg.Add(1)
+	go func() {
+		var err error
+		shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
+		destinationSchemaDefinition, err = wr.GetSchema(
+			shortCtx, destinationAlias, shardInfo.SourceShards[0].Tables, nil /* excludeTables */, false /* includeViews */)
+		cancel()
+		if err != nil {
+			markAsWillFail(rec, err)
+		}
+		prd.logger.Infof("Got schema from destination %v", topoproto.TabletAliasString(destinationAlias))
+		wg.Done()
+	}()
+	wg.Add(1)
+	go func() {
+		var err error
+		shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
+		sourceSchemaDefinition, err = wr.GetSchema(
+			shortCtx, sourceAlias, shardInfo.SourceShards[0].Tables, nil /* excludeTables */, false /* includeViews */)
+		cancel()
+		if err != nil {
+			markAsWillFail(rec, err)
+		}
+		prd.logger.Infof("Got schema from source %v", topoproto.TabletAliasString(sourceAlias))
+		wg.Done()
+	}()
+	wg.Wait()
+	if rec.HasErrors() {
+		return rec.Error()
+	}
+
+	// Check the schema
+	prd.logger.Infof("Diffing the schema...")
+	rec = &concurrency.AllErrorRecorder{}
+	tmutils.DiffSchema("destination", destinationSchemaDefinition, "source", sourceSchemaDefinition, rec)
+	if rec.HasErrors() {
+		prd.logger.Warningf("Different schemas: %v", rec.Error())
+	} else {
+		prd.logger.Infof("Schema match, good.")
+	}
+
+	// run the diffs, 8 at a time
+	prd.logger.Infof("Running the diffs...")
+	sem := sync2.NewSemaphore(parallelDiffsCount, 0)
+	for _, tableDefinition := range destinationSchemaDefinition.TableDefinitions {
+		wg.Add(1)
+		go func(tableDefinition *tabletmanagerdatapb.TableDefinition) {
+			defer wg.Done()
+			sem.Acquire()
+			defer sem.Release()
+
+			prd.logger.Infof("Starting the diff on table %v", tableDefinition.Name)
+			sourceQueryResultReader, err := TableScan(ctx, prd.logger, wr.TopoServer(), sourceAlias, tableDefinition)
+			if err != nil {
+				newErr := vterrors.Wrap(err, "TableScan(source) failed")
+				markAsWillFail(rec, newErr)
+				prd.logger.Error(newErr)
+				return
+			}
+			defer sourceQueryResultReader.Close(ctx)
+
+			destinationQueryResultReader, err := TableScan(ctx, prd.logger, wr.TopoServer(), destinationAlias, tableDefinition)
+			if err != nil {
+				newErr := vterrors.Wrap(err, "TableScan(destination) failed")
+				markAsWillFail(rec, newErr)
+				prd.logger.Error(newErr)
+				return
+			}
+			defer destinationQueryResultReader.Close(ctx)
+
+			differ, err := NewRowDiffer(sourceQueryResultReader, destinationQueryResultReader, tableDefinition)
+			if err != nil {
+				newErr := vterrors.Wrap(err, "NewRowDiffer() failed")
+				markAsWillFail(rec, newErr)
+				prd.logger.Error(newErr)
+				return
+			}
+
+			report, err := differ.Go(prd.logger)
+			if err != nil {
+				prd.logger.Errorf2(err, "Differ.Go failed")
+			} else {
+				if report.HasDifferences() {
+					err := fmt.Errorf("table %v has differences: %v", tableDefinition.Name, report.String())
+					markAsWillFail(rec, err)
+					prd.logger.Error(err)
+				} else {
+					prd.logger.Infof("Table %v checks out (%v rows processed, %v qps)", tableDefinition.Name, report.processedRows, report.processingQPS)
+				}
+			}
+		}(tableDefinition)
+	}
+	wg.Wait()
+
+	return rec.Error()
 }
