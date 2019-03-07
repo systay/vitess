@@ -312,7 +312,7 @@ func (msdw *MultiSplitDiffWorker) findTargets(ctx context.Context) error {
 	var finderFunc func(keyspace string, shard string) (*topodatapb.TabletAlias, error)
 	if msdw.tabletType == topodatapb.TabletType_RDONLY {
 		finderFunc = func(keyspace string, shard string) (*topodatapb.TabletAlias, error) {
-			return FindWorkerTablet(ctx, msdw.wr, msdw.cleaner, nil /*tsc*/, msdw.cell, keyspace, shard, 1, topodatapb.TabletType_RDONLY)
+			return ConfigureWorkerTablet(ctx, msdw.wr, msdw.cleaner, nil /*tsc*/, msdw.cell, keyspace, shard, 1, topodatapb.TabletType_RDONLY)
 		}
 	} else {
 		finderFunc = func(keyspace string, shard string) (*topodatapb.TabletAlias, error) {

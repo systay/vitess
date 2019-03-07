@@ -237,7 +237,7 @@ func (sdw *SplitDiffWorker) findTargets(ctx context.Context) error {
 
 	// find an appropriate tablet in destination shard
 	var err error
-	sdw.destinationAlias, err = FindWorkerTablet(
+	sdw.destinationAlias, err = ConfigureWorkerTablet(
 		ctx,
 		sdw.wr,
 		sdw.cleaner,
@@ -249,14 +249,14 @@ func (sdw *SplitDiffWorker) findTargets(ctx context.Context) error {
 		sdw.destinationTabletType,
 	)
 	if err != nil {
-		return vterrors.Wrapf(err, "FindWorkerTablet() failed for %v/%v/%v", sdw.cell, sdw.keyspace, sdw.shard)
+		return vterrors.Wrapf(err, "ConfigureWorkerTablet() failed for %v/%v/%v", sdw.cell, sdw.keyspace, sdw.shard)
 	}
 
 	// find an appropriate tablet in the source shard
 	// During an horizontal shard split, multiple workers will race to get
 	// a RDONLY tablet in the source shard. When this happen, concurrent calls
-	// to FindWorkerTablet could attempt to set to DRAIN state the same tablet. Only
-	// one of these calls to FindWorkerTablet will succeed and the rest will fail.
+	// to ConfigureWorkerTablet could attempt to set to DRAIN state the same tablet. Only
+	// one of these calls to ConfigureWorkerTablet will succeed and the rest will fail.
 	// The following, makes sures we keep trying to find a worker tablet when this error occur.
 	shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
 	for {
@@ -264,9 +264,9 @@ func (sdw *SplitDiffWorker) findTargets(ctx context.Context) error {
 		case <-shortCtx.Done():
 			return vterrors.Errorf(vtrpc.Code_ABORTED, "could not find healthy table for %v/%v%v: after: %v, aborting", sdw.cell, sdw.keyspace, sdw.sourceShard.Shard, *remoteActionsTimeout)
 		default:
-			sdw.sourceAlias, err = FindWorkerTablet(ctx, sdw.wr, sdw.cleaner, nil /* tsc */, sdw.cell, sdw.keyspace, sdw.sourceShard.Shard, sdw.minHealthyRdonlyTablets, topodatapb.TabletType_RDONLY)
+			sdw.sourceAlias, err = ConfigureWorkerTablet(ctx, sdw.wr, sdw.cleaner, nil /* tsc */, sdw.cell, sdw.keyspace, sdw.sourceShard.Shard, sdw.minHealthyRdonlyTablets, topodatapb.TabletType_RDONLY)
 			if err != nil {
-				sdw.wr.Logger().Infof("FindWorkerTablet() failed for %v/%v/%v: %v retrying...", sdw.cell, sdw.keyspace, sdw.sourceShard.Shard, err)
+				sdw.wr.Logger().Infof("ConfigureWorkerTablet() failed for %v/%v/%v: %v retrying...", sdw.cell, sdw.keyspace, sdw.sourceShard.Shard, err)
 				continue
 			}
 			cancel()

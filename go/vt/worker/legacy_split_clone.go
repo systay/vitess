@@ -336,9 +336,9 @@ func (scw *LegacySplitCloneWorker) findTargets(ctx context.Context) error {
 	// find an appropriate tablet in the source shards
 	scw.sourceAliases = make([]*topodatapb.TabletAlias, len(scw.sourceShards))
 	for i, si := range scw.sourceShards {
-		scw.sourceAliases[i], err = FindWorkerTablet(ctx, scw.wr, scw.cleaner, scw.tsc, scw.cell, si.Keyspace(), si.ShardName(), scw.minHealthyRdonlyTablets, topodatapb.TabletType_RDONLY)
+		scw.sourceAliases[i], err = ConfigureWorkerTablet(ctx, scw.wr, scw.cleaner, scw.tsc, scw.cell, si.Keyspace(), si.ShardName(), scw.minHealthyRdonlyTablets, topodatapb.TabletType_RDONLY)
 		if err != nil {
-			return vterrors.Wrapf(err, "FindWorkerTablet() failed for %v/%v/%v", scw.cell, si.Keyspace(), si.ShardName())
+			return vterrors.Wrapf(err, "ConfigureWorkerTablet() failed for %v/%v/%v", scw.cell, si.Keyspace(), si.ShardName())
 		}
 		scw.wr.Logger().Infof("Using tablet %v as source for %v/%v", topoproto.TabletAliasString(scw.sourceAliases[i]), si.Keyspace(), si.ShardName())
 	}

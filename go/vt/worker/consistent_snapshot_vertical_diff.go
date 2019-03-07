@@ -18,7 +18,9 @@ package worker
 
 import (
 	"golang.org/x/net/context"
+	"vitess.io/vitess/go/vt/binlog/binlogplayer"
 	"vitess.io/vitess/go/vt/concurrency"
+	"vitess.io/vitess/go/vt/discovery"
 	"vitess.io/vitess/go/vt/logutil"
 	"vitess.io/vitess/go/vt/proto/topodata"
 	"vitess.io/vitess/go/vt/topo"
@@ -57,13 +59,40 @@ func NewConsistentSnapshotDiffer(logger logutil.Logger) Differ {
 //     binlog position
 // 5 - create consistent snapshot read-only transactions on destination tables
 // At this point, all source and destination transactions should see the same data
-func (csd *ConsistentSnapshotDiffer) StabilizeSourceAndDestination(ctx context.Context,
+func (csd *ConsistentSnapshotDiffer) StabilizeSourceAndDestination(
+	ctx context.Context,
+	wr *wrangler.Wrangler,
+	tsc *discovery.TabletStatsCache,
 	toposerver *topo.Server,
 	tabletManagerClient tmclient.TabletManagerClient,
 	shardInfo *topo.ShardInfo,
 	sourceAlias *topodata.TabletAlias,
 	destinationAlias *topodata.TabletAlias) error {
 
+	// Step 1 - Pause VReplication to destination Master.
+	dstTabletInfo, err := toposerver.GetTablet(ctx, destinationAlias)
+	if err != nil {
+		return vterrors.Wrapf(err, "trying to get tablet info for %v failed", destinationAlias)
+	}
+
+	dstMaster, err := FindHealthyTablet(ctx, wr, tsc, destinationAlias.Cell, dstTabletInfo.Keyspace, dstTabletInfo.Shard, 1, topodata.TabletType_MASTER)
+	if err != nil {
+		return vterrors.Wrapf(err, "trying to get master tablet for %v/%v failed", dstTabletInfo.Keyspace, dstTabletInfo.Shard)
+	}
+
+	dstMasterTablet, err := toposerver.GetTablet(ctx, dstMaster)
+	if err != nil {
+		return vterrors.Wrapf(err, "trying to get tablet info for %v failed", dstMaster)
+	}
+
+	_, err = tabletManagerClient.VReplicationExec(ctx, dstMasterTablet.Tablet,
+		binlogplayer.StopVReplication(dstMaster.Uid, "Consistent snapshot vertical split diff"))
+	if err != nil {
+		return vterrors.Wrapf(err, "trying to pause VReplication for %v failed", dstMaster)
+	}
+	wrangler.RecordVReplicationAction(csd.cleaner, dstMasterTablet.Tablet, binlogplayer.StartVReplication(dstMaster.Uid))
+
+	// Step 2 - Create consistent snapshot read-only transactions from source.
 	shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
 	ti, err := toposerver.GetTablet(shortCtx, sourceAlias)
 	cancel()
@@ -77,10 +106,16 @@ func (csd *ConsistentSnapshotDiffer) StabilizeSourceAndDestination(ctx context.C
 	}
 	csd.lastPos = gtid
 	csd.srcTransactions = sourceTransactions
+
+	// Step 3
+	// Step 4
+	// Step 5
+
 	return nil
 }
 
-func (csd *ConsistentSnapshotDiffer) Diff(ctx context.Context,
+func (csd *ConsistentSnapshotDiffer) Diff(
+	ctx context.Context,
 	wr *wrangler.Wrangler,
 	sourceAlias *topodata.TabletAlias,
 	destinationAlias *topodata.TabletAlias,

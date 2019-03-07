@@ -65,6 +65,8 @@ const verticalSplitDiffHTML2 = `
         <INPUT type="text" id="minHealthyRdonlyTablets" name="minHealthyRdonlyTablets" value="{{.DefaultMinHealthyRdonlyTablets}}"></BR>
       <LABEL for="parallelDiffsCount">Number of tables to diff in parallel: </LABEL>
         <INPUT type="text" id="parallelDiffsCount" name="parallelDiffsCount" value="{{.DefaultParallelDiffsCount}}"></BR>
+      <LABEL for="useConsistentSnapshot">Use consistent snapshot</LABEL>
+        <INPUT type="checkbox" id="useConsistentSnapshot" name="useConsistentSnapshot" value="true"><a href="https://dev.mysql.com/doc/refman/5.7/en/glossary.html#glos_consistent_read" target="_blank">?</a></BR>
       <INPUT type="hidden" name="shard" value="{{.Shard}}"/>
       <INPUT type="submit" name="submit" value="Vertical Split Diff"/>
     </form>
@@ -78,6 +80,7 @@ func commandVerticalSplitDiff(wi *Instance, wr *wrangler.Wrangler, subFlags *fla
 	minHealthyRdonlyTablets := subFlags.Int("min_healthy_rdonly_tablets", defaultMinHealthyTablets, "minimum number of healthy RDONLY tablets before taking out one")
 	parallelDiffsCount := subFlags.Int("parallel_diffs_count", defaultParallelDiffsCount, "number of tables to diff in parallel")
 	destTabletTypeStr := subFlags.String("dest_tablet_type", defaultDestTabletType, "destination tablet type (RDONLY or REPLICA) that will be used to compare the shards")
+	useConsistentSnapshot := subFlags.Bool("use_consistent_snapshot", defaultUseConsistentSnapshot, "Instead of pausing replication on the source, uses transactions with consistent snapshot to have a stable view of the data.")
 	if err := subFlags.Parse(args); err != nil {
 		return nil, err
 	}
@@ -95,7 +98,7 @@ func commandVerticalSplitDiff(wi *Instance, wr *wrangler.Wrangler, subFlags *fla
 		return nil, fmt.Errorf("command VerticalSplitDiff invalid dest_tablet_type: %v", destTabletType)
 	}
 
-	return NewVerticalSplitDiffWorker(wr, wi.cell, keyspace, shard, *minHealthyRdonlyTablets, *parallelDiffsCount, topodatapb.TabletType(destTabletType)), nil
+	return NewVerticalSplitDiffWorker(wr, wi.cell, keyspace, shard, *minHealthyRdonlyTablets, *parallelDiffsCount, topodatapb.TabletType(destTabletType), *useConsistentSnapshot), nil
 }
 
 // shardsWithTablesSources returns all the shards that have SourceShards set

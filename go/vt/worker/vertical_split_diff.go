@@ -220,7 +220,7 @@ func (vsdw *VerticalSplitDiffWorker) findTargets(ctx context.Context) error {
 
 	// find an appropriate tablet in destination shard
 	var err error
-	vsdw.destinationAlias, err = FindWorkerTablet(
+	vsdw.destinationAlias, err = ConfigureWorkerTablet(
 		ctx,
 		vsdw.wr,
 		vsdw.cleaner,
@@ -232,13 +232,13 @@ func (vsdw *VerticalSplitDiffWorker) findTargets(ctx context.Context) error {
 		vsdw.destinationTabletType,
 	)
 	if err != nil {
-		return vterrors.Wrapf(err, "FindWorkerTablet() failed for %v/%v/%v", vsdw.cell, vsdw.keyspace, vsdw.shard)
+		return vterrors.Wrapf(err, "ConfigureWorkerTablet() failed for %v/%v/%v", vsdw.cell, vsdw.keyspace, vsdw.shard)
 	}
 
 	// find an appropriate tablet in the source shard
-	vsdw.sourceAlias, err = FindWorkerTablet(ctx, vsdw.wr, vsdw.cleaner, nil /* tsc */, vsdw.cell, vsdw.shardInfo.SourceShards[0].Keyspace, vsdw.shardInfo.SourceShards[0].Shard, vsdw.minHealthyRdonlyTablets, topodatapb.TabletType_RDONLY)
+	vsdw.sourceAlias, err = ConfigureWorkerTablet(ctx, vsdw.wr, vsdw.cleaner, nil /* tsc */, vsdw.cell, vsdw.shardInfo.SourceShards[0].Keyspace, vsdw.shardInfo.SourceShards[0].Shard, vsdw.minHealthyRdonlyTablets, topodatapb.TabletType_RDONLY)
 	if err != nil {
-		return vterrors.Wrapf(err, "FindWorkerTablet() failed for %v/%v/%v", vsdw.cell, vsdw.shardInfo.SourceShards[0].Keyspace, vsdw.shardInfo.SourceShards[0].Shard)
+		return vterrors.Wrapf(err, "ConfigureWorkerTablet() failed for %v/%v/%v", vsdw.cell, vsdw.shardInfo.SourceShards[0].Keyspace, vsdw.shardInfo.SourceShards[0].Shard)
 	}
 
 	return nil
@@ -266,4 +266,3 @@ type Differ interface {
 		markAsWillFail func(rec concurrency.ErrorRecorder, err error),
 		parallelDiffsCount int) error
 }
-

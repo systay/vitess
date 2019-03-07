@@ -111,11 +111,11 @@ func waitForHealthyTablets(ctx context.Context, wr *wrangler.Wrangler, tsc *disc
 	return healthyTablets, nil
 }
 
-// FindWorkerTablet will:
+// ConfigureWorkerTablet will:
 // - find a tabletType instance in the keyspace / shard
 // - mark it as worker
 // - tag it with our worker process
-func FindWorkerTablet(ctx context.Context, wr *wrangler.Wrangler, cleaner *wrangler.Cleaner, tsc *discovery.TabletStatsCache, cell, keyspace, shard string, minHealthyTablets int, tabletType topodatapb.TabletType) (*topodatapb.TabletAlias, error) {
+func ConfigureWorkerTablet(ctx context.Context, wr *wrangler.Wrangler, cleaner *wrangler.Cleaner, tsc *discovery.TabletStatsCache, cell, keyspace, shard string, minHealthyTablets int, tabletType topodatapb.TabletType) (*topodatapb.TabletAlias, error) {
 	tabletAlias, err := FindHealthyTablet(ctx, wr, tsc, cell, keyspace, shard, minHealthyTablets, tabletType)
 	if err != nil {
 		return nil, err

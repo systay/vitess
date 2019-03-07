@@ -731,9 +731,9 @@ func (scw *SplitCloneWorker) findOfflineSourceTablets(ctx context.Context) error
 	scw.sourceAliases = make([]*topodatapb.TabletAlias, len(scw.sourceShards))
 	for i, si := range scw.sourceShards {
 		var err error
-		scw.sourceAliases[i], err = FindWorkerTablet(ctx, scw.wr, scw.cleaner, scw.tsc, scw.cell, si.Keyspace(), si.ShardName(), scw.minHealthyTablets, scw.tabletType)
+		scw.sourceAliases[i], err = ConfigureWorkerTablet(ctx, scw.wr, scw.cleaner, scw.tsc, scw.cell, si.Keyspace(), si.ShardName(), scw.minHealthyTablets, scw.tabletType)
 		if err != nil {
-			return vterrors.Wrapf(err, "FindWorkerTablet() failed for %v/%v/%v", scw.cell, si.Keyspace(), si.ShardName())
+			return vterrors.Wrapf(err, "ConfigureWorkerTablet() failed for %v/%v/%v", scw.cell, si.Keyspace(), si.ShardName())
 		}
 		scw.wr.Logger().Infof("Using tablet %v as source for %v/%v", topoproto.TabletAliasString(scw.sourceAliases[i]), si.Keyspace(), si.ShardName())
 	}
