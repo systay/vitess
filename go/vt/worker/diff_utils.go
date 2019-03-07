@@ -654,7 +654,7 @@ func (rd *RowDiffer) Go(log logutil.Logger) (dr DiffReport, err error) {
 // createTransactions returns an array of transactions that all share the same view of the data.
 // It will check that no new transactions have been seen between the creation of the underlying transactions,
 // to guarantee that all TransactionalTableScanner are pointing to the same point
-func createTransactions(ctx context.Context, numberOfScanners int, wr *wrangler.Wrangler, cleaner *wrangler.Cleaner, queryService queryservice.QueryService, target *query.Target, tabletInfo *topodatapb.Tablet) ([]int64, error) {
+func createTransactions(ctx context.Context, numberOfScanners int, cleaner *wrangler.Cleaner, queryService queryservice.QueryService, target *query.Target, tabletInfo *topodatapb.Tablet) ([]int64, error) {
 	scanners := make([]int64, numberOfScanners)
 	for i := 0; i < numberOfScanners; i++ {
 
@@ -718,13 +718,16 @@ func (ntts NonTransactionalTableScanner) ScanTable(ctx context.Context, td *tabl
 // CreateConsistentTableScanners will momentarily stop updates on the tablet, and then create connections that are all
 // consistent snapshots of the same point in the transaction history
 func CreateConsistentTableScanners(ctx context.Context, tablet *topo.TabletInfo, wr *wrangler.Wrangler, cleaner *wrangler.Cleaner, numberOfScanners int) ([]TableScanner, string, error) {
-	txs, gtid, err := CreateConsistentTransactions(ctx, tablet, wr, cleaner, numberOfScanners)
+	txs, gtid, err := CreateConsistentTransactions(ctx, tablet, wr.Logger(), cleaner, numberOfScanners)
 	if err != nil {
 		return nil, "", err
 	}
 
 	queryService, err := tabletconn.GetDialer()(tablet.Tablet, true)
-	defer queryService.Close(ctx)
+	defer func() {
+		err := queryService.Close(ctx)
+		wr.Logger().Error(vterrors.Wrap(err, "failed to close queryservice"))
+	}()
 
 	scanners := make([]TableScanner, numberOfScanners)
 	for i, tx := range txs {
@@ -742,7 +745,7 @@ func CreateConsistentTableScanners(ctx context.Context, tablet *topo.TabletInfo,
 
 // CreateConsistentTransactions creates a number of consistent snapshot transactions,
 // all starting from the same spot in the tx log
-func CreateConsistentTransactions(ctx context.Context, tablet *topo.TabletInfo, wr *wrangler.Wrangler, cleaner *wrangler.Cleaner, numberOfScanners int) ([]int64, string, error) {
+func CreateConsistentTransactions(ctx context.Context, tablet *topo.TabletInfo, logger logutil.Logger, cleaner *wrangler.Cleaner, numberOfScanners int) ([]int64, string, error) {
 	if numberOfScanners < 1 {
 		return nil, "", vterrors.Errorf(vtrpc.Code_INVALID_ARGUMENT, "need more than zero scanners: %d", numberOfScanners)
 	}
@@ -758,21 +761,30 @@ func CreateConsistentTransactions(ctx context.Context, tablet *topo.TabletInfo, 
 	defer func() {
 		tm := tmclient.NewTabletManagerClient()
 		defer tm.Close()
-		tm.UnlockTables(ctx, tablet.Tablet)
-		wr.Logger().Infof("tables unlocked on %v", topoproto.TabletAliasString(tablet.Tablet.Alias))
+		err := tm.UnlockTables(ctx, tablet.Tablet)
+		if err != nil {
+			logger.Error(err)
+		} else {
+			logger.Infof("tables unlocked on %v", topoproto.TabletAliasString(tablet.Tablet.Alias))
+		}
 	}()
 
-	wr.Logger().Infof("tables locked on %v", topoproto.TabletAliasString(tablet.Tablet.Alias))
+	logger.Infof("tables locked on %v", topoproto.TabletAliasString(tablet.Tablet.Alias))
 	target := CreateTargetFrom(tablet.Tablet)
 
 	// Create transactions
 	queryService, err := tabletconn.GetDialer()(tablet.Tablet, true)
-	defer queryService.Close(ctx)
-	connections, err := createTransactions(ctx, numberOfScanners, wr, cleaner, queryService, target, tablet.Tablet)
+	defer func() {
+		err := queryService.Close(ctx)
+		if err != nil {
+			logger.Error(err)
+		}
+	}()
+	connections, err := createTransactions(ctx, numberOfScanners, cleaner, queryService, target, tablet.Tablet)
 	if err != nil {
 		return nil, "", vterrors.Wrapf(err, "failed to create transactions on %v", topoproto.TabletAliasString(tablet.Tablet.Alias))
 	}
-	wr.Logger().Infof("transactions created on %v", topoproto.TabletAliasString(tablet.Tablet.Alias))
+	logger.Infof("transactions created on %v", topoproto.TabletAliasString(tablet.Tablet.Alias))
 	executedGtid, err := tm.MasterPosition(ctx, tablet.Tablet)
 	if err != nil {
 		return nil, "", vterrors.Wrapf(err, "could not read executed GTID set on %v", topoproto.TabletAliasString(tablet.Tablet.Alias))

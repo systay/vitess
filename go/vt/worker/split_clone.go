@@ -794,7 +794,7 @@ func (scw *SplitCloneWorker) findTransactionalSources(ctx context.Context) error
 	scw.sourceTablets[0] = ti.Tablet
 
 	// stop replication and create transactions to work on
-	txs, gtid, err := CreateConsistentTransactions(ctx, ti, scw.wr, scw.cleaner, scw.sourceReaderCount)
+	txs, gtid, err := CreateConsistentTransactions(ctx, ti, scw.wr.Logger(), scw.cleaner, scw.sourceReaderCount)
 	if err != nil {
 		return vterrors.Wrapf(err, "error creating consistent transactions")
 	}
