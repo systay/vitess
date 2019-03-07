@@ -176,56 +176,17 @@ func (prd *PausedReplicationDiffer) Diff(ctx context.Context,
   markAsWillFail func(rec concurrency.ErrorRecorder, err error),
   parallelDiffsCount int) error {
   prd.logger.Infof("Gathering schema information...")
-  wg := sync.WaitGroup{}
-  rec := &concurrency.AllErrorRecorder{}
 
-  var destinationSchemaDefinition *tabletmanagerdata.SchemaDefinition
-  var sourceSchemaDefinition *tabletmanagerdata.SchemaDefinition
-
-  wg.Add(1)
-  go func() {
-    var err error
-    shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
-    destinationSchemaDefinition, err = wr.GetSchema(
-      shortCtx, destinationAlias, shardInfo.SourceShards[0].Tables, nil /* excludeTables */, false /* includeViews */)
-    cancel()
-    if err != nil {
-      markAsWillFail(rec, err)
-    }
-    prd.logger.Infof("Got schema from destination %v", topoproto.TabletAliasString(destinationAlias))
-    wg.Done()
-  }()
-  wg.Add(1)
-  go func() {
-    var err error
-    shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
-    sourceSchemaDefinition, err = wr.GetSchema(
-      shortCtx, sourceAlias, shardInfo.SourceShards[0].Tables, nil /* excludeTables */, false /* includeViews */)
-    cancel()
-    if err != nil {
-      markAsWillFail(rec, err)
-    }
-    prd.logger.Infof("Got schema from source %v", topoproto.TabletAliasString(sourceAlias))
-    wg.Done()
-  }()
-  wg.Wait()
-  if rec.HasErrors() {
-    return rec.Error()
-  }
-
-  // Check the schema
-  prd.logger.Infof("Diffing the schema...")
-  rec = &concurrency.AllErrorRecorder{}
-  tmutils.DiffSchema("destination", destinationSchemaDefinition, "source", sourceSchemaDefinition, rec)
-  if rec.HasErrors() {
-    prd.logger.Warningf("Different schemas: %v", rec.Error())
-  } else {
-    prd.logger.Infof("Schema match, good.")
+  destinationSchemaDefinition, err := SchemaDiff(ctx, wr, sourceAlias, destinationAlias, shardInfo, markAsWillFail, prd)
+  if err != nil {
+   return vterrors.Wrapf(err, "schema diff between %v and %v failed", sourceAlias, destinationAlias)
   }
 
   // run the diffs, 8 at a time
   prd.logger.Infof("Running the diffs...")
   sem := sync2.NewSemaphore(parallelDiffsCount, 0)
+  wg := sync.WaitGroup{}
+  rec := &concurrency.AllErrorRecorder{}
   for _, tableDefinition := range destinationSchemaDefinition.TableDefinitions {
     wg.Add(1)
     go func(tableDefinition *tabletmanagerdata.TableDefinition) {
@@ -277,4 +238,56 @@ func (prd *PausedReplicationDiffer) Diff(ctx context.Context,
   wg.Wait()
 
   return rec.Error()
+}
+
+func SchemaDiff(ctx context.Context,
+  wr *wrangler.Wrangler,
+  sourceAlias *topodata.TabletAlias,
+  destinationAlias *topodata.TabletAlias,
+  shardInfo *topo.ShardInfo,
+  markAsWillFail func(rec concurrency.ErrorRecorder, err error), prd *PausedReplicationDiffer) (*tabletmanagerdata.SchemaDefinition, error) {
+  wg := sync.WaitGroup{}
+  rec := &concurrency.AllErrorRecorder{}
+
+  var destinationSchemaDefinition *tabletmanagerdata.SchemaDefinition
+  var sourceSchemaDefinition *tabletmanagerdata.SchemaDefinition
+
+  // Get the two schema definitions asynchronously
+  wg.Add(2)
+  go func() {
+    destinationSchemaDefinition = getSchemaDefinition(ctx, wr, destinationAlias, shardInfo, markAsWillFail, rec, prd)
+    wg.Done()
+  }()
+  go func() {
+    sourceSchemaDefinition = getSchemaDefinition(ctx, wr, sourceAlias, shardInfo, markAsWillFail, rec, prd)
+    wg.Done()
+  }()
+  wg.Wait()
+  if rec.HasErrors() {
+    return nil, rec.Error()
+  }
+
+  // Check the schema
+  prd.logger.Infof("Diffing the schema...")
+  rec = &concurrency.AllErrorRecorder{}
+  tmutils.DiffSchema("destination", destinationSchemaDefinition, "source", sourceSchemaDefinition, rec)
+  if rec.HasErrors() {
+    prd.logger.Warningf("Different schemas: %v", rec.Error())
+    return nil, vterrors.Wrapf(rec.Error(), "schema differs between %v and %v", sourceAlias, destinationAlias)
+  } else {
+    prd.logger.Infof("Schema match, good.")
+  }
+
+  return destinationSchemaDefinition, nil
+}
+func getSchemaDefinition(ctx context.Context, wr *wrangler.Wrangler, destinationAlias *topodata.TabletAlias, shardInfo *topo.ShardInfo, markAsWillFail func(rec concurrency.ErrorRecorder, err error), rec *concurrency.AllErrorRecorder, prd *PausedReplicationDiffer) *tabletmanagerdata.SchemaDefinition {
+  shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
+  destinationSchemaDefinition, err := wr.GetSchema(
+    shortCtx, destinationAlias, shardInfo.SourceShards[0].Tables, nil /* excludeTables */, false /* includeViews */)
+  cancel()
+  if err != nil {
+    markAsWillFail(rec, err)
+  }
+  prd.logger.Infof("Got schema from destination %v", topoproto.TabletAliasString(destinationAlias))
+  return destinationSchemaDefinition
 }

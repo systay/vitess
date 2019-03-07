@@ -45,7 +45,7 @@ type VerticalSplitDiffWorker struct {
 	minHealthyRdonlyTablets int
 	parallelDiffsCount      int
 	cleaner                 *wrangler.Cleaner
-	useConsistentSnapshot   bool
+	differ                  Differ
 
 	// populated during WorkerStateInit, read-only after that
 	keyspaceInfo *topo.KeyspaceInfo
@@ -57,12 +57,17 @@ type VerticalSplitDiffWorker struct {
 	destinationTabletType topodatapb.TabletType
 
 	// populated during WorkerStateDiff
-	sourceSchemaDefinition      *tabletmanagerdatapb.SchemaDefinition
 	destinationSchemaDefinition *tabletmanagerdatapb.SchemaDefinition
 }
 
 // NewVerticalSplitDiffWorker returns a new VerticalSplitDiffWorker object.
-func NewVerticalSplitDiffWorker(wr *wrangler.Wrangler, cell, keyspace, shard string, minHealthyRdonlyTablets, parallelDiffsCount int, destinationTabletType topodatapb.TabletType) Worker {
+func NewVerticalSplitDiffWorker(wr *wrangler.Wrangler, cell, keyspace, shard string, minHealthyRdonlyTablets, parallelDiffsCount int, destinationTabletType topodatapb.TabletType, useConsistentSnapshot bool) Worker {
+	var differ Differ
+	if useConsistentSnapshot {
+		differ = NewConsistentSnapshotDiffer(wr.Logger())
+	} else {
+		differ = NewPausedReplicationDiffer(wr.Logger())
+	}
 	return &VerticalSplitDiffWorker{
 		StatusWorker:            NewStatusWorker(),
 		wr:                      wr,
@@ -73,6 +78,7 @@ func NewVerticalSplitDiffWorker(wr *wrangler.Wrangler, cell, keyspace, shard str
 		destinationTabletType:   destinationTabletType,
 		parallelDiffsCount:      parallelDiffsCount,
 		cleaner:                 &wrangler.Cleaner{},
+		differ:                  differ,
 	}
 }
 
@@ -151,9 +157,8 @@ func (vsdw *VerticalSplitDiffWorker) run(ctx context.Context) error {
 	}
 
 	// third phase: synchronize replication
-	differ := NewPausedReplicationDiffer(vsdw.wr.Logger())
 	vsdw.SetState(WorkerStateSyncReplication)
-	if err := differ.StabilizeSourceAndDestination(ctx, vsdw.wr.TopoServer(), vsdw.wr.TabletManagerClient(), vsdw.shardInfo, vsdw.sourceAlias, vsdw.destinationAlias); err != nil {
+	if err := vsdw.differ.StabilizeSourceAndDestination(ctx, vsdw.wr.TopoServer(), vsdw.wr.TabletManagerClient(), vsdw.shardInfo, vsdw.sourceAlias, vsdw.destinationAlias); err != nil {
 		return vterrors.Wrap(err, "synchronizeReplication() failed")
 	}
 	if err := checkDone(ctx); err != nil {
@@ -162,7 +167,7 @@ func (vsdw *VerticalSplitDiffWorker) run(ctx context.Context) error {
 
 	// fourth phase: diff
 	vsdw.SetState(WorkerStateDiff)
-	if err := differ.Diff(ctx, vsdw.wr, vsdw.sourceAlias, vsdw.destinationAlias, vsdw.shardInfo, vsdw.markAsWillFail, vsdw.parallelDiffsCount); err != nil {
+	if err := vsdw.differ.Diff(ctx, vsdw.wr, vsdw.sourceAlias, vsdw.destinationAlias, vsdw.shardInfo, vsdw.markAsWillFail, vsdw.parallelDiffsCount); err != nil {
 		return vterrors.Wrap(err, "diff() failed")
 	}
 	if err := checkDone(ctx); err != nil {
