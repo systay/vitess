@@ -17,33 +17,33 @@ limitations under the License.
 package worker
 
 import (
-  "golang.org/x/net/context"
-  "vitess.io/vitess/go/vt/concurrency"
-  "vitess.io/vitess/go/vt/logutil"
-  "vitess.io/vitess/go/vt/proto/topodata"
-  "vitess.io/vitess/go/vt/topo"
-  "vitess.io/vitess/go/vt/vterrors"
-  "vitess.io/vitess/go/vt/vttablet/tmclient"
-  "vitess.io/vitess/go/vt/wrangler"
+	"golang.org/x/net/context"
+	"vitess.io/vitess/go/vt/concurrency"
+	"vitess.io/vitess/go/vt/logutil"
+	"vitess.io/vitess/go/vt/proto/topodata"
+	"vitess.io/vitess/go/vt/topo"
+	"vitess.io/vitess/go/vt/vterrors"
+	"vitess.io/vitess/go/vt/vttablet/tmclient"
+	"vitess.io/vitess/go/vt/wrangler"
 )
 
 type ConsistentSnapshotDiffer struct {
-  logger  logutil.Logger
-  cleaner *wrangler.Cleaner
+	logger  logutil.Logger
+	cleaner *wrangler.Cleaner
 
-  // written during StabilizeSourceAndDestination
-  lastPos         string // contains the GTID position for the source
-  srcTransactions []int64
-  dstTransactions []int64
+	// written during StabilizeSourceAndDestination
+	lastPos         string // contains the GTID position for the source
+	srcTransactions []int64
+	dstTransactions []int64
 }
 
 func NewConsistentSnapshotDiffer(logger logutil.Logger) Differ {
-  x := ConsistentSnapshotDiffer{
-    logger:  logger,
-    cleaner: &wrangler.Cleaner{},
-  }
+	x := ConsistentSnapshotDiffer{
+		logger:  logger,
+		cleaner: &wrangler.Cleaner{},
+	}
 
-  return &x
+	return &x
 }
 
 // StabilizeSourceAndDestination phase:
@@ -58,41 +58,40 @@ func NewConsistentSnapshotDiffer(logger logutil.Logger) Differ {
 // 5 - create consistent snapshot read-only transactions on destination tables
 // At this point, all source and destination transactions should see the same data
 func (csd *ConsistentSnapshotDiffer) StabilizeSourceAndDestination(ctx context.Context,
-  toposerver *topo.Server,
-  tabletManagerClient tmclient.TabletManagerClient,
-  shardInfo *topo.ShardInfo,
-  sourceAlias *topodata.TabletAlias,
-  destinationAlias *topodata.TabletAlias) error {
+	toposerver *topo.Server,
+	tabletManagerClient tmclient.TabletManagerClient,
+	shardInfo *topo.ShardInfo,
+	sourceAlias *topodata.TabletAlias,
+	destinationAlias *topodata.TabletAlias) error {
 
-  shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
-  ti, err := toposerver.GetTablet(shortCtx, sourceAlias)
-  cancel()
-  if err != nil {
-    return vterrors.Wrapf(err, "trying to get tablet info for %v failed", sourceAlias)
-  }
+	shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
+	ti, err := toposerver.GetTablet(shortCtx, sourceAlias)
+	cancel()
+	if err != nil {
+		return vterrors.Wrapf(err, "trying to get tablet info for %v failed", sourceAlias)
+	}
 
-  sourceTransactions, gtid, err := CreateConsistentTransactions(ctx, ti, csd.logger, csd.cleaner, 8)
-  if err != nil {
-    return err
-  }
-  csd.lastPos = gtid
-  csd.srcTransactions = sourceTransactions
-  return nil
+	sourceTransactions, gtid, err := CreateConsistentTransactions(ctx, ti, csd.logger, csd.cleaner, 8)
+	if err != nil {
+		return err
+	}
+	csd.lastPos = gtid
+	csd.srcTransactions = sourceTransactions
+	return nil
 }
 
 func (csd *ConsistentSnapshotDiffer) Diff(ctx context.Context,
-  wr *wrangler.Wrangler,
-  sourceAlias *topodata.TabletAlias,
-  destinationAlias *topodata.TabletAlias,
-  shardInfo *topo.ShardInfo,
-  markAsWillFail func(rec concurrency.ErrorRecorder, err error),
-  parallelDiffsCount int) error {
+	wr *wrangler.Wrangler,
+	sourceAlias *topodata.TabletAlias,
+	destinationAlias *topodata.TabletAlias,
+	shardInfo *topo.ShardInfo,
+	markAsWillFail func(rec concurrency.ErrorRecorder, err error),
+	parallelDiffsCount int) error {
 
-  _, err := SchemaDiff(ctx, wr, sourceAlias, destinationAlias, shardInfo, markAsWillFail)
-  if err != nil {
-    return vterrors.Wrapf(err, "schema diff failed")
-  }
+	_, err := SchemaDiff(ctx, wr, sourceAlias, destinationAlias, shardInfo, markAsWillFail)
+	if err != nil {
+		return vterrors.Wrapf(err, "schema diff failed")
+	}
 
-  panic("implement me")
+	panic("implement me")
 }
-

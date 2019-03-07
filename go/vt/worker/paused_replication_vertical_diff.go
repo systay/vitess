@@ -17,37 +17,37 @@ limitations under the License.
 package worker
 
 import (
-  "fmt"
-  "sync"
+	"fmt"
+	"sync"
 
-  "golang.org/x/net/context"
-  "vitess.io/vitess/go/sqltypes"
-  "vitess.io/vitess/go/sync2"
-  "vitess.io/vitess/go/vt/binlog/binlogplayer"
-  "vitess.io/vitess/go/vt/concurrency"
-  "vitess.io/vitess/go/vt/logutil"
-  "vitess.io/vitess/go/vt/mysqlctl/tmutils"
-  "vitess.io/vitess/go/vt/proto/tabletmanagerdata"
-  "vitess.io/vitess/go/vt/proto/topodata"
-  "vitess.io/vitess/go/vt/topo"
-  "vitess.io/vitess/go/vt/topo/topoproto"
-  "vitess.io/vitess/go/vt/vterrors"
-  "vitess.io/vitess/go/vt/vttablet/tmclient"
-  "vitess.io/vitess/go/vt/wrangler"
+	"golang.org/x/net/context"
+	"vitess.io/vitess/go/sqltypes"
+	"vitess.io/vitess/go/sync2"
+	"vitess.io/vitess/go/vt/binlog/binlogplayer"
+	"vitess.io/vitess/go/vt/concurrency"
+	"vitess.io/vitess/go/vt/logutil"
+	"vitess.io/vitess/go/vt/mysqlctl/tmutils"
+	"vitess.io/vitess/go/vt/proto/tabletmanagerdata"
+	"vitess.io/vitess/go/vt/proto/topodata"
+	"vitess.io/vitess/go/vt/topo"
+	"vitess.io/vitess/go/vt/topo/topoproto"
+	"vitess.io/vitess/go/vt/vterrors"
+	"vitess.io/vitess/go/vt/vttablet/tmclient"
+	"vitess.io/vitess/go/vt/wrangler"
 )
 
 type PausedReplicationDiffer struct {
-  logger  logutil.Logger
-  cleaner *wrangler.Cleaner
+	logger  logutil.Logger
+	cleaner *wrangler.Cleaner
 }
 
 func NewPausedReplicationDiffer(logger logutil.Logger) Differ {
-  x := PausedReplicationDiffer{
-    logger:  logger,
-    cleaner: &wrangler.Cleaner{},
-  }
+	x := PausedReplicationDiffer{
+		logger:  logger,
+		cleaner: &wrangler.Cleaner{},
+	}
 
-  return &x
+	return &x
 }
 
 // StabilizeSourceAndDestination phase:
@@ -68,100 +68,100 @@ func NewPausedReplicationDiffer(logger logutil.Logger) Differ {
 //   (remove the cleanup task that does the same)
 // At this point, all source and destination tablets are stopped at the same point.
 func (prd *PausedReplicationDiffer) StabilizeSourceAndDestination(ctx context.Context,
-  toposerver *topo.Server,
-  tabletManagerClient tmclient.TabletManagerClient,
-  shardInfo *topo.ShardInfo,
-  sourceAlias *topodata.TabletAlias,
-  destinationAlias *topodata.TabletAlias) error {
+	toposerver *topo.Server,
+	tabletManagerClient tmclient.TabletManagerClient,
+	shardInfo *topo.ShardInfo,
+	sourceAlias *topodata.TabletAlias,
+	destinationAlias *topodata.TabletAlias) error {
 
-  shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
-  defer cancel()
-  masterInfo, err := toposerver.GetTablet(shortCtx, shardInfo.MasterAlias)
-  if err != nil {
-    return vterrors.Wrapf(err, "synchronizeReplication: cannot get Tablet record for master %v", topoproto.TabletAliasString(shardInfo.MasterAlias))
-  }
+	shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
+	defer cancel()
+	masterInfo, err := toposerver.GetTablet(shortCtx, shardInfo.MasterAlias)
+	if err != nil {
+		return vterrors.Wrapf(err, "synchronizeReplication: cannot get Tablet record for master %v", topoproto.TabletAliasString(shardInfo.MasterAlias))
+	}
 
-  ss := shardInfo.SourceShards[0]
+	ss := shardInfo.SourceShards[0]
 
-  // 1 - stop the master binlog replication, get its current position
-  prd.logger.Infof("Stopping master binlog replication on %v", topoproto.TabletAliasString(shardInfo.MasterAlias))
-  shortCtx, cancel = context.WithTimeout(ctx, *remoteActionsTimeout)
-  defer cancel()
-  _, err = tabletManagerClient.VReplicationExec(shortCtx, masterInfo.Tablet, binlogplayer.StopVReplication(ss.Uid, "for split diff"))
-  if err != nil {
-    return vterrors.Wrapf(err, "Stop VReplication on master %v failed", topoproto.TabletAliasString(shardInfo.MasterAlias))
-  }
-  wrangler.RecordVReplicationAction(prd.cleaner, masterInfo.Tablet, binlogplayer.StartVReplication(ss.Uid))
-  p3qr, err := tabletManagerClient.VReplicationExec(shortCtx, masterInfo.Tablet, binlogplayer.ReadVReplicationPos(ss.Uid))
-  if err != nil {
-    return vterrors.Wrapf(err, "VReplicationExec(stop) for %v failed", shardInfo.MasterAlias)
-  }
-  qr := sqltypes.Proto3ToResult(p3qr)
-  if len(qr.Rows) != 1 || len(qr.Rows[0]) != 1 {
-    return fmt.Errorf("unexpected result while reading position: %v", qr)
-  }
-  vreplicationPos := qr.Rows[0][0].ToString()
+	// 1 - stop the master binlog replication, get its current position
+	prd.logger.Infof("Stopping master binlog replication on %v", topoproto.TabletAliasString(shardInfo.MasterAlias))
+	shortCtx, cancel = context.WithTimeout(ctx, *remoteActionsTimeout)
+	defer cancel()
+	_, err = tabletManagerClient.VReplicationExec(shortCtx, masterInfo.Tablet, binlogplayer.StopVReplication(ss.Uid, "for split diff"))
+	if err != nil {
+		return vterrors.Wrapf(err, "Stop VReplication on master %v failed", topoproto.TabletAliasString(shardInfo.MasterAlias))
+	}
+	wrangler.RecordVReplicationAction(prd.cleaner, masterInfo.Tablet, binlogplayer.StartVReplication(ss.Uid))
+	p3qr, err := tabletManagerClient.VReplicationExec(shortCtx, masterInfo.Tablet, binlogplayer.ReadVReplicationPos(ss.Uid))
+	if err != nil {
+		return vterrors.Wrapf(err, "VReplicationExec(stop) for %v failed", shardInfo.MasterAlias)
+	}
+	qr := sqltypes.Proto3ToResult(p3qr)
+	if len(qr.Rows) != 1 || len(qr.Rows[0]) != 1 {
+		return fmt.Errorf("unexpected result while reading position: %v", qr)
+	}
+	vreplicationPos := qr.Rows[0][0].ToString()
 
-  // stop replication
-  prd.logger.Infof("Stopping slave %v at a minimum of %v", topoproto.TabletAliasString(sourceAlias), vreplicationPos)
-  shortCtx, cancel = context.WithTimeout(ctx, *remoteActionsTimeout)
-  defer cancel()
-  sourceTablet, err := toposerver.GetTablet(shortCtx, sourceAlias)
-  if err != nil {
-    return err
-  }
-  mysqlPos, err := tabletManagerClient.StopSlaveMinimum(shortCtx, sourceTablet.Tablet, vreplicationPos, *remoteActionsTimeout)
-  if err != nil {
-    return vterrors.Wrapf(err, "cannot stop slave %v at right binlog position %v", topoproto.TabletAliasString(sourceAlias), vreplicationPos)
-  }
+	// stop replication
+	prd.logger.Infof("Stopping slave %v at a minimum of %v", topoproto.TabletAliasString(sourceAlias), vreplicationPos)
+	shortCtx, cancel = context.WithTimeout(ctx, *remoteActionsTimeout)
+	defer cancel()
+	sourceTablet, err := toposerver.GetTablet(shortCtx, sourceAlias)
+	if err != nil {
+		return err
+	}
+	mysqlPos, err := tabletManagerClient.StopSlaveMinimum(shortCtx, sourceTablet.Tablet, vreplicationPos, *remoteActionsTimeout)
+	if err != nil {
+		return vterrors.Wrapf(err, "cannot stop slave %v at right binlog position %v", topoproto.TabletAliasString(sourceAlias), vreplicationPos)
+	}
 
-  // change the cleaner actions from ChangeSlaveType(rdonly)
-  // to StartSlave() + ChangeSlaveType(spare)
-  wrangler.RecordStartSlaveAction(prd.cleaner, sourceTablet.Tablet)
+	// change the cleaner actions from ChangeSlaveType(rdonly)
+	// to StartSlave() + ChangeSlaveType(spare)
+	wrangler.RecordStartSlaveAction(prd.cleaner, sourceTablet.Tablet)
 
-  // 3 - ask the master of the destination shard to resume filtered
-  //     replication up to the new list of positions
-  prd.logger.Infof("Restarting master %v until it catches up to %v", topoproto.TabletAliasString(shardInfo.MasterAlias), mysqlPos)
-  shortCtx, cancel = context.WithTimeout(ctx, *remoteActionsTimeout)
-  defer cancel()
-  _, err = tabletManagerClient.VReplicationExec(shortCtx, masterInfo.Tablet, binlogplayer.StartVReplicationUntil(ss.Uid, mysqlPos))
-  if err != nil {
-    return vterrors.Wrapf(err, "VReplication(start until) for %v until %v failed", shardInfo.MasterAlias, mysqlPos)
-  }
-  if err := tabletManagerClient.VReplicationWaitForPos(shortCtx, masterInfo.Tablet, int(ss.Uid), mysqlPos); err != nil {
-    return vterrors.Wrapf(err, "VReplicationWaitForPos for %v until %v failed", shardInfo.MasterAlias, mysqlPos)
-  }
-  masterPos, err := tabletManagerClient.MasterPosition(shortCtx, masterInfo.Tablet)
-  if err != nil {
-    return vterrors.Wrapf(err, "MasterPosition for %v failed", shardInfo.MasterAlias)
-  }
+	// 3 - ask the master of the destination shard to resume filtered
+	//     replication up to the new list of positions
+	prd.logger.Infof("Restarting master %v until it catches up to %v", topoproto.TabletAliasString(shardInfo.MasterAlias), mysqlPos)
+	shortCtx, cancel = context.WithTimeout(ctx, *remoteActionsTimeout)
+	defer cancel()
+	_, err = tabletManagerClient.VReplicationExec(shortCtx, masterInfo.Tablet, binlogplayer.StartVReplicationUntil(ss.Uid, mysqlPos))
+	if err != nil {
+		return vterrors.Wrapf(err, "VReplication(start until) for %v until %v failed", shardInfo.MasterAlias, mysqlPos)
+	}
+	if err := tabletManagerClient.VReplicationWaitForPos(shortCtx, masterInfo.Tablet, int(ss.Uid), mysqlPos); err != nil {
+		return vterrors.Wrapf(err, "VReplicationWaitForPos for %v until %v failed", shardInfo.MasterAlias, mysqlPos)
+	}
+	masterPos, err := tabletManagerClient.MasterPosition(shortCtx, masterInfo.Tablet)
+	if err != nil {
+		return vterrors.Wrapf(err, "MasterPosition for %v failed", shardInfo.MasterAlias)
+	}
 
-  // 4 - wait until the destination tablet is equal or passed
-  //     that master binlog position, and stop its replication.
-  prd.logger.Infof("Waiting for destination tablet %v to catch up to %v", topoproto.TabletAliasString(destinationAlias), masterPos)
-  shortCtx, cancel = context.WithTimeout(ctx, *remoteActionsTimeout)
-  defer cancel()
-  destinationTablet, err := toposerver.GetTablet(shortCtx, destinationAlias)
-  if err != nil {
-    return err
-  }
-  shortCtx, cancel = context.WithTimeout(ctx, *remoteActionsTimeout)
-  defer cancel()
-  _, err = tabletManagerClient.StopSlaveMinimum(shortCtx, destinationTablet.Tablet, masterPos, *remoteActionsTimeout)
-  if err != nil {
-    return vterrors.Wrapf(err, "StopSlaveMinimum on %v at %v failed", topoproto.TabletAliasString(destinationAlias), masterPos)
-  }
-  wrangler.RecordStartSlaveAction(prd.cleaner, destinationTablet.Tablet)
+	// 4 - wait until the destination tablet is equal or passed
+	//     that master binlog position, and stop its replication.
+	prd.logger.Infof("Waiting for destination tablet %v to catch up to %v", topoproto.TabletAliasString(destinationAlias), masterPos)
+	shortCtx, cancel = context.WithTimeout(ctx, *remoteActionsTimeout)
+	defer cancel()
+	destinationTablet, err := toposerver.GetTablet(shortCtx, destinationAlias)
+	if err != nil {
+		return err
+	}
+	shortCtx, cancel = context.WithTimeout(ctx, *remoteActionsTimeout)
+	defer cancel()
+	_, err = tabletManagerClient.StopSlaveMinimum(shortCtx, destinationTablet.Tablet, masterPos, *remoteActionsTimeout)
+	if err != nil {
+		return vterrors.Wrapf(err, "StopSlaveMinimum on %v at %v failed", topoproto.TabletAliasString(destinationAlias), masterPos)
+	}
+	wrangler.RecordStartSlaveAction(prd.cleaner, destinationTablet.Tablet)
 
-  // 5 - restart filtered replication on destination master
-  prd.logger.Infof("Restarting filtered replication on master %v", topoproto.TabletAliasString(shardInfo.MasterAlias))
-  shortCtx, cancel = context.WithTimeout(ctx, *remoteActionsTimeout)
-  defer cancel()
-  if _, err = tabletManagerClient.VReplicationExec(ctx, masterInfo.Tablet, binlogplayer.StartVReplication(ss.Uid)); err != nil {
-    return vterrors.Wrapf(err, "VReplicationExec(start) failed for %v", shardInfo.MasterAlias)
-  }
+	// 5 - restart filtered replication on destination master
+	prd.logger.Infof("Restarting filtered replication on master %v", topoproto.TabletAliasString(shardInfo.MasterAlias))
+	shortCtx, cancel = context.WithTimeout(ctx, *remoteActionsTimeout)
+	defer cancel()
+	if _, err = tabletManagerClient.VReplicationExec(ctx, masterInfo.Tablet, binlogplayer.StartVReplication(ss.Uid)); err != nil {
+		return vterrors.Wrapf(err, "VReplicationExec(start) failed for %v", shardInfo.MasterAlias)
+	}
 
-  return nil
+	return nil
 }
 
 // diff phase: will create a list of messages regarding the diff.
@@ -169,130 +169,130 @@ func (prd *PausedReplicationDiffer) StabilizeSourceAndDestination(ctx context.Co
 // - if some table schema mismatches, record them (use existing schema diff tools).
 // - for each table in destination, run a diff pipeline.
 func (prd *PausedReplicationDiffer) Diff(ctx context.Context,
-  wr *wrangler.Wrangler,
-  sourceAlias *topodata.TabletAlias,
-  destinationAlias *topodata.TabletAlias,
-  shardInfo *topo.ShardInfo,
-  markAsWillFail func(rec concurrency.ErrorRecorder, err error),
-  parallelDiffsCount int) error {
-  prd.logger.Infof("Gathering schema information...")
+	wr *wrangler.Wrangler,
+	sourceAlias *topodata.TabletAlias,
+	destinationAlias *topodata.TabletAlias,
+	shardInfo *topo.ShardInfo,
+	markAsWillFail func(rec concurrency.ErrorRecorder, err error),
+	parallelDiffsCount int) error {
+	prd.logger.Infof("Gathering schema information...")
 
-  schemaDefinition, err := SchemaDiff(ctx, wr, sourceAlias, destinationAlias, shardInfo, markAsWillFail)
-  if err != nil {
-   return vterrors.Wrapf(err, "schema diff between %v and %v failed", sourceAlias, destinationAlias)
-  }
+	schemaDefinition, err := SchemaDiff(ctx, wr, sourceAlias, destinationAlias, shardInfo, markAsWillFail)
+	if err != nil {
+		return vterrors.Wrapf(err, "schema diff between %v and %v failed", sourceAlias, destinationAlias)
+	}
 
-  // run the diffs, 8 at a time
-  prd.logger.Infof("Running the diffs...")
-  sem := sync2.NewSemaphore(parallelDiffsCount, 0)
-  wg := sync.WaitGroup{}
-  rec := &concurrency.AllErrorRecorder{}
-  for _, tableDefinition := range schemaDefinition.TableDefinitions {
-    wg.Add(1)
-    go func(tableDefinition *tabletmanagerdata.TableDefinition) {
-      defer wg.Done()
-      sem.Acquire()
-      defer sem.Release()
+	// run the diffs, 8 at a time
+	prd.logger.Infof("Running the diffs...")
+	sem := sync2.NewSemaphore(parallelDiffsCount, 0)
+	wg := sync.WaitGroup{}
+	rec := &concurrency.AllErrorRecorder{}
+	for _, tableDefinition := range schemaDefinition.TableDefinitions {
+		wg.Add(1)
+		go func(tableDefinition *tabletmanagerdata.TableDefinition) {
+			defer wg.Done()
+			sem.Acquire()
+			defer sem.Release()
 
-      prd.logger.Infof("Starting the diff on table %v", tableDefinition.Name)
-      sourceQueryResultReader, err := TableScan(ctx, prd.logger, wr.TopoServer(), sourceAlias, tableDefinition)
-      if err != nil {
-        newErr := vterrors.Wrap(err, "TableScan(source) failed")
-        markAsWillFail(rec, newErr)
-        prd.logger.Error(newErr)
-        return
-      }
-      defer sourceQueryResultReader.Close(ctx)
+			prd.logger.Infof("Starting the diff on table %v", tableDefinition.Name)
+			sourceQueryResultReader, err := TableScan(ctx, prd.logger, wr.TopoServer(), sourceAlias, tableDefinition)
+			if err != nil {
+				newErr := vterrors.Wrap(err, "TableScan(source) failed")
+				markAsWillFail(rec, newErr)
+				prd.logger.Error(newErr)
+				return
+			}
+			defer sourceQueryResultReader.Close(ctx)
 
-      destinationQueryResultReader, err := TableScan(ctx, prd.logger, wr.TopoServer(), destinationAlias, tableDefinition)
-      if err != nil {
-        newErr := vterrors.Wrap(err, "TableScan(destination) failed")
-        markAsWillFail(rec, newErr)
-        prd.logger.Error(newErr)
-        return
-      }
-      defer destinationQueryResultReader.Close(ctx)
+			destinationQueryResultReader, err := TableScan(ctx, prd.logger, wr.TopoServer(), destinationAlias, tableDefinition)
+			if err != nil {
+				newErr := vterrors.Wrap(err, "TableScan(destination) failed")
+				markAsWillFail(rec, newErr)
+				prd.logger.Error(newErr)
+				return
+			}
+			defer destinationQueryResultReader.Close(ctx)
 
-      differ, err := NewRowDiffer(sourceQueryResultReader, destinationQueryResultReader, tableDefinition)
-      if err != nil {
-        newErr := vterrors.Wrap(err, "NewRowDiffer() failed")
-        markAsWillFail(rec, newErr)
-        prd.logger.Error(newErr)
-        return
-      }
+			differ, err := NewRowDiffer(sourceQueryResultReader, destinationQueryResultReader, tableDefinition)
+			if err != nil {
+				newErr := vterrors.Wrap(err, "NewRowDiffer() failed")
+				markAsWillFail(rec, newErr)
+				prd.logger.Error(newErr)
+				return
+			}
 
-      report, err := differ.Go(prd.logger)
-      if err != nil {
-        prd.logger.Errorf2(err, "Differ.Go failed")
-      } else {
-        if report.HasDifferences() {
-          err := fmt.Errorf("table %v has differences: %v", tableDefinition.Name, report.String())
-          markAsWillFail(rec, err)
-          prd.logger.Error(err)
-        } else {
-          prd.logger.Infof("Table %v checks out (%v rows processed, %v qps)", tableDefinition.Name, report.processedRows, report.processingQPS)
-        }
-      }
-    }(tableDefinition)
-  }
-  wg.Wait()
+			report, err := differ.Go(prd.logger)
+			if err != nil {
+				prd.logger.Errorf2(err, "Differ.Go failed")
+			} else {
+				if report.HasDifferences() {
+					err := fmt.Errorf("table %v has differences: %v", tableDefinition.Name, report.String())
+					markAsWillFail(rec, err)
+					prd.logger.Error(err)
+				} else {
+					prd.logger.Infof("Table %v checks out (%v rows processed, %v qps)", tableDefinition.Name, report.processedRows, report.processingQPS)
+				}
+			}
+		}(tableDefinition)
+	}
+	wg.Wait()
 
-  return rec.Error()
+	return rec.Error()
 }
 
 func SchemaDiff(ctx context.Context,
-  wr *wrangler.Wrangler,
-  sourceAlias *topodata.TabletAlias,
-  destinationAlias *topodata.TabletAlias,
-  shardInfo *topo.ShardInfo,
-  markAsWillFail func(rec concurrency.ErrorRecorder, err error)) (*tabletmanagerdata.SchemaDefinition, error) {
-  wg := sync.WaitGroup{}
-  rec := &concurrency.AllErrorRecorder{}
+	wr *wrangler.Wrangler,
+	sourceAlias *topodata.TabletAlias,
+	destinationAlias *topodata.TabletAlias,
+	shardInfo *topo.ShardInfo,
+	markAsWillFail func(rec concurrency.ErrorRecorder, err error)) (*tabletmanagerdata.SchemaDefinition, error) {
+	wg := sync.WaitGroup{}
+	rec := &concurrency.AllErrorRecorder{}
 
-  var destinationSchemaDefinition *tabletmanagerdata.SchemaDefinition
-  var sourceSchemaDefinition *tabletmanagerdata.SchemaDefinition
+	var destinationSchemaDefinition *tabletmanagerdata.SchemaDefinition
+	var sourceSchemaDefinition *tabletmanagerdata.SchemaDefinition
 
-  // Get the two schema definitions asynchronously
-  wg.Add(2)
-  go func() {
-    destinationSchemaDefinition = getSchemaDefinition(ctx, wr, destinationAlias, shardInfo, markAsWillFail, rec)
-    wg.Done()
-  }()
-  go func() {
-    sourceSchemaDefinition = getSchemaDefinition(ctx, wr, sourceAlias, shardInfo, markAsWillFail, rec)
-    wg.Done()
-  }()
-  wg.Wait()
-  if rec.HasErrors() {
-    return nil, rec.Error()
-  }
+	// Get the two schema definitions asynchronously
+	wg.Add(2)
+	go func() {
+		destinationSchemaDefinition = getSchemaDefinition(ctx, wr, destinationAlias, shardInfo, markAsWillFail, rec)
+		wg.Done()
+	}()
+	go func() {
+		sourceSchemaDefinition = getSchemaDefinition(ctx, wr, sourceAlias, shardInfo, markAsWillFail, rec)
+		wg.Done()
+	}()
+	wg.Wait()
+	if rec.HasErrors() {
+		return nil, rec.Error()
+	}
 
-  // Check the schema
-  wr.Logger().Infof("Diffing the schema...")
-  rec = &concurrency.AllErrorRecorder{}
-  tmutils.DiffSchema("destination", destinationSchemaDefinition, "source", sourceSchemaDefinition, rec)
-  if rec.HasErrors() {
-    wr.Logger().Warningf("Different schemas: %v", rec.Error())
-    return nil, vterrors.Wrapf(rec.Error(), "schema differs between %v and %v", sourceAlias, destinationAlias)
-  } else {
-    wr.Logger().Infof("Schema match, good.")
-  }
+	// Check the schema
+	wr.Logger().Infof("Diffing the schema...")
+	rec = &concurrency.AllErrorRecorder{}
+	tmutils.DiffSchema("destination", destinationSchemaDefinition, "source", sourceSchemaDefinition, rec)
+	if rec.HasErrors() {
+		wr.Logger().Warningf("Different schemas: %v", rec.Error())
+		return nil, vterrors.Wrapf(rec.Error(), "schema differs between %v and %v", sourceAlias, destinationAlias)
+	} else {
+		wr.Logger().Infof("Schema match, good.")
+	}
 
-  return destinationSchemaDefinition, nil
+	return destinationSchemaDefinition, nil
 }
 func getSchemaDefinition(ctx context.Context,
-  wr *wrangler.Wrangler,
-  destinationAlias *topodata.TabletAlias,
-  shardInfo *topo.ShardInfo,
-  markAsWillFail func(rec concurrency.ErrorRecorder, err error),
-  rec *concurrency.AllErrorRecorder) *tabletmanagerdata.SchemaDefinition {
-  shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
-  destinationSchemaDefinition, err := wr.GetSchema(
-    shortCtx, destinationAlias, shardInfo.SourceShards[0].Tables, nil /* excludeTables */, false /* includeViews */)
-  cancel()
-  if err != nil {
-    markAsWillFail(rec, err)
-  }
-  wr.Logger().Infof("Got schema from destination %v", topoproto.TabletAliasString(destinationAlias))
-  return destinationSchemaDefinition
+	wr *wrangler.Wrangler,
+	destinationAlias *topodata.TabletAlias,
+	shardInfo *topo.ShardInfo,
+	markAsWillFail func(rec concurrency.ErrorRecorder, err error),
+	rec *concurrency.AllErrorRecorder) *tabletmanagerdata.SchemaDefinition {
+	shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
+	destinationSchemaDefinition, err := wr.GetSchema(
+		shortCtx, destinationAlias, shardInfo.SourceShards[0].Tables, nil /* excludeTables */, false /* includeViews */)
+	cancel()
+	if err != nil {
+		markAsWillFail(rec, err)
+	}
+	wr.Logger().Infof("Got schema from destination %v", topoproto.TabletAliasString(destinationAlias))
+	return destinationSchemaDefinition
 }
