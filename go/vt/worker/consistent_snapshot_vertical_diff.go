@@ -22,6 +22,7 @@ import (
   "vitess.io/vitess/go/vt/logutil"
   "vitess.io/vitess/go/vt/proto/topodata"
   "vitess.io/vitess/go/vt/topo"
+  "vitess.io/vitess/go/vt/vterrors"
   "vitess.io/vitess/go/vt/vttablet/tmclient"
   "vitess.io/vitess/go/vt/wrangler"
 )
@@ -56,5 +57,9 @@ func (*ConsistentSnapshotDiffer) Diff(ctx context.Context,
   shardInfo *topo.ShardInfo,
   markAsWillFail func(rec concurrency.ErrorRecorder, err error),
   parallelDiffsCount int) error {
-  panic("implement me")
+  schemaInfo, err := SchemaDiff(ctx, wr, sourceAlias, destinationAlias, shardInfo, markAsWillFail)
+  if err != nil {
+    return vterrors.Wrapf(err, "schema diff failed")
+  }
+  panic(schemaInfo)
 }

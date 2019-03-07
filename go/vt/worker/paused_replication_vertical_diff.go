@@ -177,7 +177,7 @@ func (prd *PausedReplicationDiffer) Diff(ctx context.Context,
   parallelDiffsCount int) error {
   prd.logger.Infof("Gathering schema information...")
 
-  destinationSchemaDefinition, err := SchemaDiff(ctx, wr, sourceAlias, destinationAlias, shardInfo, markAsWillFail, prd)
+  schemaDefinition, err := SchemaDiff(ctx, wr, sourceAlias, destinationAlias, shardInfo, markAsWillFail)
   if err != nil {
    return vterrors.Wrapf(err, "schema diff between %v and %v failed", sourceAlias, destinationAlias)
   }
@@ -187,7 +187,7 @@ func (prd *PausedReplicationDiffer) Diff(ctx context.Context,
   sem := sync2.NewSemaphore(parallelDiffsCount, 0)
   wg := sync.WaitGroup{}
   rec := &concurrency.AllErrorRecorder{}
-  for _, tableDefinition := range destinationSchemaDefinition.TableDefinitions {
+  for _, tableDefinition := range schemaDefinition.TableDefinitions {
     wg.Add(1)
     go func(tableDefinition *tabletmanagerdata.TableDefinition) {
       defer wg.Done()
@@ -245,7 +245,7 @@ func SchemaDiff(ctx context.Context,
   sourceAlias *topodata.TabletAlias,
   destinationAlias *topodata.TabletAlias,
   shardInfo *topo.ShardInfo,
-  markAsWillFail func(rec concurrency.ErrorRecorder, err error), prd *PausedReplicationDiffer) (*tabletmanagerdata.SchemaDefinition, error) {
+  markAsWillFail func(rec concurrency.ErrorRecorder, err error)) (*tabletmanagerdata.SchemaDefinition, error) {
   wg := sync.WaitGroup{}
   rec := &concurrency.AllErrorRecorder{}
 
@@ -255,11 +255,11 @@ func SchemaDiff(ctx context.Context,
   // Get the two schema definitions asynchronously
   wg.Add(2)
   go func() {
-    destinationSchemaDefinition = getSchemaDefinition(ctx, wr, destinationAlias, shardInfo, markAsWillFail, rec, prd)
+    destinationSchemaDefinition = getSchemaDefinition(ctx, wr, destinationAlias, shardInfo, markAsWillFail, rec)
     wg.Done()
   }()
   go func() {
-    sourceSchemaDefinition = getSchemaDefinition(ctx, wr, sourceAlias, shardInfo, markAsWillFail, rec, prd)
+    sourceSchemaDefinition = getSchemaDefinition(ctx, wr, sourceAlias, shardInfo, markAsWillFail, rec)
     wg.Done()
   }()
   wg.Wait()
@@ -268,19 +268,24 @@ func SchemaDiff(ctx context.Context,
   }
 
   // Check the schema
-  prd.logger.Infof("Diffing the schema...")
+  wr.Logger().Infof("Diffing the schema...")
   rec = &concurrency.AllErrorRecorder{}
   tmutils.DiffSchema("destination", destinationSchemaDefinition, "source", sourceSchemaDefinition, rec)
   if rec.HasErrors() {
-    prd.logger.Warningf("Different schemas: %v", rec.Error())
+    wr.Logger().Warningf("Different schemas: %v", rec.Error())
     return nil, vterrors.Wrapf(rec.Error(), "schema differs between %v and %v", sourceAlias, destinationAlias)
   } else {
-    prd.logger.Infof("Schema match, good.")
+    wr.Logger().Infof("Schema match, good.")
   }
 
   return destinationSchemaDefinition, nil
 }
-func getSchemaDefinition(ctx context.Context, wr *wrangler.Wrangler, destinationAlias *topodata.TabletAlias, shardInfo *topo.ShardInfo, markAsWillFail func(rec concurrency.ErrorRecorder, err error), rec *concurrency.AllErrorRecorder, prd *PausedReplicationDiffer) *tabletmanagerdata.SchemaDefinition {
+func getSchemaDefinition(ctx context.Context,
+  wr *wrangler.Wrangler,
+  destinationAlias *topodata.TabletAlias,
+  shardInfo *topo.ShardInfo,
+  markAsWillFail func(rec concurrency.ErrorRecorder, err error),
+  rec *concurrency.AllErrorRecorder) *tabletmanagerdata.SchemaDefinition {
   shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
   destinationSchemaDefinition, err := wr.GetSchema(
     shortCtx, destinationAlias, shardInfo.SourceShards[0].Tables, nil /* excludeTables */, false /* includeViews */)
@@ -288,6 +293,6 @@ func getSchemaDefinition(ctx context.Context, wr *wrangler.Wrangler, destination
   if err != nil {
     markAsWillFail(rec, err)
   }
-  prd.logger.Infof("Got schema from destination %v", topoproto.TabletAliasString(destinationAlias))
+  wr.Logger().Infof("Got schema from destination %v", topoproto.TabletAliasString(destinationAlias))
   return destinationSchemaDefinition
 }
