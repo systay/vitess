@@ -17,23 +17,26 @@ limitations under the License.
 package servenv
 
 import (
-	"flag"
-	"fmt"
-	"math"
-	"net"
-	"time"
+  "flag"
+  "fmt"
+  "math"
+  "net"
+  "time"
 
-	"github.com/grpc-ecosystem/go-grpc-middleware"
-	"github.com/grpc-ecosystem/go-grpc-prometheus"
+  "github.com/opentracing-contrib/go-grpc"
+  "github.com/opentracing/opentracing-go"
+  "google.golang.org/grpc"
+  "google.golang.org/grpc/credentials"
 
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/keepalive"
+  "github.com/grpc-ecosystem/go-grpc-middleware"
+  "github.com/grpc-ecosystem/go-grpc-prometheus"
 
-	"golang.org/x/net/context"
-	"vitess.io/vitess/go/vt/grpccommon"
-	"vitess.io/vitess/go/vt/log"
-	"vitess.io/vitess/go/vt/vttls"
+  "google.golang.org/grpc/keepalive"
+
+  "golang.org/x/net/context"
+  "vitess.io/vitess/go/vt/grpccommon"
+  "vitess.io/vitess/go/vt/log"
+  "vitess.io/vitess/go/vt/vttls"
 )
 
 // This file handles gRPC server, on its own port.
@@ -185,6 +188,13 @@ func interceptors() []grpc.ServerOption {
 	if *grpccommon.EnableGRPCPrometheus {
 		interceptors.Add(grpc_prometheus.StreamServerInterceptor, grpc_prometheus.UnaryServerInterceptor)
 	}
+
+	// Only enable the tracing interceptor if we have a real tracer present
+  tracer := opentracing.GlobalTracer()
+  _, isNoopTracer := tracer.(*opentracing.NoopTracer)
+  if !isNoopTracer {
+    interceptors.Add(otgrpc.OpenTracingStreamServerInterceptor(tracer), otgrpc.OpenTracingServerInterceptor(tracer))
+  }
 
 	if interceptors.NonEmpty() {
 		return []grpc.ServerOption{

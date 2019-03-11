@@ -20,7 +20,13 @@ limitations under the License.
 package trace
 
 import (
+	"flag"
+	"io"
+
+	"github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/log"
 	"golang.org/x/net/context"
+	"vitess.io/vitess/go/vt/vterrors"
 )
 
 // Span represents a unit of work within a trace. After creating a Span with
@@ -28,15 +34,6 @@ import (
 // represented by this Span. Call Finish() when that work is done to record the
 // Span. A Span may be reused by calling Start again.
 type Span interface {
-	// StartLocal marks the beginning of a span representing time spent doing
-	// work locally.
-	StartLocal(label string)
-	// StartClient marks the beginning of a span representing time spent acting as
-	// a client and waiting for a response.
-	StartClient(label string)
-	// StartServer marks the beginning of a span representing time spent doing
-	// work in service of a remote client request.
-	StartServer(label string)
 	// Finish marks the span as complete.
 	Finish()
 	// Annotate records a key/value pair associated with a Span. It should be
@@ -44,44 +41,54 @@ type Span interface {
 	Annotate(key string, value interface{})
 }
 
-// NewSpan creates a new Span with the currently installed tracing plugin.
-// If no tracing plugin is installed, it returns a fake Span that does nothing.
-func NewSpan(parent Span) Span {
-	return spanFactory.New(parent)
+// NewClientSpan returns a span and a context to register calls to dependent services
+func NewClientSpan(inCtx context.Context, serviceName, spanLabel string) (Span, context.Context) {
+	span, ctx := NewSpan(inCtx, spanLabel, Client)
+	span.Annotate("peer.service", serviceName)
+	return span, ctx
 }
 
-// FromContext returns the Span from a Context if present. The bool return
-// value indicates whether a Span was present in the Context.
-func FromContext(ctx context.Context) (Span, bool) {
-	return spanFactory.FromContext(ctx)
+// NewSpan returns a span and a context - the context containing said span
+func NewSpan(inCtx context.Context, label string, spanType SpanType) (Span, context.Context) {
+	parent, _ := spanFactory.FromContext(inCtx)
+	span := spanFactory.New(parent, label, spanType)
+	outCtx := spanFactory.NewContext(inCtx, span)
+
+	return span, outCtx
 }
 
-// NewContext returns a context based on parent with a new Span value.
-func NewContext(parent context.Context, span Span) context.Context {
-	return spanFactory.NewContext(parent, span)
-}
+const extractSize = 10
 
-// NewSpanFromContext returns a new Span whose parent is the Span from the given
-// Context if present, or a new Span with no parent if not.
-func NewSpanFromContext(ctx context.Context) Span {
-	if parent, ok := FromContext(ctx); ok {
-		return NewSpan(parent)
+// ExtractFirstCharacters returns the first few characters of a string.
+// If the string had to be truncated, "..." is added to the end
+func ExtractFirstCharacters(in string) string {
+	if len(in) < extractSize {
+		return in
 	}
-	return NewSpan(nil)
+	runes := []rune(in)
+	return string(runes[0:extractSize]) + "..."
 }
 
 // CopySpan creates a new context from parentCtx, with only the trace span
 // copied over from spanCtx, if it has any. If not, parentCtx is returned.
 func CopySpan(parentCtx, spanCtx context.Context) context.Context {
-	if span, ok := FromContext(spanCtx); ok {
-		return NewContext(parentCtx, span)
+	if span, ok := spanFactory.FromContext(spanCtx); ok {
+		return spanFactory.NewContext(parentCtx, span)
 	}
 	return parentCtx
 }
 
+type SpanType int
+
+const (
+	Local SpanType = iota
+	Client
+	Server
+)
+
 // SpanFactory is an interface for creating spans or extracting them from Contexts.
 type SpanFactory interface {
-	New(parent Span) Span
+	New(parent Span, label string, spanType SpanType) Span
 	FromContext(ctx context.Context) (Span, bool)
 	NewContext(parent context.Context, span Span) context.Context
 }
@@ -99,15 +106,44 @@ func RegisterSpanFactory(sf SpanFactory) {
 
 type fakeSpanFactory struct{}
 
-func (fakeSpanFactory) New(parent Span) Span                                         { return fakeSpan{} }
-func (fakeSpanFactory) FromContext(ctx context.Context) (Span, bool)                 { return nil, false }
-func (fakeSpanFactory) NewContext(parent context.Context, span Span) context.Context { return parent }
+func (fakeSpanFactory) New(Span, string, SpanType) Span                           { return fakeSpan{} }
+func (fakeSpanFactory) FromContext(context.Context) (Span, bool)                  { return nil, false }
+func (fakeSpanFactory) NewContext(parent context.Context, _ Span) context.Context { return parent }
 
 // fakeSpan implements Span with no-op methods.
 type fakeSpan struct{}
 
-func (fakeSpan) StartLocal(string)            {}
-func (fakeSpan) StartClient(string)           {}
-func (fakeSpan) StartServer(string)           {}
 func (fakeSpan) Finish()                      {}
 func (fakeSpan) Annotate(string, interface{}) {}
+
+var (
+	tracingServer = flag.String("tracer", "noop", "tracing service to use. available are: noop, jaeger. Configuration is provided using environment variables.")
+)
+
+// StartTracing enables tracing for a named service
+func StartTracing(serviceName string) io.Closer {
+	switch *tracingServer {
+	case "noop":
+		// we are not doing any tracing
+		return &nilCloser{}
+	case "jaeger":
+		tracer, closer, err := NewJagerTracerFromEnv(serviceName)
+		if err != nil {
+			log.Error(vterrors.Wrapf(err, "failed to create a jaeger tracer"))
+			return &nilCloser{}
+		}
+		// Register it for all openTracing enabled plugins, mainly the grpc connections
+		opentracing.SetGlobalTracer(tracer)
+
+		// Register it for the internal Vitess tracing system
+		RegisterSpanFactory(OpenTracingFactory{Tracer: tracer})
+		return closer
+	default:
+		panic("unknown tracing service" + serviceName)
+	}
+}
+
+type nilCloser struct {
+}
+
+func (c *nilCloser) Close() error { return nil }
