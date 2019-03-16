@@ -17,23 +17,24 @@ limitations under the License.
 package trace
 
 import (
-	"testing"
-
-	"golang.org/x/net/context"
+  "golang.org/x/net/context"
 )
 
-func TestFakeSpan(t *testing.T) {
-	ctx := context.Background()
+type NoTracing struct {
+}
 
-	// It should be safe to call all the usual methods as if a plugin were installed.
-	span1, ctx := NewSpan(ctx, "label", Local)
-	span1.Finish()
+func (nt *NoTracing) Finish() {}
 
-	span2, ctx := NewSpan(ctx, "label", Client)
-	span2.Annotate("key", 42)
-	span2.Finish()
+func (nt *NoTracing) Annotate(_ string, _ interface{}) {}
 
-	span3, ctx := NewSpan(ctx, "label", Server)
-	span3.Annotate("key", 42)
-	span3.Finish()
+func (nt *NoTracing) NewSpan(inCtx context.Context, label string, _ SpanType) (Span, context.Context) {
+  return nt, inCtx
+}
+
+func (nt *NoTracing) NewClientSpan(inCtx context.Context, _, _ string) (Span, context.Context) {
+  return nt, inCtx
+}
+
+func (nt *NoTracing) CopySpan(parentCtx, _ context.Context) context.Context {
+  return parentCtx
 }

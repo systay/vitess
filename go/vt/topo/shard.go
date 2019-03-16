@@ -581,7 +581,6 @@ func (ts *Server) FindAllTabletAliasesInShardByCell(ctx context.Context, keyspac
 	span.Annotate("shard", shard)
 	span.Annotate("num_cells", len(cells))
 	defer span.Finish()
-	ctx = trace.NewContext(ctx, span)
 
 	// read the shard information to find the cells
 	si, err := ts.GetShard(ctx, keyspace, shard)

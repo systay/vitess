@@ -619,6 +619,12 @@
 			"revisionTime": "2016-05-03T14:34:40Z"
 		},
 		{
+			"checksumSHA1": "NvkV52M5EFd0kT4U+9A2Eu/kKr8=",
+			"path": "github.com/hashicorp/golang-lru/simplelru",
+			"revision": "7087cb70de9f7a8bc0a10c375cb0d2280a8edf9c",
+			"revisionTime": "2019-02-27T22:24:58Z"
+		},
+		{
 			"checksumSHA1": "E3Xcanc9ouQwL+CZGOUyA/+giLg=",
 			"path": "github.com/hashicorp/serf/coordinate",
 			"revision": "d3a67ab21bc8a4643fa53a3633f2d951dd50c6ca",
@@ -743,36 +749,6 @@
 			"path": "github.com/olekukonko/tablewriter",
 			"revision": "cca8bbc0798408af109aaaa239cbd2634846b340",
 			"revisionTime": "2016-01-15T11:10:02Z"
-		},
-		{
-			"checksumSHA1": "n38KWy7vkTd5/n7QqyRveENyZ98=",
-			"path": "github.com/opentracing-contrib/go-grpc",
-			"revision": "4b5a12d3ff02ba61ae861b7797e17a0c4f0ecea9",
-			"revisionTime": "2018-09-28T15:53:21Z"
-		},
-		{
-			"checksumSHA1": "N+a8z9+g8MnuPN0aItiVP2CVFQs=",
-			"path": "github.com/opentracing/opentracing-go",
-			"revision": "1949ddbfd147afd4d964a9f00b24eb291e0e7c38",
-			"revisionTime": "2017-04-26T17:58:16Z",
-			"version": "v1.0.2",
-			"versionExact": "v1.0.2"
-		},
-		{
-			"checksumSHA1": "XPOyfxsryU1pByZESwduVu9OEQU=",
-			"path": "github.com/opentracing/opentracing-go/ext",
-			"revision": "1949ddbfd147afd4d964a9f00b24eb291e0e7c38",
-			"revisionTime": "2017-04-26T17:58:16Z",
-			"version": "v1.0.2",
-			"versionExact": "v1.0.2"
-		},
-		{
-			"checksumSHA1": "+rbKrafLHDnrQFgeWawo9tfZhV4=",
-			"path": "github.com/opentracing/opentracing-go/log",
-			"revision": "1949ddbfd147afd4d964a9f00b24eb291e0e7c38",
-			"revisionTime": "2017-04-26T17:58:16Z",
-			"version": "v1.0.2",
-			"versionExact": "v1.0.2"
 		},
 		{
 			"checksumSHA1": "mhvIMH8oAtOiEyg37zWKmgb+6v4=",
@@ -937,114 +913,6 @@
 			"revisionTime": "2016-07-29T07:16:56Z"
 		},
 		{
-			"checksumSHA1": "H81V2Jfwte/WYslbaG9ykrD1+Q8=",
-			"path": "github.com/uber/jaeger-client-go",
-			"revision": "3231c1a9c59534e968cd021da5e283cbd0171397",
-			"revisionTime": "2019-02-03T04:16:52Z"
-		},
-		{
-			"checksumSHA1": "VGtI2lhUBiBj3XcEqL9oQfQMsz0=",
-			"path": "github.com/uber/jaeger-client-go/config",
-			"revision": "3231c1a9c59534e968cd021da5e283cbd0171397",
-			"revisionTime": "2019-02-03T04:16:52Z"
-		},
-		{
-			"checksumSHA1": "KM5UXTWkHULmw0dDRNuk8ogWyGs=",
-			"path": "github.com/uber/jaeger-client-go/internal/baggage",
-			"revision": "3231c1a9c59534e968cd021da5e283cbd0171397",
-			"revisionTime": "2019-02-03T04:16:52Z"
-		},
-		{
-			"checksumSHA1": "tZqlcHV1XoLdZp9jfnydzsZAvYo=",
-			"path": "github.com/uber/jaeger-client-go/internal/baggage/remote",
-			"revision": "3231c1a9c59534e968cd021da5e283cbd0171397",
-			"revisionTime": "2019-02-03T04:16:52Z"
-		},
-		{
-			"checksumSHA1": "QB0L0GrzyMGQp6ivkkxp7a1DPsE=",
-			"path": "github.com/uber/jaeger-client-go/internal/spanlog",
-			"revision": "3231c1a9c59534e968cd021da5e283cbd0171397",
-			"revisionTime": "2019-02-03T04:16:52Z"
-		},
-		{
-			"checksumSHA1": "79HRO/+ekkpwqDB/OMiW+AHJtlE=",
-			"path": "github.com/uber/jaeger-client-go/internal/throttler",
-			"revision": "3231c1a9c59534e968cd021da5e283cbd0171397",
-			"revisionTime": "2019-02-03T04:16:52Z"
-		},
-		{
-			"checksumSHA1": "OVQDWFtFMs+NODe0F/S5kYViQco=",
-			"path": "github.com/uber/jaeger-client-go/internal/throttler/remote",
-			"revision": "3231c1a9c59534e968cd021da5e283cbd0171397",
-			"revisionTime": "2019-02-03T04:16:52Z"
-		},
-		{
-			"checksumSHA1": "tMP/vxbHwNAbOEaUhic5/meKfac=",
-			"path": "github.com/uber/jaeger-client-go/log",
-			"revision": "3231c1a9c59534e968cd021da5e283cbd0171397",
-			"revisionTime": "2019-02-03T04:16:52Z"
-		},
-		{
-			"checksumSHA1": "empqDwPkKUkGNeGHCu/EWoGI21o=",
-			"path": "github.com/uber/jaeger-client-go/rpcmetrics",
-			"revision": "3231c1a9c59534e968cd021da5e283cbd0171397",
-			"revisionTime": "2019-02-03T04:16:52Z"
-		},
-		{
-			"checksumSHA1": "+ffspyTBQLql2UiU6muvfWR/m1o=",
-			"path": "github.com/uber/jaeger-client-go/thrift",
-			"revision": "3231c1a9c59534e968cd021da5e283cbd0171397",
-			"revisionTime": "2019-02-03T04:16:52Z"
-		},
-		{
-			"checksumSHA1": "fMIQ4sJFCkqFYhXvvLKIlofqxvY=",
-			"path": "github.com/uber/jaeger-client-go/thrift-gen/agent",
-			"revision": "3231c1a9c59534e968cd021da5e283cbd0171397",
-			"revisionTime": "2019-02-03T04:16:52Z"
-		},
-		{
-			"checksumSHA1": "fRR2p+JAp7paApf32YuQuWU7yzY=",
-			"path": "github.com/uber/jaeger-client-go/thrift-gen/baggage",
-			"revision": "3231c1a9c59534e968cd021da5e283cbd0171397",
-			"revisionTime": "2019-02-03T04:16:52Z"
-		},
-		{
-			"checksumSHA1": "JZkMEOmiOFFEuGCsDOVLK5RzvMM=",
-			"path": "github.com/uber/jaeger-client-go/thrift-gen/jaeger",
-			"revision": "3231c1a9c59534e968cd021da5e283cbd0171397",
-			"revisionTime": "2019-02-03T04:16:52Z"
-		},
-		{
-			"checksumSHA1": "0teQUhTqTE1fLs+vbnTTzWOqdEQ=",
-			"path": "github.com/uber/jaeger-client-go/thrift-gen/sampling",
-			"revision": "3231c1a9c59534e968cd021da5e283cbd0171397",
-			"revisionTime": "2019-02-03T04:16:52Z"
-		},
-		{
-			"checksumSHA1": "Nx5witfz05BSO2YlFzh2Gno6bA0=",
-			"path": "github.com/uber/jaeger-client-go/thrift-gen/zipkincore",
-			"revision": "3231c1a9c59534e968cd021da5e283cbd0171397",
-			"revisionTime": "2019-02-03T04:16:52Z"
-		},
-		{
-			"checksumSHA1": "UlW+AcyeItWM0x1W4vT9hbUiOJs=",
-			"path": "github.com/uber/jaeger-client-go/transport",
-			"revision": "3231c1a9c59534e968cd021da5e283cbd0171397",
-			"revisionTime": "2019-02-03T04:16:52Z"
-		},
-		{
-			"checksumSHA1": "DKwwIk9vq53IKO7RKccat9cnqeo=",
-			"path": "github.com/uber/jaeger-client-go/utils",
-			"revision": "3231c1a9c59534e968cd021da5e283cbd0171397",
-			"revisionTime": "2019-02-03T04:16:52Z"
-		},
-		{
-			"checksumSHA1": "gF1WPb3/R8RoZw/wqEQmkwntrQc=",
-			"path": "github.com/uber/jaeger-lib/metrics",
-			"revision": "d036253de8f5b698150d81b922486f1e8e7628ec",
-			"revisionTime": "2019-01-22T22:26:57Z"
-		},
-		{
 			"checksumSHA1": "8Kj0VH496b0exuyv4wAF4CXa7Y4=",
 			"path": "github.com/yudai/gojsondiff",
 			"revision": "081cda2ee95045a2c26da52c2ba80860838549de",
@@ -1061,6 +929,94 @@
 			"path": "github.com/yudai/golcs",
 			"revision": "ecda9a501e8220fae3b4b600c3db4b0ba22cfc68",
 			"revisionTime": "2017-03-16T03:48:04Z"
+		},
+		{
+			"checksumSHA1": "4z+Q5QrLSWILqMN9cDfBAS+wOFM=",
+			"path": "go.opencensus.io",
+			"revision": "084f0af45890ac542efb278fdcb11eb19f78d664",
+			"revisionTime": "2019-03-13T06:17:56Z"
+		},
+		{
+			"checksumSHA1": "T+okHcoeRcNtVrERpx70CY4zsho=",
+			"path": "go.opencensus.io/exemplar",
+			"revision": "084f0af45890ac542efb278fdcb11eb19f78d664",
+			"revisionTime": "2019-03-13T06:17:56Z"
+		},
+		{
+			"checksumSHA1": "wdUUjO+C44KS8WgtgfC4Tizxjb0=",
+			"path": "go.opencensus.io/exporter/jaeger",
+			"revision": "084f0af45890ac542efb278fdcb11eb19f78d664",
+			"revisionTime": "2019-03-13T06:17:56Z"
+		},
+		{
+			"path": "go.opencensus.io/exporter/jaeger/internal/gen-go/jaeger",
+			"revision": "084f0af45890ac542efb278fdcb11eb19f78d664"
+		},
+		{
+			"checksumSHA1": "KLZy3Nh+8JlI04JmBa/Jc8fxrVQ=",
+			"path": "go.opencensus.io/internal",
+			"revision": "084f0af45890ac542efb278fdcb11eb19f78d664",
+			"revisionTime": "2019-03-13T06:17:56Z"
+		},
+		{
+			"checksumSHA1": "Dw3rpna1DwTa7TCzijInKcU49g4=",
+			"path": "go.opencensus.io/internal/tagencoding",
+			"revision": "084f0af45890ac542efb278fdcb11eb19f78d664",
+			"revisionTime": "2019-03-13T06:17:56Z"
+		},
+		{
+			"checksumSHA1": "fxA0uL6BLbn1oKVIyteu4/96q3Q=",
+			"path": "go.opencensus.io/plugin/ocgrpc",
+			"revision": "084f0af45890ac542efb278fdcb11eb19f78d664",
+			"revisionTime": "2019-03-13T06:17:56Z"
+		},
+		{
+			"checksumSHA1": "iITJeCEWl7VUPxOB8ThLRAGYTJU=",
+			"path": "go.opencensus.io/stats",
+			"revision": "084f0af45890ac542efb278fdcb11eb19f78d664",
+			"revisionTime": "2019-03-13T06:17:56Z"
+		},
+		{
+			"checksumSHA1": "ZcpSJz9wGLzLzObXDjOT7FQnFcY=",
+			"path": "go.opencensus.io/stats/internal",
+			"revision": "084f0af45890ac542efb278fdcb11eb19f78d664",
+			"revisionTime": "2019-03-13T06:17:56Z"
+		},
+		{
+			"checksumSHA1": "Z+Fp9Quodfg6U7qK6jUDM0l5pcs=",
+			"path": "go.opencensus.io/stats/view",
+			"revision": "084f0af45890ac542efb278fdcb11eb19f78d664",
+			"revisionTime": "2019-03-13T06:17:56Z"
+		},
+		{
+			"checksumSHA1": "uGBQ6ZVQ7R2OpALxUZIaNXEkBSA=",
+			"path": "go.opencensus.io/tag",
+			"revision": "084f0af45890ac542efb278fdcb11eb19f78d664",
+			"revisionTime": "2019-03-13T06:17:56Z"
+		},
+		{
+			"checksumSHA1": "cqXo2mPFU9tZc7isOQ0aq/oZCdY=",
+			"path": "go.opencensus.io/trace",
+			"revision": "084f0af45890ac542efb278fdcb11eb19f78d664",
+			"revisionTime": "2019-03-13T06:17:56Z"
+		},
+		{
+			"checksumSHA1": "JkvEb8oMEFjic5K/03Tyr5Lok+w=",
+			"path": "go.opencensus.io/trace/internal",
+			"revision": "084f0af45890ac542efb278fdcb11eb19f78d664",
+			"revisionTime": "2019-03-13T06:17:56Z"
+		},
+		{
+			"checksumSHA1": "FHJParRi8f1GHO7Cx+lk3bMWBq0=",
+			"path": "go.opencensus.io/trace/propagation",
+			"revision": "084f0af45890ac542efb278fdcb11eb19f78d664",
+			"revisionTime": "2019-03-13T06:17:56Z"
+		},
+		{
+			"checksumSHA1": "UHbxxaMqpEPsubh8kPwzSlyEwqI=",
+			"path": "go.opencensus.io/trace/tracestate",
+			"revision": "084f0af45890ac542efb278fdcb11eb19f78d664",
+			"revisionTime": "2019-03-13T06:17:56Z"
 		},
 		{
 			"checksumSHA1": "FwW3Vv4jW0Nv7V2SZC7x/Huj5M4=",
@@ -1325,6 +1281,12 @@
 			"path": "google.golang.org/api/storage/v1",
 			"revision": "55146ba61254fdb1c26d65ff3c04bc1611ad73fb",
 			"revisionTime": "2016-12-12T20:09:13Z"
+		},
+		{
+			"checksumSHA1": "3MKQfzebrexFB4O7eRWdonIHlng=",
+			"path": "google.golang.org/api/support/bundler",
+			"revision": "8778df036089cbbed9231c892a598e469ecf2c16",
+			"revisionTime": "2019-03-12T00:06:42Z"
 		},
 		{
 			"checksumSHA1": "ztaquTYXuYLb5Kc6mtF64yrsA7E=",
