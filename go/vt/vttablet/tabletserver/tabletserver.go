@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -965,6 +966,12 @@ func (tsv *TabletServer) ReadTransaction(ctx context.Context, target *querypb.Ta
 
 // Execute executes the query and returns the result as response.
 func (tsv *TabletServer) Execute(ctx context.Context, target *querypb.Target, sql string, bindVariables map[string]*querypb.BindVariable, transactionID int64, options *querypb.ExecuteOptions) (result *sqltypes.Result, err error) {
+	_, ok := trace.FromContext(ctx)
+	if !ok {
+		stacktrace := make([]byte, 1024)
+		count := runtime.Stack(stacktrace, true)
+		return nil, fmt.Errorf("failed to find root span" + fmt.Sprintf("Stack of %d bytes: %s", count, stacktrace))
+	}
 	span, ctx := trace.NewSpan(ctx, "TabletServer.Execute")
 	trace.AnnotateSQL(span, sql)
 	defer span.Finish()

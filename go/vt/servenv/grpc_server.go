@@ -25,6 +25,7 @@ import (
 
 	"github.com/grpc-ecosystem/go-grpc-middleware"
 	"github.com/grpc-ecosystem/go-grpc-prometheus"
+	"google.golang.org/grpc/metadata"
 	"vitess.io/vitess/go/trace"
 
 	"google.golang.org/grpc"
@@ -169,8 +170,10 @@ func createGRPCServer() {
 		opts = append(opts, grpc.KeepaliveParams(ka))
 	}
 
+	//opts = append(opts, interceptors()...)
+	//opts = append(opts, grpc.UnaryInterceptor(otgrpc.OpenTracingServerInterceptor(opentracing.GlobalTracer())))
+	//opts = append(opts, grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(opentracing.GlobalTracer())))
 	opts = append(opts, interceptors()...)
-	opts = append(opts, trace.GetGrpcServerOptions()...)
 
 	GRPCServer = grpc.NewServer(opts...)
 }
@@ -195,14 +198,9 @@ func interceptors() []grpc.ServerOption {
 	}
 
 	trace.AddGrpcServerOptions(interceptors.Add)
+	interceptors.AddUnary(logit)
 
-	if interceptors.NonEmpty() {
-		return []grpc.ServerOption{
-			grpc.StreamInterceptor(interceptors.StreamServerInterceptor),
-			grpc.UnaryInterceptor(interceptors.UnaryStreamInterceptor)}
-	} else {
-		return []grpc.ServerOption{}
-	}
+	return interceptors.Build()
 }
 
 func serveGRPC() {
@@ -292,20 +290,42 @@ func WrapServerStream(stream grpc.ServerStream) *WrappedServerStream {
 
 // InterceptorBuilder chains together multiple ServerInterceptors
 type InterceptorBuilder struct {
-	StreamServerInterceptor grpc.StreamServerInterceptor
-	UnaryStreamInterceptor  grpc.UnaryServerInterceptor
+	streamInterceptors []grpc.StreamServerInterceptor
+	unaryInterceptors  []grpc.UnaryServerInterceptor
 }
 
 func (collector *InterceptorBuilder) Add(s grpc.StreamServerInterceptor, u grpc.UnaryServerInterceptor) {
-	if collector.StreamServerInterceptor == nil {
-		collector.StreamServerInterceptor = s
-		collector.UnaryStreamInterceptor = u
-	} else {
-		collector.StreamServerInterceptor = grpc_middleware.ChainStreamServer(collector.StreamServerInterceptor, s)
-		collector.UnaryStreamInterceptor = grpc_middleware.ChainUnaryServer(collector.UnaryStreamInterceptor, u)
+	collector.streamInterceptors = append(collector.streamInterceptors, s)
+	collector.unaryInterceptors = append(collector.unaryInterceptors, u)
+}
+
+func (collector *InterceptorBuilder) AddUnary(u grpc.UnaryServerInterceptor) {
+	collector.unaryInterceptors = append(collector.unaryInterceptors, u)
+}
+
+// Build returns DialOptions to add to the grpc.Dial call
+func (collector *InterceptorBuilder) Build() []grpc.ServerOption {
+	log.Infof("Building interceptors with %d unary interceptors and %d stream interceptors", len(collector.unaryInterceptors), len(collector.streamInterceptors))
+	switch len(collector.unaryInterceptors) + len(collector.streamInterceptors) {
+	case 0:
+		return []grpc.ServerOption{}
+	default:
+		return []grpc.ServerOption{
+			grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(collector.unaryInterceptors...)),
+			grpc.StreamInterceptor(grpc_middleware.ChainStreamServer(collector.streamInterceptors...)),
+		}
 	}
 }
 
-func (collector *InterceptorBuilder) NonEmpty() bool {
-	return collector.StreamServerInterceptor != nil
+func logit(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	log.Info("gprc packet received")
+	log.Info(req)
+	log.Info(info.Server)
+	log.Info(info.FullMethod)
+	mds, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		log.Info(mds)
+	}
+
+	return handler(ctx, req)
 }

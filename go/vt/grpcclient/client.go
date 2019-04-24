@@ -20,13 +20,17 @@ package grpcclient
 
 import (
 	"flag"
+	"fmt"
 
+	"github.com/grpc-ecosystem/go-grpc-middleware"
+	"github.com/opentracing-contrib/go-grpc"
+	"github.com/opentracing/opentracing-go"
+	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/metadata"
 	"vitess.io/vitess/go/trace"
-
-	"github.com/grpc-ecosystem/go-grpc-prometheus"
 
 	"vitess.io/vitess/go/vt/grpccommon"
 	"vitess.io/vitess/go/vt/vttls"
@@ -94,12 +98,24 @@ func Dial(target string, failFast FailFast, opts ...grpc.DialOption) (*grpc.Clie
 		}
 	}
 
-	if *grpccommon.EnableGRPCPrometheus {
-		newopts = append(newopts, grpc.WithUnaryInterceptor(grpc_prometheus.UnaryClientInterceptor))
-		newopts = append(newopts, grpc.WithStreamInterceptor(grpc_prometheus.StreamClientInterceptor))
-	}
+	//builder := &ClientInterceptorBuilder{}
+	//
+	//if *grpccommon.EnableGRPCPrometheus {
+	//	builder.Add(grpc_prometheus.StreamClientInterceptor, grpc_prometheus.UnaryClientInterceptor)
+	//}
+	//
+  //trace.AddGrpcClientOptions(builder.Add)
+	//builder.AddUnary(logAll)
+	//
+	//newopts = append(newopts, builder.Build()...)
 
-	newopts = append(newopts, trace.GetGrpcClientOptions()...)
+	_, isNoop := opentracing.GlobalTracer().(opentracing.NoopTracer)
+
+	if isNoop {
+		return nil, fmt.Errorf("must have tracing enabled!")
+	}
+	interceptor := otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer())
+	newopts = append(newopts, grpc.WithUnaryInterceptor(interceptor))
 
 	return grpc.Dial(target, newopts...)
 }
@@ -122,4 +138,51 @@ func SecureDialOption(cert, key, ca, name string) (grpc.DialOption, error) {
 	// Create the creds server options.
 	creds := credentials.NewTLS(config)
 	return grpc.WithTransportCredentials(creds), nil
+}
+
+// Allows for building a chain of interceptors without knowing the total size up front
+type ClientInterceptorBuilder struct {
+	unaryInterceptors  []grpc.UnaryClientInterceptor
+	streamInterceptors []grpc.StreamClientInterceptor
+}
+
+// Add adds interceptors to the chain of interceptors
+func (collector *ClientInterceptorBuilder) Add(s grpc.StreamClientInterceptor, u grpc.UnaryClientInterceptor) {
+	collector.unaryInterceptors = append(collector.unaryInterceptors, u)
+	collector.streamInterceptors = append(collector.streamInterceptors, s)
+}
+
+func (collector *ClientInterceptorBuilder) AddUnary(u grpc.UnaryClientInterceptor) {
+	collector.unaryInterceptors = append(collector.unaryInterceptors, u)
+}
+
+// Build returns DialOptions to add to the grpc.Dial call
+func (collector *ClientInterceptorBuilder) Build() []grpc.DialOption {
+	switch len(collector.unaryInterceptors) + len(collector.streamInterceptors) {
+	case 0:
+		return []grpc.DialOption{}
+	default:
+		return []grpc.DialOption{
+			grpc.WithUnaryInterceptor(grpc_middleware.ChainUnaryClient(collector.unaryInterceptors...)),
+			grpc.WithStreamInterceptor(grpc_middleware.ChainStreamClient(collector.streamInterceptors...)),
+		}
+	}
+}
+
+func logAll(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	span, ok := trace.FromContext(ctx)
+	if ok {
+		log.Info(span)
+	} else {
+		log.Info("no span available")
+	}
+	log.Info("gprc packet sent")
+	log.Info(req)
+	log.Info(reply)
+	mds, ok := metadata.FromOutgoingContext(ctx)
+	if ok {
+		log.Info(mds)
+	}
+
+	return invoker(ctx, method, req, reply, cc, opts...)
 }

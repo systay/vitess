@@ -16,14 +16,14 @@ limitations under the License.
 
 package main
 
-import (
-  "vitess.io/vitess/go/trace"
-  "vitess.io/vitess/go/vt/servenv"
-)
-
 func init() {
-  servenv.OnRun(func() {
-    closer := trace.StartTracing("vtgate")
-    servenv.OnClose(trace.LogErrorsWhenClosing(closer))
-  })
+  // We are starting the tracing system through servenv.OnRun(), and
+  // vtgate.Init() runs before the servenv has been started.
+  // These two facts makes it so we are not tracing anything happening in vtgate.Init(). This will lead to spans being
+  // created on other services that have no root span when we expect one. If you want to look into what is happening in
+  // vtgate.Init(), move the tracer starting to the main method instead.
+  //servenv.OnRun(func() {
+  //  closer := trace.StartTracing("vtgate")
+  //  servenv.OnClose(trace.LogErrorsWhenClosing(closer))
+  //})
 }

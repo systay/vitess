@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"golang.org/x/net/context"
+	"vitess.io/vitess/go/trace"
 
 	"vitess.io/vitess/go/exit"
 	"vitess.io/vitess/go/vt/discovery"
@@ -82,6 +83,9 @@ func main() {
 			tabletTypes = append(tabletTypes, tt)
 		}
 	}
+
+	closer := trace.StartTracing("vtgate")
+	servenv.OnClose(trace.LogErrorsWhenClosing(closer))
 
 	vtg := vtgate.Init(context.Background(), healthCheck, resilientServer, *cell, *retryCount, tabletTypes)
 

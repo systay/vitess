@@ -35,18 +35,25 @@ type OpenTracingFactory struct {
 }
 
 func (jf OpenTracingFactory) AddGrpcServerOptions(addInterceptors func(s grpc.StreamServerInterceptor, u grpc.UnaryServerInterceptor)) {
-	addInterceptors(otgrpc.OpenTracingStreamServerInterceptor(jf.Tracer), otgrpc.OpenTracingServerInterceptor(jf.Tracer))
+	log.Info("adding grpc server interceptors")
+	theirInterceptor := otgrpc.OpenTracingServerInterceptor(jf.Tracer)
+	//myInterceptor := func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	//
+	//	myHandler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	//		span := trace.FromContext(ctx)
+	//		if span == nil {
+	//			log.Error("handler called without span in context")
+	//		}
+	//		return handler(ctx, req)
+	//	}
+	//	response, err := theirInterceptor(ctx, req, info, myHandler)
+	//	return response, err
+	//}
+	addInterceptors(otgrpc.OpenTracingStreamServerInterceptor(jf.Tracer), theirInterceptor)
 }
 
-func (jf OpenTracingFactory) GetGrpcServerOptions() []grpc.ServerOption {
-	return []grpc.ServerOption{}
-}
-
-func (jf OpenTracingFactory) GetGrpcClientOptions() []grpc.DialOption {
-	return []grpc.DialOption{
-		grpc.WithUnaryInterceptor(otgrpc.OpenTracingClientInterceptor(jf.Tracer)),
-		grpc.WithStreamInterceptor(otgrpc.OpenTracingStreamClientInterceptor(jf.Tracer)),
-	}
+func (jf OpenTracingFactory) AddGrpcClientOptions(addInterceptors func(s grpc.StreamClientInterceptor, u grpc.UnaryClientInterceptor)) {
+	addInterceptors(otgrpc.OpenTracingStreamClientInterceptor(jf.Tracer), otgrpc.OpenTracingClientInterceptor(jf.Tracer))
 }
 
 // newJagerTracerFromEnv will instantiate a TracingService implemented by Jaeger,
@@ -77,6 +84,7 @@ func newJagerTracerFromEnv(serviceName string) (TracingService, io.Closer, error
 	if *agentHost != "" {
 		cfg.Reporter.LocalAgentHostPort = *agentHost
 	}
+	cfg.Reporter.LogSpans = true
 	log.Infof("Tracing to: %v as %v", cfg.Reporter.LocalAgentHostPort, cfg.ServiceName)
 	cfg.Sampler = &config.SamplerConfig{
 		Type:  jaeger.SamplerTypeConst,
@@ -84,7 +92,7 @@ func newJagerTracerFromEnv(serviceName string) (TracingService, io.Closer, error
 	}
 	log.Infof("Tracing sampling rate: %v", *samplingRate)
 
-	tracer, closer, err := cfg.NewTracer()
+	tracer, closer, err := cfg.NewTracer(config.Logger(jaeger.StdLogger))
 
 	if err != nil {
 		return nil, &nilCloser{}, err

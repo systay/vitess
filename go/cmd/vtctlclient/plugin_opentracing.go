@@ -16,15 +16,9 @@ limitations under the License.
 
 package main
 
-import (
-  "vitess.io/vitess/go/trace"
-
-  "vitess.io/vitess/go/vt/servenv"
-)
-
-func init() {
-  servenv.OnRun(func() {
-    closer := trace.StartTracing("vtctlclient")
-    servenv.OnClose(trace.LogErrorsWhenClosing(closer))
-  })
-}
+//func init() {
+//  servenv.OnRun(func() {
+//    closer := trace.StartTracing("vtctlclient")
+//    servenv.OnClose(trace.LogErrorsWhenClosing(closer))
+//  })
+//}
