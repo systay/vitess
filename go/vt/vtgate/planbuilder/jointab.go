@@ -43,7 +43,7 @@ func newJointab(bindvars map[string]struct{}) *jointab {
 
 // Procure requests for the specified column from the plan
 // and returns the join var name for it.
-func (jt *jointab) Procure(bldr builder, col *sqlparser.ColName, to int) string {
+func (jt *jointab) Procure(bldr builder, col *sqlparser.ColName, to int) (string, error) {
 	from, joinVar := jt.Lookup(col)
 	// If joinVar is empty, generate a unique name.
 	if joinVar == "" {
@@ -64,8 +64,11 @@ func (jt *jointab) Procure(bldr builder, col *sqlparser.ColName, to int) string 
 		jt.vars[joinVar] = struct{}{}
 		jt.refs[col.Metadata.(*column)] = joinVar
 	}
-	bldr.SupplyVar(from, to, col, joinVar)
-	return joinVar
+	err := bldr.SupplyVar(from, to, col, joinVar)
+	if err != nil {
+		return "", err
+	}
+	return joinVar, nil
 }
 
 // GenerateSubqueryVars generates substitution variable names for

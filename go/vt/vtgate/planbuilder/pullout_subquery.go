@@ -133,12 +133,11 @@ func (ps *pulloutSubquery) Wireup(bldr builder, jt *jointab) error {
 }
 
 // SupplyVar satisfies the builder interface.
-func (ps *pulloutSubquery) SupplyVar(from, to int, col *sqlparser.ColName, varname string) {
+func (ps *pulloutSubquery) SupplyVar(from, to int, col *sqlparser.ColName, varname string) error {
 	if from <= ps.subquery.Order() {
-		ps.subquery.SupplyVar(from, to, col, varname)
-		return
+		return ps.subquery.SupplyVar(from, to, col, varname)
 	}
-	ps.underlying.SupplyVar(from, to, col, varname)
+	return ps.underlying.SupplyVar(from, to, col, varname)
 }
 
 // SupplyCol satisfies the builder interface.

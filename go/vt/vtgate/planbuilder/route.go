@@ -20,6 +20,9 @@ import (
 	"fmt"
 	"strings"
 
+	"vitess.io/vitess/go/vt/proto/vtrpc"
+	"vitess.io/vitess/go/vt/vterrors"
+
 	"vitess.io/vitess/go/sqltypes"
 	"vitess.io/vitess/go/vt/sqlparser"
 	"vitess.io/vitess/go/vt/vtgate/engine"
@@ -298,12 +301,15 @@ func (rb *route) Wireup(bldr builder, jt *jointab) error {
 		*sub.oldExpr = *sub.newExpr
 	}
 
+	var err error
+
 	// Generate query while simultaneously resolving values.
 	varFormatter := func(buf *sqlparser.TrackedBuffer, node sqlparser.SQLNode) {
 		switch node := node.(type) {
 		case *sqlparser.ColName:
 			if !rb.isLocal(node) {
-				joinVar := jt.Procure(bldr, node, rb.Order())
+				joinVar, localErr := jt.Procure(bldr, node, rb.Order())
+				err = localErr
 				buf.Myprintf("%a", ":"+joinVar)
 				return
 			}
@@ -318,6 +324,9 @@ func (rb *route) Wireup(bldr builder, jt *jointab) error {
 		node.Format(buf)
 	}
 	buf := sqlparser.NewTrackedBuffer(varFormatter)
+	if err != nil {
+		return err
+	}
 	varFormatter(buf, rb.Select)
 	ro.eroute.Query = buf.ParsedQuery().Query
 	ro.eroute.FieldQuery = rb.generateFieldQuery(rb.Select, jt)
@@ -356,7 +365,10 @@ func (rb *route) procureValues(bldr builder, jt *jointab, val sqlparser.Expr) (s
 		}
 		return pv, nil
 	case *sqlparser.ColName:
-		joinVar := jt.Procure(bldr, val, rb.Order())
+		joinVar, err := jt.Procure(bldr, val, rb.Order())
+		if err != nil {
+			return sqltypes.PlanValue{}, err
+		}
 		return sqltypes.PlanValue{Key: joinVar}, nil
 	default:
 		return sqlparser.NewPlanValue(val)
@@ -394,10 +406,10 @@ func (rb *route) generateFieldQuery(sel sqlparser.SelectStatement, jt *jointab) 
 }
 
 // SupplyVar satisfies the builder interface.
-func (rb *route) SupplyVar(from, to int, col *sqlparser.ColName, varname string) {
+func (rb *route) SupplyVar(from, to int, col *sqlparser.ColName, varname string) error {
 	// route is an atomic primitive. So, SupplyVar cannot be
 	// called on it.
-	panic("BUG: route is an atomic node.")
+	return vterrors.New(vtrpc.Code_INTERNAL, "BUG: route is an atomic node.")
 }
 
 // SupplyCol satisfies the builder interface.

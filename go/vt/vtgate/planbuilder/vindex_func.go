@@ -20,6 +20,9 @@ import (
 	"errors"
 	"fmt"
 
+	"vitess.io/vitess/go/vt/proto/vtrpc"
+	"vitess.io/vitess/go/vt/vterrors"
+
 	"vitess.io/vitess/go/vt/sqlparser"
 	"vitess.io/vitess/go/vt/vtgate/engine"
 	"vitess.io/vitess/go/vt/vtgate/vindexes"
@@ -185,10 +188,11 @@ func (vf *vindexFunc) Wireup(bldr builder, jt *jointab) error {
 }
 
 // SupplyVar satisfies the builder interface.
-func (vf *vindexFunc) SupplyVar(from, to int, col *sqlparser.ColName, varname string) {
+func (vf *vindexFunc) SupplyVar(from, to int, col *sqlparser.ColName, varname string) error {
 	// vindexFunc is an atomic primitive. So, SupplyVar cannot be
 	// called on it.
-	panic("BUG: vindexFunc is an atomic node.")
+	return vterrors.New(vtrpc.Code_INTERNAL, "BUG: vindexFunc is an atomic node.")
+
 }
 
 // SupplyCol satisfies the builder interface.

@@ -18,20 +18,24 @@ package engine
 
 import (
 	"vitess.io/vitess/go/sqltypes"
+	"vitess.io/vitess/go/vt/proto/vtrpc"
+	"vitess.io/vitess/go/vt/vterrors"
 
 	querypb "vitess.io/vitess/go/vt/proto/query"
 )
 
 var _ Primitive = (*HashJoin)(nil)
+var _ Join = (*HashJoin)(nil)
 
 // HashJoin specifies the parameters for a join primitive. It does it work by building a hash map (a.k.a probe table)
 // for the lhs input, and then uses this probe table to "probe" the rhs, finding matches by hashing
 // the join column values
 type HashJoin struct {
-	Opcode JoinOpcode
+	Type JoinType `json:",omitempty"`
 	// Left and Right are the LHS and RHS primitives
 	// of the Join. They can be any primitive.
-	Left, Right Primitive `json:",omitempty"`
+	Left  Primitive `json:",omitempty"`
+	Right Primitive `json:",omitempty"`
 
 	// Cols defines which columns from the left
 	// or right results should be used to build the
@@ -47,6 +51,51 @@ type HashJoin struct {
 
 	// RightJoinCols defines which columns from the rhs are part of the ON comparison
 	RightJoinCols []int `json:",omitempty"`
+}
+
+func NewHashJoin() *HashJoin {
+	return &HashJoin{Type: InMemoryHashJoin}
+}
+
+// JoinType is a number representing the join type
+type JoinType int
+
+// This is the list of JoinOpcode values.
+const (
+	InMemoryHashJoin = JoinType(iota)
+)
+
+func (code JoinType) String() string {
+	if code == InMemoryHashJoin {
+		return "NestedLoopJoin"
+	}
+	return "n/a"
+}
+
+func (jn *HashJoin) HasVar(key string) bool {
+	return false
+}
+
+func (jn *HashJoin) AddVar(key string, column int) error {
+	return vterrors.New(vtrpc.Code_INTERNAL, "WIP: still not able to figure out where to execute the select")
+}
+
+func (jn *HashJoin) GetOpcode() JoinOpcode {
+	return NormalJoin
+}
+
+func (jn *HashJoin) GetCols() []int {
+	return jn.Cols
+}
+
+func (jn *HashJoin) AddColumn(column int) {
+	jn.Cols = append(jn.Cols, column)
+}
+
+func (jn *HashJoin) SetSources(left, right Primitive) Primitive {
+	jn.Left = left
+	jn.Right = right
+	return jn
 }
 
 // Execute performs a non-streaming exec.

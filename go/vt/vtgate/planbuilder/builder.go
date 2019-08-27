@@ -94,7 +94,7 @@ type builder interface {
 	// just supply it to the 'to' node. Otherwise, it should request
 	// for it by calling SupplyCol on the 'from' sub-tree to request the
 	// column, and then supply it to the 'to' node.
-	SupplyVar(from, to int, col *sqlparser.ColName, varname string)
+	SupplyVar(from, to int, col *sqlparser.ColName, varname string) error
 
 	// SupplyCol is meant to be used for the wire-up process. This function
 	// changes the primitive to supply the requested column and returns
@@ -166,8 +166,8 @@ func (bc *builderCommon) Wireup(bldr builder, jt *jointab) error {
 	return bc.input.Wireup(bldr, jt)
 }
 
-func (bc *builderCommon) SupplyVar(from, to int, col *sqlparser.ColName, varname string) {
-	bc.input.SupplyVar(from, to, col, varname)
+func (bc *builderCommon) SupplyVar(from, to int, col *sqlparser.ColName, varname string) error {
+	return bc.input.SupplyVar(from, to, col, varname)
 }
 
 func (bc *builderCommon) SupplyCol(col *sqlparser.ColName) (rc *resultColumn, colNumber int) {
