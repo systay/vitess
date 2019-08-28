@@ -25,6 +25,16 @@ import (
 )
 
 var _ Primitive = (*NestedLoopJoin)(nil)
+var _ Join = (*NestedLoopJoin)(nil)
+
+type Join interface {
+	GetOpcode() JoinOpcode
+	GetCols() []int
+	AddColumn(int)
+	HasVar(string) bool
+	AddVar(string, int)
+	SetSources(left, right Primitive) Primitive
+}
 
 // NestedLoopJoin specifies the parameters for a join primitive.
 type NestedLoopJoin struct {
@@ -48,13 +58,40 @@ type NestedLoopJoin struct {
 	Vars map[string]int `json:",omitempty"`
 }
 
+func (jn *NestedLoopJoin) HasVar(key string) bool {
+	_, ok := jn.Vars[key]
+	return ok
+}
+
+func (jn *NestedLoopJoin) AddVar(key string, column int) {
+	jn.Vars[key] = column
+}
+
+func (jn *NestedLoopJoin) GetOpcode() JoinOpcode {
+	return jn.Opcode
+}
+
+func (jn *NestedLoopJoin) GetCols() []int {
+	return jn.Cols
+}
+
+func (jn *NestedLoopJoin) AddColumn(column int) {
+	jn.Cols = append(jn.Cols, column)
+}
+
+func (jn *NestedLoopJoin) SetSources(left, right Primitive) Primitive {
+	jn.Left = left
+	jn.Right = right
+	return jn
+}
+
 // Execute performs a non-streaming exec.
 func (jn *NestedLoopJoin) Execute(vcursor VCursor, bindVars map[string]*querypb.BindVariable, wantfields bool) (*sqltypes.Result, error) {
-	joinVars := make(map[string]*querypb.BindVariable)
 	lresult, err := jn.Left.Execute(vcursor, bindVars, wantfields)
 	if err != nil {
 		return nil, err
 	}
+	joinVars := make(map[string]*querypb.BindVariable)
 	result := &sqltypes.Result{}
 	if len(lresult.Rows) == 0 && wantfields {
 		for k := range jn.Vars {

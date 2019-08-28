@@ -1733,7 +1733,7 @@
 
 # subquery with join primitive (FROM)
 "select id, t.id from (select user.id from user join user_extra) as t"
-{ 
+{
   "Original": "select id, t.id from (select user.id from user join user_extra) as t",
   "Instructions": {
     "Cols": [
@@ -1821,3 +1821,57 @@
 # non-existent table on right of join
 "select c from user join t"
 "table t not found"
+
+# hash join
+"select /*vt+ HASH_JOINS */ music.col from user join music on music.col = user.col"
+{
+  "Original": "select /*vt+ HASH_JOINS */ music.col from user join music on music.col = user.col",
+  "Instructions": {
+    "Opcode": "HashJoin",
+    "Left": {
+      "Opcode": "SelectScatter",
+      "Keyspace": {
+        "Name": "user",
+        "Sharded": true
+      },
+      "Query": "select /*vt+ HASH_JOINS */ 1 from user",
+      "FieldQuery": "select 1 from user where 1 != 1",
+      "Table": "user"
+    },
+    "Right": {
+      "Opcode": "SelectScatter",
+      "Keyspace": {
+        "Name": "user",
+        "Sharded": true
+      },
+      "Query": "select /*vt+ HASH_JOINS */ music.col from music",
+      "FieldQuery": "select music.col from music where 1 != 1",
+      "Table": "music"
+    },
+    "Cols": [
+      1
+    ],
+    "LeftJoinCols": [
+      0
+    ],
+    "RightJoinCols": [
+      0
+    ],
+    "LeftExpr": {
+      "Metadata": {},
+      "Name": "col",
+      "Qualifier": {
+        "Name": "user",
+        "Qualifier": ""
+      }
+    },
+    "RightExpr": {
+      "Metadata": {},
+      "Name": "col",
+      "Qualifier": {
+        "Name": "music",
+        "Qualifier": ""
+      }
+    }
+  }
+}

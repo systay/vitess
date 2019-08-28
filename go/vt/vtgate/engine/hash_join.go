@@ -17,21 +17,24 @@ limitations under the License.
 package engine
 
 import (
+	"encoding/json"
+
 	"vitess.io/vitess/go/sqltypes"
+	"vitess.io/vitess/go/vt/sqlparser"
 
 	querypb "vitess.io/vitess/go/vt/proto/query"
 )
 
 var _ Primitive = (*HashJoin)(nil)
+var _ Join = (*HashJoin)(nil)
 
 // HashJoin specifies the parameters for a join primitive. It does it work by building a hash map (a.k.a probe table)
 // for the lhs input, and then uses this probe table to "probe" the rhs, finding matches by hashing
 // the join column values
 type HashJoin struct {
-	Opcode JoinOpcode
 	// Left and Right are the LHS and RHS primitives
 	// of the Join. They can be any primitive.
-	Left, Right Primitive `json:",omitempty"`
+	Left, Right Primitive
 
 	// Cols defines which columns from the left
 	// or right results should be used to build the
@@ -40,13 +43,67 @@ type HashJoin struct {
 	// For the right query, they're 1, 2, etc.
 	// If Cols is {-1, -2, 1, 2}, it means that
 	// the returned result will be {Left0, Left1, Right0, Right1}.
-	Cols []int `json:",omitempty"`
+	Cols []int
 
 	// LeftJoinCols defines which columns from the lhs are part of the ON comparison
-	LeftJoinCols []int `json:",omitempty"`
+	LeftJoinCols []int
 
 	// RightJoinCols defines which columns from the rhs are part of the ON comparison
-	RightJoinCols []int `json:",omitempty"`
+	RightJoinCols []int
+
+	LeftExpr, RightExpr *sqlparser.ColName
+}
+
+func (u *HashJoin) MarshalJSON() ([]byte, error) {
+	type Alias HashJoin
+	return json.Marshal(&struct {
+		OpCode string `json:"Opcode"`
+		*Alias
+	}{
+		OpCode: "HashJoin",
+		Alias:  (*Alias)(u),
+	})
+}
+
+// JoinType is a number representing the join type
+type JoinType int
+
+// This is the list of JoinOpcode values.
+const (
+	InMemoryHashJoin = JoinType(iota)
+)
+
+func (code JoinType) String() string {
+	if code == InMemoryHashJoin {
+		return "InMemoryHashJoin"
+	}
+	return "n/a"
+}
+
+func (jn *HashJoin) HasVar(key string) bool {
+	return false
+}
+
+func (jn *HashJoin) AddVar(key string, column int) {
+	panic("WIP: still not able to figure out where to execute the select")
+}
+
+func (jn *HashJoin) GetOpcode() JoinOpcode {
+	return NormalJoin
+}
+
+func (jn *HashJoin) GetCols() []int {
+	return jn.Cols
+}
+
+func (jn *HashJoin) AddColumn(column int) {
+	jn.Cols = append(jn.Cols, column)
+}
+
+func (jn *HashJoin) SetSources(left, right Primitive) Primitive {
+	jn.Left = left
+	jn.Right = right
+	return jn
 }
 
 // Execute performs a non-streaming exec.

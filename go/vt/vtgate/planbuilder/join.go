@@ -18,8 +18,11 @@ package planbuilder
 
 import (
 	"errors"
+	"fmt"
 
+	"vitess.io/vitess/go/vt/proto/vtrpc"
 	"vitess.io/vitess/go/vt/sqlparser"
+	"vitess.io/vitess/go/vt/vterrors"
 	"vitess.io/vitess/go/vt/vtgate/engine"
 )
 
@@ -63,13 +66,13 @@ type join struct {
 	// Left and Right are the nodes for the join.
 	Left, Right builder
 
-	ejoin *engine.NestedLoopJoin
+	ejoin engine.Join
 }
 
 // newJoin makes a new join using the two planBuilder. ajoin can be nil
 // if the join is on a ',' operator. lpb will contain the resulting join.
 // rpb will be discarded.
-func newJoin(lpb, rpb *primitiveBuilder, ajoin *sqlparser.JoinTableExpr) error {
+func newJoin(lpb, rpb *primitiveBuilder, ajoin *sqlparser.JoinTableExpr, useHashJoin bool) error {
 	// This function converts ON clauses to WHERE clauses. The WHERE clause
 	// scope can see all tables, whereas the ON clause can only see the
 	// participants of the JOIN. However, since the ON clause doesn't allow
@@ -98,20 +101,66 @@ func newJoin(lpb, rpb *primitiveBuilder, ajoin *sqlparser.JoinTableExpr) error {
 			return errors.New("unsupported: join with USING(column_list) clause")
 		}
 	}
-	lpb.bldr = &join{
+
+	joinOp := &join{
 		weightStrings: make(map[*resultColumn]int),
 		Left:          lpb.bldr,
 		Right:         rpb.bldr,
-		ejoin: &engine.NestedLoopJoin{
+	}
+	lpb.bldr = joinOp
+	lpb.bldr.Reorder(0)
+	var joinPrimitive engine.Join
+	if useHashJoin {
+		if opcode != engine.NormalJoin {
+			return vterrors.Errorf(vtrpc.Code_INTERNAL, "Can only inner joins with hash joins - got %v", opcode)
+		}
+		cmp, ok := ajoin.Condition.On.(*sqlparser.ComparisonExpr)
+		leftCol, leftOk := cmp.Left.(*sqlparser.ColName)
+		rightCol, rightOk := cmp.Right.(*sqlparser.ColName)
+		if !ok || cmp.Operator != "=" || !leftOk || !rightOk {
+			return vterrors.New(vtrpc.Code_INTERNAL, "can only handle simple equality between columns using hash joins")
+		}
+		lftOrder, _, _ := lpb.st.Find(leftCol)
+		rgtOrder, _, _ := lpb.st.Find(rightCol)
+
+		lhsEisOnLeftInput := joinOp.isOnLeft(lftOrder.Order())
+		rhsEisOnLeftInput := joinOp.isOnLeft(rgtOrder.Order())
+		switch {
+		case lhsEisOnLeftInput == rhsEisOnLeftInput:
+			return vterrors.Errorf(vtrpc.Code_INTERNAL, "expected the two sides of the ON comparison to come from two different sides")
+		case rhsEisOnLeftInput:
+			joinPrimitive = &engine.HashJoin{LeftExpr: rightCol, RightExpr: leftCol}
+		case lhsEisOnLeftInput:
+			joinPrimitive = &engine.HashJoin{LeftExpr: leftCol, RightExpr: rightCol}
+		}
+
+	} else {
+		joinPrimitive = &engine.NestedLoopJoin{
 			Opcode: opcode,
 			Vars:   make(map[string]int),
-		},
+		}
 	}
-	lpb.bldr.Reorder(0)
+
+	joinOp.ejoin = joinPrimitive
 	if ajoin == nil || opcode == engine.LeftJoin {
 		return nil
 	}
-	return lpb.pushFilter(ajoin.Condition.On, sqlparser.WhereStr)
+	if !useHashJoin {
+		err := lpb.pushFilter(ajoin.Condition.On, sqlparser.WhereStr)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func findColumn(columns []*resultColumn, colToFind *sqlparser.ColName) (int, error) {
+	for i, c := range columns {
+		if c.alias.Equal(colToFind.Name) {
+			return i, nil
+		}
+	}
+	return 0, vterrors.Errorf(vtrpc.Code_NOT_FOUND, "no such column found %s", colToFind)
 }
 
 // Order satisfies the builder interface.
@@ -129,9 +178,7 @@ func (jb *join) Reorder(order int) {
 
 // Primitive satisfies the builder interface.
 func (jb *join) Primitive() engine.Primitive {
-	jb.ejoin.Left = jb.Left.Primitive()
-	jb.ejoin.Right = jb.Right.Primitive()
-	return jb.ejoin
+	return jb.ejoin.SetSources(jb.Left.Primitive(), jb.Right.Primitive())
 }
 
 // First satisfies the builder interface.
@@ -149,7 +196,7 @@ func (jb *join) PushFilter(pb *primitiveBuilder, filter sqlparser.Expr, whereTyp
 	if jb.isOnLeft(origin.Order()) {
 		return jb.Left.PushFilter(pb, filter, whereType, origin)
 	}
-	if jb.ejoin.Opcode == engine.LeftJoin {
+	if jb.ejoin.GetOpcode() == engine.LeftJoin {
 		return errors.New("unsupported: cross-shard left join and where clause")
 	}
 	return jb.Right.PushFilter(pb, filter, whereType, origin)
@@ -162,10 +209,10 @@ func (jb *join) PushSelect(pb *primitiveBuilder, expr *sqlparser.AliasedExpr, or
 		if err != nil {
 			return nil, 0, err
 		}
-		jb.ejoin.Cols = append(jb.ejoin.Cols, -colNumber-1)
+		jb.ejoin.AddColumn(-colNumber - 1)
 	} else {
 		// Pushing of non-trivial expressions not allowed for RHS of left joins.
-		if _, ok := expr.Expr.(*sqlparser.ColName); !ok && jb.ejoin.Opcode == engine.LeftJoin {
+		if _, ok := expr.Expr.(*sqlparser.ColName); !ok && jb.ejoin.GetOpcode() == engine.LeftJoin {
 			return nil, 0, errors.New("unsupported: cross-shard left join and column expressions")
 		}
 
@@ -173,7 +220,7 @@ func (jb *join) PushSelect(pb *primitiveBuilder, expr *sqlparser.AliasedExpr, or
 		if err != nil {
 			return nil, 0, err
 		}
-		jb.ejoin.Cols = append(jb.ejoin.Cols, colNumber+1)
+		jb.ejoin.AddColumn(colNumber + 1)
 	}
 	jb.resultColumns = append(jb.resultColumns, rc)
 	return rc, len(jb.resultColumns) - 1, nil
@@ -287,34 +334,47 @@ func (jb *join) Wireup(bldr builder, jt *jointab) error {
 	if err != nil {
 		return err
 	}
-	return jb.Left.Wireup(bldr, jt)
+	err = jb.Left.Wireup(bldr, jt)
+	fmt.Println("!")
+	if err != nil {
+		return err
+	}
+
+	hashJoin, isHash := jb.ejoin.(*engine.HashJoin)
+	if isHash {
+		_, colNumber := jb.Left.SupplyCol(hashJoin.LeftExpr)
+		hashJoin.LeftJoinCols = []int{colNumber}
+
+		_, colNumber = jb.Right.SupplyCol(hashJoin.RightExpr)
+		hashJoin.RightJoinCols = []int{colNumber}
+	}
+
+	return nil
 }
 
 // SupplyVar satisfies the builder interface.
 func (jb *join) SupplyVar(from, to int, col *sqlparser.ColName, varname string) {
 	if !jb.isOnLeft(from) {
 		jb.Right.SupplyVar(from, to, col, varname)
-		return
 	}
 	if jb.isOnLeft(to) {
 		jb.Left.SupplyVar(from, to, col, varname)
-		return
 	}
-	if _, ok := jb.ejoin.Vars[varname]; ok {
+	if jb.ejoin.HasVar(varname) {
 		// Looks like somebody else already requested this.
 		return
 	}
 	c := col.Metadata.(*column)
 	for i, rc := range jb.resultColumns {
-		if jb.ejoin.Cols[i] > 0 {
+		if jb.ejoin.GetCols()[i] > 0 {
 			continue
 		}
 		if rc.column == c {
-			jb.ejoin.Vars[varname] = -jb.ejoin.Cols[i] - 1
-			return
+			jb.ejoin.AddVar(varname, -jb.ejoin.GetCols()[i]-1)
 		}
 	}
-	_, jb.ejoin.Vars[varname] = jb.Left.SupplyCol(col)
+	_, colNumber := jb.Left.SupplyCol(col)
+	jb.ejoin.AddVar(varname, colNumber)
 }
 
 // SupplyCol satisfies the builder interface.
@@ -330,13 +390,13 @@ func (jb *join) SupplyCol(col *sqlparser.ColName) (rc *resultColumn, colNumber i
 	var sourceCol int
 	if jb.isOnLeft(routeNumber) {
 		rc, sourceCol = jb.Left.SupplyCol(col)
-		jb.ejoin.Cols = append(jb.ejoin.Cols, -sourceCol-1)
+		jb.ejoin.AddColumn(-sourceCol - 1)
 	} else {
 		rc, sourceCol = jb.Right.SupplyCol(col)
-		jb.ejoin.Cols = append(jb.ejoin.Cols, sourceCol+1)
+		jb.ejoin.AddColumn(sourceCol + 1)
 	}
 	jb.resultColumns = append(jb.resultColumns, rc)
-	return rc, len(jb.ejoin.Cols) - 1
+	return rc, len(jb.ejoin.GetCols()) - 1
 }
 
 // SupplyWeightString satisfies the builder interface.
@@ -347,21 +407,21 @@ func (jb *join) SupplyWeightString(colNumber int) (weightcolNumber int, err erro
 	}
 	routeNumber := rc.column.Origin().Order()
 	if jb.isOnLeft(routeNumber) {
-		sourceCol, err := jb.Left.SupplyWeightString(-jb.ejoin.Cols[colNumber] - 1)
+		sourceCol, err := jb.Left.SupplyWeightString(-jb.ejoin.GetCols()[colNumber] - 1)
 		if err != nil {
 			return 0, err
 		}
-		jb.ejoin.Cols = append(jb.ejoin.Cols, -sourceCol-1)
+		jb.ejoin.AddColumn(-sourceCol - 1)
 	} else {
-		sourceCol, err := jb.Right.SupplyWeightString(jb.ejoin.Cols[colNumber] - 1)
+		sourceCol, err := jb.Right.SupplyWeightString(jb.ejoin.GetCols()[colNumber] - 1)
 		if err != nil {
 			return 0, err
 		}
-		jb.ejoin.Cols = append(jb.ejoin.Cols, sourceCol+1)
+		jb.ejoin.AddColumn(sourceCol + 1)
 	}
 	jb.resultColumns = append(jb.resultColumns, rc)
-	jb.weightStrings[rc] = len(jb.ejoin.Cols) - 1
-	return len(jb.ejoin.Cols) - 1, nil
+	jb.weightStrings[rc] = len(jb.ejoin.GetCols()) - 1
+	return len(jb.ejoin.GetCols()) - 1, nil
 }
 
 // isOnLeft returns true if the specified route number

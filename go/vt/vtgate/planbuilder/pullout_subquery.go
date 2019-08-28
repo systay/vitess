@@ -136,7 +136,6 @@ func (ps *pulloutSubquery) Wireup(bldr builder, jt *jointab) error {
 func (ps *pulloutSubquery) SupplyVar(from, to int, col *sqlparser.ColName, varname string) {
 	if from <= ps.subquery.Order() {
 		ps.subquery.SupplyVar(from, to, col, varname)
-		return
 	}
 	ps.underlying.SupplyVar(from, to, col, varname)
 }
