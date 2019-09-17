@@ -91,11 +91,6 @@ func (agent *ActionAgent) TabletExternallyReparented(ctx context.Context, extern
 		},
 		ExternalID: externalID,
 	}
-	defer func() {
-		if err != nil {
-			event.DispatchUpdate(ev, "failed: "+err.Error())
-		}
-	}()
 	event.DispatchUpdate(ev, "starting external from tablet (fast)")
 
 	// We may get called on the current master multiple times in order to fix incomplete external reparents.
