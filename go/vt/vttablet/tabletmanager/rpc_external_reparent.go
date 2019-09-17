@@ -57,15 +57,9 @@ func (agent *ActionAgent) TabletExternallyReparented(ctx context.Context, extern
 
 	startTime := time.Now()
 
-	// If there is a finalize step running, wait for it to finish or time out
-	// before checking the global shard record again.
-	if agent.finalizeReparentCtx != nil {
-		select {
-		case <-agent.finalizeReparentCtx.Done():
-			agent.finalizeReparentCtx = nil
-		case <-ctx.Done():
-			return ctx.Err()
-		}
+	err := agent.waitForFinalizeToFinish(ctx)
+	if err != nil {
+		return err
 	}
 
 	tablet := agent.Tablet()
@@ -81,31 +75,28 @@ func (agent *ActionAgent) TabletExternallyReparented(ctx context.Context, extern
 	// timestamp to the current time.
 	agent.setExternallyReparentedTime(startTime)
 
-	// Create a reusable Reparent event with available info.
-	ev := &events.Reparent{
-		ShardInfo: *si,
-		NewMaster: *tablet,
-		OldMaster: topodatapb.Tablet{
-			Alias: si.MasterAlias,
-			Type:  topodatapb.TabletType_MASTER,
-		},
-		ExternalID: externalID,
-	}
-	event.DispatchUpdate(ev, "starting external from tablet (fast)")
+	ev := agent.createReparentEvent(si, tablet, externalID)
+	agent.changeToMaster(ctx, tablet)
+	agent.startAsyncFinalizer(ctx, si, ev, startTime)
 
-	// We may get called on the current master multiple times in order to fix incomplete external reparents.
-	// We update the tablet here only if it is not currently master
-	if tablet.Type != topodatapb.TabletType_MASTER {
-		log.Infof("fastTabletExternallyReparented: executing change callback for state change to MASTER")
-		// Execute state change to master by force-updating only the local copy of the
-		// tablet record. The actual record in topo will be updated later.
-		newTablet := proto.Clone(tablet).(*topodatapb.Tablet)
-		newTablet.Type = topodatapb.TabletType_MASTER
+	return nil
+}
 
-		// This is where updateState will block for gracePeriod, while it gives
-		// vtgate a chance to stop sending replica queries.
-		agent.updateState(ctx, newTablet, "fastTabletExternallyReparented")
+func (agent *ActionAgent) waitForFinalizeToFinish(ctx context.Context) error {
+	// If there is a finalize step running, wait for it to finish or time out
+	// before checking the global shard record again.
+	if agent.finalizeReparentCtx != nil {
+		select {
+		case <-agent.finalizeReparentCtx.Done():
+			agent.finalizeReparentCtx = nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
+	return nil
+}
+
+func (agent *ActionAgent) startAsyncFinalizer(ctx context.Context, si *topo.ShardInfo, ev *events.Reparent, startTime time.Time) {
 	// Start the finalize stage with a background context, but connect the trace.
 	bgCtx, cancel := context.WithTimeout(agent.batchCtx, *finalizeReparentTimeout)
 	bgCtx = trace.CopySpan(bgCtx, ctx)
@@ -121,8 +112,37 @@ func (agent *ActionAgent) TabletExternallyReparented(ctx context.Context, extern
 		}
 		externalReparentStats.Record("FullRebuild", startTime)
 	}()
+}
 
-	return nil
+func (agent *ActionAgent) changeToMaster(ctx context.Context, tablet *topodatapb.Tablet) {
+	// We may get called on the current master multiple times in order to fix incomplete external reparents.
+	// We update the tablet here only if it is not currently master
+	if tablet.Type != topodatapb.TabletType_MASTER {
+		log.Infof("fastTabletExternallyReparented: executing change callback for state change to MASTER")
+		// Execute state change to master by force-updating only the local copy of the
+		// tablet record. The actual record in topo will be updated later.
+		newTablet := proto.Clone(tablet).(*topodatapb.Tablet)
+		newTablet.Type = topodatapb.TabletType_MASTER
+
+		// This is where updateState will block for gracePeriod, while it gives
+		// vtgate a chance to stop sending replica queries.
+		agent.updateState(ctx, newTablet, "fastTabletExternallyReparented")
+	}
+}
+
+func (agent *ActionAgent) createReparentEvent(si *topo.ShardInfo, tablet *topodatapb.Tablet, externalID string) *events.Reparent {
+	// Create a reusable Reparent event with available info.
+	ev := &events.Reparent{
+		ShardInfo: *si,
+		NewMaster: *tablet,
+		OldMaster: topodatapb.Tablet{
+			Alias: si.MasterAlias,
+			Type:  topodatapb.TabletType_MASTER,
+		},
+		ExternalID: externalID,
+	}
+	event.DispatchUpdate(ev, "starting external from tablet (fast)")
+	return ev
 }
 
 // finalizeTabletExternallyReparented performs slow, synchronized reconciliation
