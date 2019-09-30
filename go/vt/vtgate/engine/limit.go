@@ -166,6 +166,11 @@ func (l *Limit) Inputs() []Primitive {
 	return []Primitive{l.Input}
 }
 
+// Identifier satisfies the Primitive interface.
+func (Limit) Identifier() string {
+	return "Limit"
+}
+
 func (l *Limit) fetchCount(bindVars map[string]*querypb.BindVariable) (int, error) {
 	resolved, err := l.Count.ResolveValue(bindVars)
 	if err != nil {

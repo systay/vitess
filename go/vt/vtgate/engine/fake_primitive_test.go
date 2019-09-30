@@ -123,6 +123,11 @@ func (f *fakePrimitive) GetFields(vcursor VCursor, bindVars map[string]*querypb.
 	return f.Execute(vcursor, bindVars, true /* wantfields */)
 }
 
+// Identifier satisfies the Primitive interface.
+func (fakePrimitive) Identifier() string {
+	return "fakePrimitive"
+}
+
 func (f *fakePrimitive) ExpectLog(t *testing.T, want []string) {
 	t.Helper()
 	if !reflect.DeepEqual(f.log, want) {

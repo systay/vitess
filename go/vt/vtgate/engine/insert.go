@@ -241,6 +241,11 @@ func (ins *Insert) Inputs() []Primitive {
 	return []Primitive{}
 }
 
+// Identifier satisfies the Primitive interface.
+func (Insert) Identifier() string {
+	return "Insert"
+}
+
 func (ins *Insert) execInsertUnsharded(vcursor VCursor, bindVars map[string]*querypb.BindVariable) (*sqltypes.Result, error) {
 	insertID, err := ins.processGenerate(vcursor, bindVars)
 	if err != nil {

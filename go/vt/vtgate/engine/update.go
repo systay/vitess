@@ -199,6 +199,11 @@ func (upd *Update) Inputs() []Primitive {
 	return []Primitive{}
 }
 
+// Identifier satisfies the Primitive interface.
+func (Update) Identifier() string {
+	return "Update"
+}
+
 func (upd *Update) execUpdateUnsharded(vcursor VCursor, bindVars map[string]*querypb.BindVariable) (*sqltypes.Result, error) {
 	rss, _, err := vcursor.ResolveDestinations(upd.Keyspace.Name, nil, []key.Destination{key.DestinationAllShards{}})
 	if err != nil {

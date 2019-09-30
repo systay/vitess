@@ -76,6 +76,11 @@ func (sq *Subquery) Inputs() []Primitive {
 	return []Primitive{sq.Subquery}
 }
 
+// Identifier satisfies the Primitive interface.
+func (Subquery) Identifier() string {
+	return "Subquery"
+}
+
 // buildResult builds a new result by pulling the necessary columns from
 // the subquery in the requested order.
 func (sq *Subquery) buildResult(inner *sqltypes.Result) *sqltypes.Result {

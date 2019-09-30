@@ -244,6 +244,11 @@ func (jn *Join) GetTableName() string {
 	return jn.Left.GetTableName() + "_" + jn.Right.GetTableName()
 }
 
+// Identifier satisfies the Primitive interface.
+func (jn *Join) Identifier() string {
+	return jn.Opcode.String()
+}
+
 func combineVars(bv1, bv2 map[string]*querypb.BindVariable) map[string]*querypb.BindVariable {
 	out := make(map[string]*querypb.BindVariable)
 	for k, v := range bv1 {

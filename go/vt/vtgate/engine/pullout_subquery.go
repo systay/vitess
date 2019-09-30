@@ -38,7 +38,7 @@ type PulloutSubquery struct {
 	Underlying     Primitive
 }
 
-// Inputs returns the input primitives for this join
+// Inputs returns the input primitives for this sub query
 func (ps *PulloutSubquery) Inputs() []Primitive {
 	return []Primitive{ps.Subquery, ps.Underlying}
 }
@@ -95,6 +95,11 @@ func (ps *PulloutSubquery) GetFields(vcursor VCursor, bindVars map[string]*query
 		combinedVars[ps.HasValues] = sqltypes.Int64BindVariable(0)
 	}
 	return ps.Underlying.GetFields(vcursor, combinedVars)
+}
+
+// Identifier satisfies the Primitive interface.
+func (PulloutSubquery) Identifier() string {
+	return "PulloutSubquery"
 }
 
 func (ps *PulloutSubquery) execSubquery(vcursor VCursor, bindVars map[string]*querypb.BindVariable) (map[string]*querypb.BindVariable, error) {

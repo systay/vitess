@@ -121,6 +121,11 @@ func (vf *VindexFunc) Inputs() []Primitive {
 	return []Primitive{}
 }
 
+// Identifier satisfies the Primitive interface.
+func (VindexFunc) Identifier() string {
+	return "VindexFunc"
+}
+
 func (vf *VindexFunc) mapVindex(vcursor VCursor, bindVars map[string]*querypb.BindVariable) (*sqltypes.Result, error) {
 	k, err := vf.Value.ResolveValue(bindVars)
 	if err != nil {

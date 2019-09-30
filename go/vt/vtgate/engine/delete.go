@@ -195,6 +195,11 @@ func (del *Delete) Inputs() []Primitive {
 	return []Primitive{}
 }
 
+// Identifier satisfies the Primitive interface.
+func (del *Delete) Identifier() string {
+	return "Delete"
+}
+
 func (del *Delete) execDeleteUnsharded(vcursor VCursor, bindVars map[string]*querypb.BindVariable) (*sqltypes.Result, error) {
 	rss, _, err := vcursor.ResolveDestinations(del.Keyspace.Name, nil, []key.Destination{key.DestinationAllShards{}})
 	if err != nil {

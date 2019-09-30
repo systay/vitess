@@ -180,15 +180,28 @@ const (
 	SelectReference
 )
 
-var routeName = map[RouteOpcode]string{
-	SelectUnsharded:   "SelectUnsharded",
-	SelectEqualUnique: "SelectEqualUnique",
-	SelectEqual:       "SelectEqual",
-	SelectIN:          "SelectIN",
-	SelectScatter:     "SelectScatter",
-	SelectNext:        "SelectNext",
-	SelectDBA:         "SelectDBA",
-	SelectReference:   "SelectReference",
+// String returns the string representation of this op code
+func (code RouteOpcode) String() string {
+	switch code {
+	case SelectUnsharded:
+		return "SelectUnsharded"
+	case SelectEqualUnique:
+		return "SelectEqualUnique"
+	case SelectEqual:
+		return "SelectEqual"
+	case SelectIN:
+		return "SelectIN"
+	case SelectScatter:
+		return "SelectScatter"
+	case SelectNext:
+		return "SelectNext"
+	case SelectDBA:
+		return "SelectDBA"
+	case SelectReference:
+		return "SelectReference"
+	default:
+		return "UnknownRouteOpCode"
+	}
 }
 
 var (
@@ -198,12 +211,12 @@ var (
 // MarshalJSON serializes the RouteOpcode as a JSON string.
 // It's used for testing and diagnostics.
 func (code RouteOpcode) MarshalJSON() ([]byte, error) {
-	return json.Marshal(routeName[code])
+	return json.Marshal(code.String())
 }
 
 // RouteType returns a description of the query routing type used by the primitive
 func (route *Route) RouteType() string {
-	return routeName[route.Opcode]
+	return route.Opcode.String()
 }
 
 // GetKeyspaceName specifies the Keyspace that this primitive routes to.
@@ -351,6 +364,11 @@ func (route *Route) GetFields(vcursor VCursor, bindVars map[string]*querypb.Bind
 		return nil, err
 	}
 	return qr.Truncate(route.TruncateColumnCount), nil
+}
+
+// Identifier satisfies the Primitive interface.
+func (route *Route) Identifier() string {
+	return "Route(" + route.RouteType() + ")"
 }
 
 // Inputs is always empty for route - it has no inputs.

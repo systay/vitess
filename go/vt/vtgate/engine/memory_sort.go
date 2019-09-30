@@ -165,6 +165,11 @@ func (ms *MemorySort) Inputs() []Primitive {
 	return []Primitive{ms.Input}
 }
 
+// Identifier satisfies the Primitive interface.
+func (MemorySort) Identifier() string {
+	return "Sort"
+}
+
 func (ms *MemorySort) fetchCount(bindVars map[string]*querypb.BindVariable) (int, error) {
 	resolved, err := ms.UpperLimit.ResolveValue(bindVars)
 	if err != nil {

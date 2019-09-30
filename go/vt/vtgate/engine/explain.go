@@ -103,3 +103,8 @@ func (e *Explain) GetFields(vcursor VCursor, bindVars map[string]*querypb.BindVa
 func (e *Explain) Inputs() []Primitive {
 	return []Primitive{e.Input}
 }
+
+// Identifier satisfies the Primitive interface.
+func (Explain) Identifier() string {
+	return "Explain"
+}

@@ -129,6 +129,8 @@ func (p *Plan) Size() int {
 // Primitive is the interface that needs to be satisfied by
 // all primitives of a plan.
 type Primitive interface {
+	// Identifier is shown in query plans
+	Identifier() string
 	RouteType() string
 	GetKeyspaceName() string
 	GetTableName() string
