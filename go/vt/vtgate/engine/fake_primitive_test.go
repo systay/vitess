@@ -38,9 +38,10 @@ type fakePrimitive struct {
 	// sendErr is sent at the end of the stream if it's set.
 	sendErr error
 
-	log     []string
-	jsonObj interface{}
-	inputs  []Primitive
+	log        []string
+	jsonObj    interface{}
+	inputs     []Primitive
+	identifier string
 }
 
 // MarshalJSON allows for returning arbitrary json representation
@@ -124,8 +125,11 @@ func (f *fakePrimitive) GetFields(vcursor VCursor, bindVars map[string]*querypb.
 }
 
 // Identifier satisfies the Primitive interface.
-func (fakePrimitive) Identifier() string {
-	return "fakePrimitive"
+func (f *fakePrimitive) Identifier() string {
+	if f.identifier == "" {
+		return "fakePrimitive"
+	}
+	return f.identifier
 }
 
 func (f *fakePrimitive) ExpectLog(t *testing.T, want []string) {

@@ -3831,27 +3831,32 @@ func compliantName(in string) string {
 var _ Statement = (*Explain)(nil)
 
 type Explain struct {
-	// TODO: this inner structure could be something else, but let's start here
 	InnerStatement Statement
+	UseTable       bool
 }
 
-func NewExplain(input interface{}) *Explain {
+func NewExplain(input interface{}, useTable BoolVal) *Explain {
 	switch v := input.(type) {
 	case Statement:
-		return &Explain{v}
+		return &Explain{InnerStatement: v, UseTable: bool(useTable)}
 	default:
-		log.Warning("got nil for the explain")
+		log.Warningf("got %v for the explain ", v)
 		return &Explain{}
 	}
 }
-
 
 func (Explain) iStatement() {}
 
 func (Explain) iInsertRows() {}
 
 func (e *Explain) Format(buf *TrackedBuffer) {
-	buf.Myprintf("explain %v", e.InnerStatement)
+	//var format string
+	//if e.UseTable {
+	//	format = "format = table"
+	//} else {
+	//	format = "format = json"
+	//}
+	//buf.Myprintf("explain %s %v", format, e.InnerStatement)
 }
 func (e *Explain) walkSubtree(visit Visit) error {
 	return Walk(

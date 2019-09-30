@@ -128,7 +128,7 @@ func skipToEnd(yylex interface{}) {
 %left <bytes> ON USING
 %token <empty> '(' ',' ')'
 %token <bytes> ID HEX STRING INTEGRAL FLOAT HEXNUM VALUE_ARG LIST_ARG COMMENT COMMENT_KEYWORD BIT_LITERAL
-%token <bytes> NULL TRUE FALSE OFF
+%token <bytes> NULL TRUE FALSE OFF FORMAT
 
 // Precedence dictated by mysql. But the vitess grammar is simplified.
 // Some of these operators don't conflict in our situation. Nevertheless,
@@ -352,10 +352,18 @@ command:
 }
 
 explain_statement:
-  EXPLAIN command
+EXPLAIN command
   {
-    $$ = NewExplain($2)
+    $$ = NewExplain($2, false)
   }
+| EXPLAIN JSON command
+ {
+    $$ = NewExplain($3, false)
+ }
+| EXPLAIN TABLE command
+ {
+    $$ = NewExplain($3, true)
+ }
 
 select_statement:
   base_select order_by_opt limit_opt lock_opt

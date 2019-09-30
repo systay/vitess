@@ -295,7 +295,7 @@ func BuildFromStmt(query string, stmt sqlparser.Statement, vschema ContextVSchem
 		if err2 != nil {
 			return nil, err
 		}
-		plan.Instructions = &engine.Explain{Input: innerPlan.Instructions}
+		plan.Instructions = &engine.Explain{Input: innerPlan.Instructions, UseTable: stmt.UseTable}
 	case *sqlparser.Set:
 		return nil, errors.New("unsupported construct: set")
 	case *sqlparser.Show:

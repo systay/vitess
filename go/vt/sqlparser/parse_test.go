@@ -1318,7 +1318,10 @@ var (
 		output: "otherread",
 	}, {
 		input:  "explain select * from t",
-		output: "explain select * from t",
+		output: "explain format = json select * from t",
+	}, {
+		input:  "explain format = table select * from t",
+		output: "explain format = table select * from t",
 	}, {
 		input:  "truncate table foo",
 		output: "truncate table foo",
