@@ -59,8 +59,8 @@ func (e *Explain) MarshalJSON() ([]byte, error) {
 	})
 }
 
-// Execute satisfies the Primtive interface.
-func (e *Explain) Execute(vcursor VCursor, bindVars map[string]*querypb.BindVariable, wantfields bool) (*sqltypes.Result, error) {
+// Execute satisfies the Primitive interface.
+func (e *Explain) Execute(vcursor VCursor, bindVars map[string]*querypb.BindVariable, wantFields bool) (*sqltypes.Result, error) {
 	var fields []*querypb.Field
 	fields = append(fields, &querypb.Field{
 		Name: "column",
@@ -84,12 +84,17 @@ func (e *Explain) Execute(vcursor VCursor, bindVars map[string]*querypb.BindVari
 	return &sqltypes.Result{Fields: fields, Rows: rows, RowsAffected: uint64(noOfRows), InsertID: 0}, nil
 }
 
-// StreamExecute satisfies the Primtive interface.
-func (e *Explain) StreamExecute(vcursor VCursor, bindVars map[string]*querypb.BindVariable, wantfields bool, callback func(*sqltypes.Result) error) error {
-	panic("oh noes")
+// StreamExecute satisfies the Primitive interface.
+func (e *Explain) StreamExecute(vcursor VCursor, bindVars map[string]*querypb.BindVariable, wantFields bool, callback func(*sqltypes.Result) error) error {
+	result, err := e.Execute(vcursor, bindVars, wantFields)
+	if err != nil {
+		return err
+	}
+
+	return callback(result)
 }
 
-// GetFields satisfies the Primtive interface.
+// GetFields satisfies the Primitive interface.
 func (e *Explain) GetFields(vcursor VCursor, bindVars map[string]*querypb.BindVariable) (*sqltypes.Result, error) {
 	return e.Input.GetFields(vcursor, bindVars)
 }
