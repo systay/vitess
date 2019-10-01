@@ -3835,13 +3835,17 @@ type Explain struct {
 	UseTable       bool
 }
 
-func NewExplain(input interface{}, useTable BoolVal) *Explain {
+func NewExplain(input interface{}, format string) *Explain {
+	useTable := false
+	if strings.ToLower(format) == "table" {
+		useTable = true
+	}
+	
 	switch v := input.(type) {
 	case Statement:
-		return &Explain{InnerStatement: v, UseTable: bool(useTable)}
+		return &Explain{InnerStatement: v, UseTable: useTable}
 	default:
-		log.Warningf("got %v for the explain ", v)
-		return &Explain{}
+		panic(fmt.Sprintf("got %v for the explain ", v))
 	}
 }
 
@@ -3850,13 +3854,13 @@ func (Explain) iStatement() {}
 func (Explain) iInsertRows() {}
 
 func (e *Explain) Format(buf *TrackedBuffer) {
-	//var format string
-	//if e.UseTable {
-	//	format = "format = table"
-	//} else {
-	//	format = "format = json"
-	//}
-	//buf.Myprintf("explain %s %v", format, e.InnerStatement)
+	var format string
+	if e.UseTable {
+		format = "table"
+	} else {
+		format = "json"
+	}
+	buf.Myprintf("explain format %s %v", format, e.InnerStatement)
 }
 func (e *Explain) walkSubtree(visit Visit) error {
 	return Walk(

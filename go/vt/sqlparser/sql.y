@@ -212,7 +212,7 @@ func skipToEnd(yylex interface{}) {
 %type <statement> begin_statement commit_statement rollback_statement
 %type <bytes2> comment_opt comment_list
 %type <str> union_op insert_or_replace
-%type <str> distinct_opt straight_join_opt cache_opt match_option separator_opt
+%type <str> distinct_opt straight_join_opt cache_opt match_option separator_opt explain_format_opt
 %type <expr> like_escape_opt
 %type <selectExprs> select_expression_list select_expression_list_opt
 %type <selectExpr> select_expression
@@ -351,19 +351,24 @@ command:
   setParseTree(yylex, nil)
 }
 
-explain_statement:
-EXPLAIN command
+explain_format_opt:
   {
-    $$ = NewExplain($2, false)
+    $$ = "DEFAULT"
   }
-| EXPLAIN JSON command
- {
-    $$ = NewExplain($3, false)
- }
-| EXPLAIN TABLE command
- {
-    $$ = NewExplain($3, true)
- }
+| FORMAT JSON
+  {
+    $$ = "JSON"
+  }
+| FORMAT TABLE
+  {
+    $$ = "TABLE"
+  }
+
+explain_statement:
+  EXPLAIN explain_format_opt command
+  {
+    $$ = NewExplain($3, $2)
+  }
 
 select_statement:
   base_select order_by_opt limit_opt lock_opt
