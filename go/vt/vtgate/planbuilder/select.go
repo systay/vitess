@@ -25,7 +25,7 @@ import (
 )
 
 // buildSelectPlan is the new function to build a Select plan.
-func buildSelectPlan(sel *sqlparser.Select, vschema ContextVSchema) (primitive engine.Primitive, err error) {
+func buildSelectPlan(sel *sqlparser.Select, vschema ContextVSchema) (*engine.Plan, error) {
 	pb := newPrimitiveBuilder(vschema, newJointab(sqlparser.GetBindvars(sel)))
 	if err := pb.processSelect(sel, nil); err != nil {
 		return nil, err
@@ -33,7 +33,12 @@ func buildSelectPlan(sel *sqlparser.Select, vschema ContextVSchema) (primitive e
 	if err := pb.bldr.Wireup(pb.bldr, pb.jt); err != nil {
 		return nil, err
 	}
-	return pb.bldr.Primitive(), nil
+	plan := &engine.Plan{
+		Instructions: pb.bldr.Primitive(),
+		RouteType:    pb.bldr.RouteType(),
+	}
+
+	return plan, nil
 }
 
 // processSelect builds a primitive tree for the given query or subquery.

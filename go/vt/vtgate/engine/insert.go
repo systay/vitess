@@ -190,11 +190,6 @@ func (code InsertOpcode) MarshalJSON() ([]byte, error) {
 	return json.Marshal(insName[code])
 }
 
-// RouteType returns a description of the query routing type used by the primitive
-func (ins *Insert) RouteType() string {
-	return insName[ins.Opcode]
-}
-
 // GetKeyspaceName specifies the Keyspace that this primitive routes to.
 func (ins *Insert) GetKeyspaceName() string {
 	return ins.Keyspace.Name

@@ -170,7 +170,6 @@ func (pb *primitiveBuilder) findOrigin(expr sqlparser.Expr) (pullouts []*pullout
 	}
 
 	if lastInsertIDNode != nil {
-
 		expr = sqlparser.ReplaceExpr(expr, lastInsertIDNode, sqlparser.NewValArg([]byte(":"+engine.LastInsertIDName)))
 	}
 

@@ -111,6 +111,8 @@ type builder interface {
 	// Primitive returns the underlying primitive.
 	// This function should only be called after Wireup is finished.
 	Primitive() engine.Primitive
+
+	RouteType() string
 }
 
 //-------------------------------------------------------------------------
@@ -176,6 +178,10 @@ func (bc *builderCommon) SupplyCol(col *sqlparser.ColName) (rc *resultColumn, co
 
 func (bc *builderCommon) SupplyWeightString(colNumber int) (weightcolNumber int, err error) {
 	return bc.input.SupplyWeightString(colNumber)
+}
+
+func (bc *builderCommon) RouteType() string {
+	return bc.input.RouteType()
 }
 
 //-------------------------------------------------------------------------
@@ -267,20 +273,18 @@ func Build(query string, vschema ContextVSchema) (*engine.Plan, error) {
 // and engine.Plan can be built by the caller.
 func BuildFromStmt(query string, stmt sqlparser.Statement, vschema ContextVSchema) (*engine.Plan, error) {
 	var err error
-	plan := &engine.Plan{
-		Original: query,
-	}
+	var plan *engine.Plan
 	switch stmt := stmt.(type) {
 	case *sqlparser.Select:
-		plan.Instructions, err = buildSelectPlan(stmt, vschema)
+		plan, err = buildSelectPlan(stmt, vschema)
 	case *sqlparser.Insert:
-		plan.Instructions, err = buildInsertPlan(stmt, vschema)
+		plan, err = buildInsertPlan(stmt, vschema)
 	case *sqlparser.Update:
-		plan.Instructions, err = buildUpdatePlan(stmt, vschema)
+		plan, err = buildUpdatePlan(stmt, vschema)
 	case *sqlparser.Delete:
-		plan.Instructions, err = buildDeletePlan(stmt, vschema)
+		plan, err = buildDeletePlan(stmt, vschema)
 	case *sqlparser.Union:
-		plan.Instructions, err = buildUnionPlan(stmt, vschema)
+		plan, err = buildUnionPlan(stmt, vschema)
 	case *sqlparser.Set:
 		return nil, errors.New("unsupported construct: set")
 	case *sqlparser.Show:
@@ -305,5 +309,8 @@ func BuildFromStmt(query string, stmt sqlparser.Statement, vschema ContextVSchem
 	if err != nil {
 		return nil, err
 	}
+
+	plan.Original = query
+
 	return plan, nil
 }

@@ -221,11 +221,6 @@ func (code JoinOpcode) MarshalJSON() ([]byte, error) {
 	return ([]byte)(fmt.Sprintf("\"%s\"", code.String())), nil
 }
 
-// RouteType returns a description of the query routing type used by the primitive
-func (jn *Join) RouteType() string {
-	return "Join"
-}
-
 // GetKeyspaceName specifies the Keyspace that this primitive routes to.
 func (jn *Join) GetKeyspaceName() string {
 	if jn.Left.GetKeyspaceName() == jn.Right.GetKeyspaceName() {

@@ -29,7 +29,7 @@ import (
 )
 
 // buildInsertPlan builds the route for an INSERT statement.
-func buildInsertPlan(ins *sqlparser.Insert, vschema ContextVSchema) (*engine.Insert, error) {
+func buildInsertPlan(ins *sqlparser.Insert, vschema ContextVSchema) (*engine.Plan, error) {
 	pb := newPrimitiveBuilder(vschema, newJointab(sqlparser.GetBindvars(ins)))
 	exprs := sqlparser.TableExprs{&sqlparser.AliasedTableExpr{Expr: ins.Table}}
 	ro, err := pb.processDMLTable(exprs)
@@ -41,6 +41,19 @@ func buildInsertPlan(ins *sqlparser.Insert, vschema ContextVSchema) (*engine.Ins
 	if ro.eroute.TargetDestination != nil {
 		return nil, errors.New("unsupported: INSERT with a target destination")
 	}
+	primitive, err := buildPrimitive(ro, pb, ins, vschema)
+	if err != nil {
+		return nil, err
+	}
+
+	plan := &engine.Plan{
+		Instructions: primitive,
+		RouteType:    pb.bldr.RouteType(),
+	}
+	return plan, err
+}
+
+func buildPrimitive(ro *routeOption, pb *primitiveBuilder, ins *sqlparser.Insert, vschema ContextVSchema) (engine.Primitive, error) {
 	if !ro.vschemaTable.Keyspace.Sharded {
 		if !pb.finalizeUnshardedDMLSubqueries(ins) {
 			return nil, errors.New("unsupported: sharded subquery in insert values")

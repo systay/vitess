@@ -364,6 +364,11 @@ func (jb *join) SupplyWeightString(colNumber int) (weightcolNumber int, err erro
 	return len(jb.ejoin.Cols) - 1, nil
 }
 
+// RouteType returns a description of the query routing type created by this builder
+func (jb *join) RouteType() string {
+	return "Join"
+}
+
 // isOnLeft returns true if the specified route number
 // is on the left side of the join. If false, it means
 // the node is on the right.

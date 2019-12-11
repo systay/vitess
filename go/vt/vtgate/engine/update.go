@@ -144,11 +144,6 @@ func (code UpdateOpcode) MarshalJSON() ([]byte, error) {
 	return json.Marshal(updName[code])
 }
 
-// RouteType returns a description of the query routing type used by the primitive
-func (upd *Update) RouteType() string {
-	return updName[upd.Opcode]
-}
-
 // GetKeyspaceName specifies the Keyspace that this primitive routes to.
 func (upd *Update) GetKeyspaceName() string {
 	return upd.Keyspace.Name

@@ -59,6 +59,10 @@ type route struct {
 	routeOptions []*routeOption
 }
 
+func (rb *route) RouteType() string {
+	return engine.RouteName[rb.routeOptions[0].eroute.Opcode]
+}
+
 func newRoute(stmt sqlparser.SelectStatement) (*route, *symtab) {
 	rb := &route{
 		Select:        stmt,
@@ -490,16 +494,6 @@ func (rb *route) removeMultishardOptions() bool {
 			return true
 		}
 		return false
-	})
-}
-
-// removeShardedOptions removes all sharded options from the
-// route. It returns false if no such options exist.
-// This is used for constructs that are only supported for unsharded
-// keyspaces like last_insert_id.
-func (rb *route) removeShardedOptions() bool {
-	return rb.removeOptions(func(ro *routeOption) bool {
-		return ro.eroute.Opcode == engine.SelectUnsharded
 	})
 }
 

@@ -31,11 +31,6 @@ type Subquery struct {
 	Subquery Primitive
 }
 
-// RouteType returns a description of the query routing type used by the primitive
-func (sq *Subquery) RouteType() string {
-	return sq.Subquery.RouteType()
-}
-
 // GetKeyspaceName specifies the Keyspace that this primitive routes to.
 func (sq *Subquery) GetKeyspaceName() string {
 	return sq.Subquery.GetKeyspaceName()

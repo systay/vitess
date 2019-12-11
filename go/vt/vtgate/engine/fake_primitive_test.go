@@ -45,10 +45,6 @@ func (f *fakePrimitive) rewind() {
 	f.log = nil
 }
 
-func (f *fakePrimitive) RouteType() string {
-	return "Fake"
-}
-
 func (f *fakePrimitive) GetKeyspaceName() string {
 	return "fakeKs"
 }

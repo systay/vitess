@@ -127,7 +127,8 @@ const (
 	DeleteByDestination
 )
 
-var delName = map[DeleteOpcode]string{
+// DelName maps between opcode and string representation
+var DelName = map[DeleteOpcode]string{
 	DeleteUnsharded:     "DeleteUnsharded",
 	DeleteEqual:         "DeleteEqual",
 	DeleteScatter:       "DeleteScatter",
@@ -137,12 +138,7 @@ var delName = map[DeleteOpcode]string{
 // MarshalJSON serializes the DeleteOpcode as a JSON string.
 // It's used for testing and diagnostics.
 func (code DeleteOpcode) MarshalJSON() ([]byte, error) {
-	return json.Marshal(delName[code])
-}
-
-// RouteType returns a description of the query routing type used by the primitive
-func (del *Delete) RouteType() string {
-	return delName[del.Opcode]
+	return json.Marshal(DelName[code])
 }
 
 // GetKeyspaceName specifies the Keyspace that this primitive routes to.

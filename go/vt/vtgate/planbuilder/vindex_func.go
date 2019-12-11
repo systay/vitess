@@ -40,6 +40,10 @@ type vindexFunc struct {
 	eVindexFunc *engine.VindexFunc
 }
 
+func (vf *vindexFunc) RouteType() string {
+	return engine.VindexOpcodeName[vf.eVindexFunc.Opcode]
+}
+
 func newVindexFunc(alias sqlparser.TableName, vindex vindexes.SingleColumn) (*vindexFunc, *symtab) {
 	vf := &vindexFunc{
 		order: 1,

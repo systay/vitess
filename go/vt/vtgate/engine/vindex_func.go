@@ -70,19 +70,15 @@ const (
 	NumVindexCodes
 )
 
-var vindexOpcodeName = map[VindexOpcode]string{
+//VindexOpcodeName maps between the opcode and the string representation
+var VindexOpcodeName = map[VindexOpcode]string{
 	VindexMap: "VindexMap",
 }
 
 // MarshalJSON serializes the VindexOpcode into a JSON representation.
 // It's used for testing and diagnostics.
 func (code VindexOpcode) MarshalJSON() ([]byte, error) {
-	return json.Marshal(vindexOpcodeName[code])
-}
-
-// RouteType returns a description of the query routing type used by the primitive
-func (vf *VindexFunc) RouteType() string {
-	return vindexOpcodeName[vf.Opcode]
+	return json.Marshal(VindexOpcodeName[code])
 }
 
 // GetKeyspaceName specifies the Keyspace that this primitive routes to.

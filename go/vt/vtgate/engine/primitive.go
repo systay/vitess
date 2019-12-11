@@ -96,6 +96,8 @@ type Plan struct {
 	Rows uint64 `json:",omitempty"`
 	// Total number of errors
 	Errors uint64 `json:",omitempty"`
+
+	RouteType string
 }
 
 // AddStats updates the plan execution statistics
@@ -131,7 +133,6 @@ func (p *Plan) Size() int {
 // Primitive is the interface that needs to be satisfied by
 // all primitives of a plan.
 type Primitive interface {
-	RouteType() string
 	GetKeyspaceName() string
 	GetTableName() string
 	Execute(vcursor VCursor, bindVars map[string]*querypb.BindVariable, wantfields bool) (*sqltypes.Result, error)

@@ -180,7 +180,8 @@ const (
 	SelectReference
 )
 
-var routeName = map[RouteOpcode]string{
+//RouteName maps between optcode and string representation
+var RouteName = map[RouteOpcode]string{
 	SelectUnsharded:   "SelectUnsharded",
 	SelectEqualUnique: "SelectEqualUnique",
 	SelectEqual:       "SelectEqual",
@@ -198,12 +199,7 @@ var (
 // MarshalJSON serializes the RouteOpcode as a JSON string.
 // It's used for testing and diagnostics.
 func (code RouteOpcode) MarshalJSON() ([]byte, error) {
-	return json.Marshal(routeName[code])
-}
-
-// RouteType returns a description of the query routing type used by the primitive
-func (route *Route) RouteType() string {
-	return routeName[route.Opcode]
+	return json.Marshal(RouteName[code])
 }
 
 // GetKeyspaceName specifies the Keyspace that this primitive routes to.

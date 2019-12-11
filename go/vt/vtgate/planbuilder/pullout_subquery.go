@@ -150,3 +150,8 @@ func (ps *pulloutSubquery) SupplyCol(col *sqlparser.ColName) (rc *resultColumn, 
 func (ps *pulloutSubquery) SupplyWeightString(colNumber int) (weightcolNumber int, err error) {
 	return ps.underlying.SupplyWeightString(colNumber)
 }
+
+// RouteType returns a description of the query routing type
+func (ps *pulloutSubquery) RouteType() string {
+	return ps.eSubquery.Opcode.String()
+}

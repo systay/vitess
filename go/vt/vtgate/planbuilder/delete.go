@@ -28,8 +28,16 @@ import (
 	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
 )
 
+func buildDeletePlan(del *sqlparser.Delete, vschema ContextVSchema) (*engine.Plan, error) {
+	instruction, err := buildDeletePrimitive(del, vschema)
+	if err != nil {
+		return nil, err
+	}
+	return &engine.Plan{Instructions: instruction, RouteType: engine.DelName[instruction.Opcode]}, nil
+}
+
 // buildDeletePlan builds the instructions for a DELETE statement.
-func buildDeletePlan(del *sqlparser.Delete, vschema ContextVSchema) (*engine.Delete, error) {
+func buildDeletePrimitive(del *sqlparser.Delete, vschema ContextVSchema) (*engine.Delete, error) {
 	edel := &engine.Delete{}
 	pb := newPrimitiveBuilder(vschema, newJointab(sqlparser.GetBindvars(del)))
 	ro, err := pb.processDMLTable(del.TableExprs)

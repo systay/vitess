@@ -24,7 +24,7 @@ import (
 	"vitess.io/vitess/go/vt/vtgate/engine"
 )
 
-func buildUnionPlan(union *sqlparser.Union, vschema ContextVSchema) (primitive engine.Primitive, err error) {
+func buildUnionPlan(union *sqlparser.Union, vschema ContextVSchema) (primitive *engine.Plan, err error) {
 	// For unions, create a pb with anonymous scope.
 	pb := newPrimitiveBuilder(vschema, newJointab(sqlparser.GetBindvars(union)))
 	if err := pb.processUnion(union, nil); err != nil {
@@ -33,7 +33,11 @@ func buildUnionPlan(union *sqlparser.Union, vschema ContextVSchema) (primitive e
 	if err := pb.bldr.Wireup(pb.bldr, pb.jt); err != nil {
 		return nil, err
 	}
-	return pb.bldr.Primitive(), nil
+
+	return &engine.Plan{
+		Instructions: pb.bldr.Primitive(),
+		RouteType:    pb.bldr.RouteType(),
+	}, nil
 }
 
 func (pb *primitiveBuilder) processUnion(union *sqlparser.Union, outer *symtab) error {

@@ -58,11 +58,6 @@ func (ms *MemorySort) MarshalJSON() ([]byte, error) {
 	return json.Marshal(marshalMemorySort)
 }
 
-// RouteType returns a description of the query routing type used by the primitive.
-func (ms *MemorySort) RouteType() string {
-	return ms.Input.RouteType()
-}
-
 // GetKeyspaceName specifies the Keyspace that this primitive routes to.
 func (ms *MemorySort) GetKeyspaceName() string {
 	return ms.Input.GetKeyspaceName()

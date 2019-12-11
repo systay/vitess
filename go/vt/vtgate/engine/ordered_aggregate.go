@@ -119,11 +119,6 @@ func (code AggregateOpcode) MarshalJSON() ([]byte, error) {
 	return ([]byte)(fmt.Sprintf("\"%s\"", code.String())), nil
 }
 
-// RouteType returns a description of the query routing type used by the primitive
-func (oa *OrderedAggregate) RouteType() string {
-	return oa.Input.RouteType()
-}
-
 // GetKeyspaceName specifies the Keyspace that this primitive routes to.
 func (oa *OrderedAggregate) GetKeyspaceName() string {
 	return oa.Input.GetKeyspaceName()

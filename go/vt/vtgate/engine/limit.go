@@ -52,11 +52,6 @@ func (l *Limit) MarshalJSON() ([]byte, error) {
 	return json.Marshal(marshalLimit)
 }
 
-// RouteType returns a description of the query routing type used by the primitive
-func (l *Limit) RouteType() string {
-	return l.Input.RouteType()
-}
-
 // GetKeyspaceName specifies the Keyspace that this primitive routes to.
 func (l *Limit) GetKeyspaceName() string {
 	return l.Input.GetKeyspaceName()
