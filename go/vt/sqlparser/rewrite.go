@@ -189,24 +189,27 @@ func (a *application) apply(parent SQLNode, name string, iter *iterator, n SQLNo
 	switch n := n.(type) {
 	case nil:
 	// nothing to do
-	case SelectExprs, *SQLVal, ColIdent, TableIdent, Partitions, Comments:
+	case SelectExprs,
+		*SQLVal,
+		ColIdent,
+		TableIdent:
 
-	// statement roots
+	// Statements
 	case *Select:
 		a.apply(n, "Comments", nil, n.Comments)
 		a.applyCollection(n, "SelectExprs", n.SelectExprs)
-		a.applyList(n, "From")
+		a.applyCollection(n, "From", n.From)
 		a.apply(n, "Where", nil, n.Where)
-		a.applyList(n, "GroupBy")
+		a.applyCollection(n, "GroupBy", n.GroupBy)
 		a.apply(n, "Having", nil, n.Where)
-		a.applyList(n, "OrderBy")
+		a.applyCollection(n, "OrderBy", n.OrderBy)
 		a.apply(n, "Limit", nil, n.Limit)
 
 	case *Union:
 		a.apply(n, "Left", nil, n.Left)
 		a.apply(n, "Right", nil, n.Left)
 		a.apply(n, "Right", nil, n.Left)
-		a.applyList(n, "OrderBy")
+		a.applyCollection(n, "OrderBy", n.OrderBy)
 		a.apply(n, "Limit", nil, n.Limit)
 
 	case *Stream:
@@ -214,13 +217,142 @@ func (a *application) apply(parent SQLNode, name string, iter *iterator, n SQLNo
 		a.apply(n, "SelectExpr", nil, n.SelectExpr)
 		a.apply(n, "TableName", nil, n.Table)
 
+	case *Insert:
+		a.apply(n, "Comments", nil, n.Comments)
+		a.apply(n, "Table", nil, n.Table)
+		a.applyCollection(n, "Table", n.Partitions)
+		a.applyCollection(n, "Columns", n.Columns)
+		a.apply(n, "Rows", nil, n.Rows)
+		a.applyCollection(n, "OnDup", n.OnDup)
+
+	case *Update:
+		a.apply(n, "Comments", nil, n.Comments)
+		a.applyCollection(n, "TableExprs", n.TableExprs)
+		a.applyCollection(n, "Exprs", n.Exprs)
+		a.applyCollection(n, "OrderBy", n.OrderBy)
+		a.apply(n, "Limit", nil, n.Limit)
+
+	case *Delete:
+		a.apply(n, "Comments", nil, n.Comments)
+		a.applyCollection(n, "Targets", n.Targets)
+		a.applyCollection(n, "TableExprs", n.TableExprs)
+		a.applyCollection(n, "Partitions", n.Partitions)
+		a.apply(n, "Having", nil, n.Where)
+		a.applyCollection(n, "OrderBy", n.OrderBy)
+		a.apply(n, "Limit", nil, n.Limit)
+
+	case *Set:
+		a.apply(n, "Comments", nil, n.Comments)
+		a.applyCollection(n, "Exprs", n.Exprs)
+
+	case *DDL:
+		a.applyCollection(n, "FromTables", n.FromTables)
+		a.applyCollection(n, "ToTables", n.ToTables)
+		a.apply(n, "Table", nil, n.Table)
+		a.apply(n, "TableSpec", nil, n.TableSpec)
+		a.apply(n, "OptLike", nil, n.OptLike)
+		a.apply(n, "PartitionSpec", nil, n.PartitionSpec)
+		a.apply(n, "VindexSpec", nil, n.VindexSpec)
+		a.applyList(n, "VindexCols")
+
+	case *ParenSelect:
+		a.apply(n, "Select", nil, n.Select)
+
+	case *Show:
+		a.apply(n, "OnTable", nil, n.OnTable)
+		a.apply(n, "Table", nil, n.Table)
+		a.apply(n, "ShowCollationFilterOpt", nil, *n.ShowCollationFilterOpt)
+
+	case *Use:
+		a.apply(n, "DBName", nil, n.DBName)
+
+	case Comments: // do nothing
+	case *DBDDL: // do nothing
+	case *Begin: // do nothing
+	case *Commit: // do nothing
+	case *Rollback: // do nothing
+	case *OtherRead: // do nothing
+	case *OtherAdmin: // do nothing
+	// end of statements
+
+	case *OptLike:
+		a.apply(n, "LikeTable", nil, n.LikeTable)
+
+	case *PartitionSpec:
+		a.apply(n, "Name", nil, n.Name)
+		a.applyList(n, "Definitions")
+
+	case *PartitionDefinition:
+		a.apply(n, "Name", nil, n.Name)
+		a.apply(n, "Limit", nil, n.Limit)
+
+	case *TableSpec:
+		a.applyList(n, "Columns")
+		a.applyList(n, "Indexes")
+		a.applyList(n, "Constraints")
+
+	case *ColumnDefinition:
+		a.apply(n, "Name", nil, n.Name)
+		a.apply(n, "Type", nil, &n.Type)
+
+	case *ColumnType:
+		a.apply(n, "NotNull", nil, n.NotNull)
+		a.apply(n, "Autoincrement", nil, n.Autoincrement)
+		a.apply(n, "Default", nil, n.Default)
+		a.apply(n, "OnUpdate", nil, n.OnUpdate)
+		a.apply(n, "Comment", nil, n.Comment)
+		a.apply(n, "Length", nil, n.Length)
+		a.apply(n, "Unsigned", nil, n.Unsigned)
+		a.apply(n, "Zerofill", nil, n.Zerofill)
+		a.apply(n, "Scale", nil, n.Scale)
+
+	case *IndexDefinition:
+		a.apply(n, "Info", nil, n.Info)
+		a.applyList(n, "Columns")
+		a.applyList(n, "Options")
+
+	case *IndexInfo:
+		a.apply(n, "Name", nil, n.Name)
+
+	case *VindexSpec:
+		a.apply(n, "Name", nil, n.Name)
+		a.apply(n, "Type", nil, n.Type)
+		a.applyList(n, "Params")
+
+	case *AutoIncSpec:
+		a.apply(n, "Column", nil, n.Column)
+		a.apply(n, "Sequence", nil, n.Sequence)
+
+	case *VindexParam:
+		a.apply(n, "Key", nil, n.Key)
+
+	case *ConstraintDefinition:
+		a.apply(n, "Details", nil, n.Details)
+
+	case *ForeignKeyDefinition:
+		a.applyCollection(n, "Source", n.Source)
+		a.apply(n, "ReferencedTable", nil, n.ReferencedTable)
+		a.applyCollection(n, "ReferencedColumns", n.ReferencedColumns)
+
+	case *ShowFilter:
+		a.apply(n, "Filter", nil, n.Filter)
+
+		// SelectExpr
+	case *StarExpr:
+		a.apply(n, "TableName", nil, n.TableName)
+
 	case *AliasedExpr:
 		a.apply(n, "Expr", nil, n.Expr)
 		a.apply(n, "As", nil, n.As)
 
-	case *BinaryExpr:
-		a.apply(n, "Left", nil, n.Left)
-		a.apply(n, "Right", nil, n.Right)
+	case *Nextval:
+		a.apply(n, "Expr", nil, n.Expr)
+
+	case Columns: // do nothing
+	case Partitions: // do nothing
+	case TableExprs: // do nothing
+
+	// TableExpr
 
 	case *AliasedTableExpr:
 		a.apply(n, "Expr", nil, n.Expr)
@@ -228,9 +360,51 @@ func (a *application) apply(parent SQLNode, name string, iter *iterator, n SQLNo
 		a.apply(n, "As", nil, n.As)
 		a.apply(n, "Hints", nil, n.Hints)
 
-	case TableName:
+	case *JoinTableExpr:
+		a.apply(n, "LeftExpr", nil, n.LeftExpr)
+		a.apply(n, "RightExpr", nil, n.RightExpr)
+		a.apply(n, "Condition", nil, n.Condition)
+
+	case *ParenTableExpr:
+		a.apply(n, "Exprs", nil, n.Exprs)
+
+	// End of TableExpr
+
+	// SimpleTableExpr
+	case *TableName:
 		a.apply(n, "Name", nil, n.Name)
-		a.apply(n, "Name", nil, n.Qualifier)
+		a.apply(n, "Qualifier", nil, n.Qualifier)
+
+	case *Subquery:
+		a.apply(n, "Select", nil, n.Select)
+	// End of SimpleTableExpr
+
+	case TableNames: // do nothing
+
+	case *JoinCondition:
+		a.apply(n, "On", nil, n.On)
+		a.applyCollection(n, "Using", n.Using)
+
+	case *IndexHints:
+		a.applyList(n, "Indexes")
+
+	case *Where:
+		a.apply(n, "Expr", nil, n.Expr)
+
+	// Expressions
+	case *AndExpr:
+		a.apply(n, "Left", nil, n.Left)
+		a.apply(n, "Right", nil, n.Right)
+
+	case *OrExpr:
+		a.apply(n, "Left", nil, n.Left)
+		a.apply(n, "Right", nil, n.Right)
+
+	case *NotExpr:
+		a.apply(n, "Expr", nil, n.Expr)
+
+
+	// End of Expressions
 
 	default:
 		panic(fmt.Sprintf("Apply: unexpected node type %T", n))
@@ -248,6 +422,7 @@ type iterator struct {
 	index, step int
 }
 
+// applyCollection is used for SQLNode types that are arrays or slices
 func (a *application) applyCollection(parent SQLNode, name string, collection SQLNode) {
 	a.apply(parent, name, nil, collection)
 
@@ -273,6 +448,7 @@ func (a *application) applyCollection(parent SQLNode, name string, collection SQ
 	a.iter = saved
 }
 
+// applyList is used for arrays and slices in fields, containing SQLNodes
 func (a *application) applyList(parent SQLNode, name string) {
 	// avoid heap-allocating a new iterator for each applyList call; reuse a.iter instead
 	saved := a.iter

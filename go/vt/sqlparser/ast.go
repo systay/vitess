@@ -223,6 +223,7 @@ type (
 		Table                  TableName
 		ShowTablesOpt          *ShowTablesOpt
 		Scope                  string
+		// TODO: this should not be a pointer
 		ShowCollationFilterOpt *Expr
 	}
 
@@ -525,6 +526,7 @@ func (ts *TableSpec) walkSubtree(visit Visit) error {
 // ColumnDefinition describes a column in a CREATE TABLE statement
 type ColumnDefinition struct {
 	Name ColIdent
+	// TODO: Should this not be a reference?
 	Type ColumnType
 }
 
