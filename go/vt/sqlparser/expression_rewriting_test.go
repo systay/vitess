@@ -64,6 +64,11 @@ func TestRewrites(in *testing.T) {
 			expected: "select id from user where :__vtdbname",
 			db:       true, liid: false,
 		},
+		{
+			in:       "select schema()",
+			expected: "select :__vtdbname as 'schema()'",
+			db:       true, liid: false,
+		},
 	}
 
 	for _, tc := range tests {
