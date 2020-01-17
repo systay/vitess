@@ -33,6 +33,7 @@ func PrepareAST(in Statement, bindVars map[string]*querypb.BindVariable, prefix 
 type BindVarNeeds struct {
 	NeedLastInsertID bool
 	NeedDatabase     bool
+	NeedFoundRows    bool
 }
 
 // RewriteAST rewrites the whole AST, replacing function calls and adding column aliases to queries
@@ -48,6 +49,9 @@ func RewriteAST(in Statement) (*RewriteASTResult, error) {
 	}
 	if _, ok := er.bindVars[DBVarName]; ok {
 		r.NeedDatabase = true
+	}
+	if _, ok := er.bindVars[FoundRowsName]; ok {
+		r.NeedFoundRows = true
 	}
 
 	return r, nil
@@ -74,6 +78,9 @@ const (
 
 	//DBVarName is a reserved bind var name for database()
 	DBVarName = "__vtdbname"
+
+	//FoundRowsName is a reserved bind var name for found_rows()
+	FoundRowsName = "__vtfrows"
 )
 
 type funcRewrite struct {
@@ -100,11 +107,21 @@ var dbName = funcRewrite{
 	},
 	bindVarName: DBVarName,
 }
+var foundRows = funcRewrite{
+	checkValid: func(f *FuncExpr) error {
+		if len(f.Exprs) > 0 {
+			return vterrors.New(vtrpc.Code_INVALID_ARGUMENT, "Argument to FOUND_ROWS() not supported")
+		}
+		return nil
+	},
+	bindVarName: FoundRowsName,
+}
 
 var functions = map[string]*funcRewrite{
 	"last_insert_id": &lastInsertID,
 	"database":       &dbName,
 	"schema":         &dbName,
+	"found_rows":     &foundRows,
 }
 
 // instead of creating new objects, we'll reuse this one
