@@ -321,10 +321,11 @@ func (e *Executor) handleExec(ctx context.Context, safeSession *SafeSession, sql
 		return nil, err
 	}
 
-	if plan.NeedsLastInsertID {
+	bindVarNeeds := plan.BindVarNeeds
+	if bindVarNeeds.NeedLastInsertID {
 		bindVars[sqlparser.LastInsertIDName] = sqltypes.Uint64BindVariable(safeSession.GetLastInsertId())
 	}
-	if plan.NeedsDatabaseName {
+	if bindVarNeeds.NeedDatabase {
 		keyspace, _, _, _ := e.ParseDestinationTarget(safeSession.TargetString)
 		if keyspace == "" {
 			bindVars[sqlparser.DBVarName] = sqltypes.NullBindVariable
@@ -1417,7 +1418,7 @@ func (e *Executor) getPlan(vcursor *vcursorImpl, sql string, comments sqlparser.
 		return nil, err
 	}
 	if !e.normalize {
-		plan, err := planbuilder.BuildFromStmt(sql, stmt, vcursor, false, false)
+		plan, err := planbuilder.BuildFromStmt(sql, stmt, vcursor, sqlparser.BindVarNeeds{})
 		if err != nil {
 			return nil, err
 		}
@@ -1444,7 +1445,7 @@ func (e *Executor) getPlan(vcursor *vcursorImpl, sql string, comments sqlparser.
 	if result, ok := e.plans.Get(planKey); ok {
 		return result.(*engine.Plan), nil
 	}
-	plan, err := planbuilder.BuildFromStmt(normalized, rewrittenStatement, vcursor, result.NeedLastInsertID, result.NeedDatabase)
+	plan, err := planbuilder.BuildFromStmt(normalized, rewrittenStatement, vcursor, result.BindVarNeeds)
 	if err != nil {
 		return nil, err
 	}
