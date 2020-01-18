@@ -1513,6 +1513,8 @@ var (
 	}, {
 		input:  "select distinctrow a.* from (select (1) from dual union all select 1 from dual) a",
 		output: "select distinct a.* from (select (1) from dual union all select 1 from dual) as a",
+	}, {
+		input: "select sql_calc_found_rows 42 from t limit 10",
 	}}
 )
 
