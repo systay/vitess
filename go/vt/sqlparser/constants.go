@@ -29,6 +29,9 @@ const (
 	SQLCacheStr   = "sql_cache "
 	SQLNoCacheStr = "sql_no_cache "
 
+	// Select.SQL_CALC_FOUND_ROWS
+	SQLCalcFoundRows = "sql_calc_found_rows "
+
 	// Union.Type
 	UnionStr         = "union"
 	UnionAllStr      = "union all"
