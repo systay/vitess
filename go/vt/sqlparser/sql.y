@@ -121,7 +121,7 @@ func skipToEnd(yylex interface{}) {
 %left <bytes> UNION
 %token <bytes> SELECT STREAM INSERT UPDATE DELETE FROM WHERE GROUP HAVING ORDER BY LIMIT OFFSET FOR
 %token <bytes> ALL DISTINCT AS EXISTS ASC DESC INTO DUPLICATE KEY DEFAULT SET LOCK UNLOCK KEYS
-%token <bytes> DISTINCTROW
+%token <bytes> DISTINCTROW SQL_CALC_FOUND_ROWS
 %token <bytes> VALUES LAST_INSERT_ID
 %token <bytes> NEXT VALUE SHARE MODE
 %token <bytes> SQL_NO_CACHE SQL_CACHE
@@ -219,7 +219,7 @@ func skipToEnd(yylex interface{}) {
 %type <statement> begin_statement commit_statement rollback_statement
 %type <bytes2> comment_opt comment_list
 %type <str> union_op insert_or_replace
-%type <str> distinct_opt straight_join_opt cache_opt match_option separator_opt
+%type <str> distinct_opt straight_join_opt cache_opt match_option separator_opt sql_calc_found_rows_opt
 %type <expr> like_escape_opt
 %type <selectExprs> select_expression_list select_expression_list_opt
 %type <selectExpr> select_expression
@@ -383,9 +383,9 @@ stream_statement:
 
 // base_select is an unparenthesized SELECT with no order by clause or beyond.
 base_select:
-  SELECT comment_opt cache_opt distinct_opt straight_join_opt select_expression_list from_opt where_expression_opt group_by_opt having_opt
+  SELECT comment_opt cache_opt distinct_opt straight_join_opt sql_calc_found_rows_opt select_expression_list from_opt where_expression_opt group_by_opt having_opt
   {
-    $$ = &Select{Comments: Comments($2), Cache: $3, Distinct: $4, Hints: $5, SelectExprs: $6, From: $7, Where: NewWhere(WhereStr, $8), GroupBy: GroupBy($9), Having: NewWhere(HavingStr, $10)}
+    $$ = &Select{Comments: Comments($2), Cache: $3, Distinct: $4, Hints: $5, CalcFoundRows: $6, SelectExprs: $7, From: $8, Where: NewWhere(WhereStr, $9), GroupBy: GroupBy($10), Having: NewWhere(HavingStr, $11)}
   }
 
 union_lhs:
@@ -1840,6 +1840,15 @@ distinct_opt:
 | DISTINCTROW
   {
     $$ = DistinctStr
+  }
+
+sql_calc_found_rows_opt:
+  {
+    $$ = ""
+  }
+| SQL_CALC_FOUND_ROWS
+  {
+    $$ = SQLCalcFoundRows
   }
 
 straight_join_opt:
