@@ -108,6 +108,9 @@ message Session {
 
  // last_insert_id keeps track of the last seen insert_id for this session
   uint64 last_insert_id = 11;
+
+  // found_rows keeps track of how many rows the last query returned
+  uint64 found_rows = 12;
 }
 
 // ExecuteRequest is the payload to Execute.

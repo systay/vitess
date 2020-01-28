@@ -25,6 +25,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"golang.org/x/net/context"
 	"vitess.io/vitess/go/streamlog"
 
@@ -96,14 +98,14 @@ func TestGetPlanPanicDuetoEmptyQuery(t *testing.T) {
 	}
 	testUtils := newTestUtils()
 	dbcfgs := testUtils.newDBConfigs(db)
-	qe := newTestQueryEngine(10, 10*time.Second, true, dbcfgs)
+	qe := newTestQueryEngine(10, 10*time.Second, dbcfgs)
 	qe.se.Open()
 	qe.Open()
 	defer qe.Close()
 
 	ctx := context.Background()
 	logStats := tabletenv.NewLogStats(ctx, "GetPlanStats")
-	_, err := qe.GetPlan(ctx, logStats, "", false)
+	_, err := qe.GetPlan(ctx, logStats, "", false, false)
 	want := "empty statement"
 	if err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("qe.GetPlan: %v, want %s", err, want)
@@ -118,7 +120,7 @@ func TestGetMessageStreamPlan(t *testing.T) {
 	}
 	testUtils := newTestUtils()
 	dbcfgs := testUtils.newDBConfigs(db)
-	qe := newTestQueryEngine(10, 10*time.Second, true, dbcfgs)
+	qe := newTestQueryEngine(10, 10*time.Second, dbcfgs)
 	qe.se.Open()
 	qe.Open()
 	defer qe.Close()
@@ -157,7 +159,7 @@ func TestQueryPlanCache(t *testing.T) {
 
 	testUtils := newTestUtils()
 	dbcfgs := testUtils.newDBConfigs(db)
-	qe := newTestQueryEngine(10, 10*time.Second, true, dbcfgs)
+	qe := newTestQueryEngine(10, 10*time.Second, dbcfgs)
 	qe.se.Open()
 	qe.Open()
 	defer qe.Close()
@@ -165,14 +167,14 @@ func TestQueryPlanCache(t *testing.T) {
 	ctx := context.Background()
 	logStats := tabletenv.NewLogStats(ctx, "GetPlanStats")
 	qe.SetQueryPlanCacheCap(1)
-	firstPlan, err := qe.GetPlan(ctx, logStats, firstQuery, false)
+	firstPlan, err := qe.GetPlan(ctx, logStats, firstQuery, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if firstPlan == nil {
 		t.Fatalf("plan should not be nil")
 	}
-	secondPlan, err := qe.GetPlan(ctx, logStats, secondQuery, false)
+	secondPlan, err := qe.GetPlan(ctx, logStats, secondQuery, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +203,7 @@ func TestNoQueryPlanCache(t *testing.T) {
 
 	testUtils := newTestUtils()
 	dbcfgs := testUtils.newDBConfigs(db)
-	qe := newTestQueryEngine(10, 10*time.Second, true, dbcfgs)
+	qe := newTestQueryEngine(10, 10*time.Second, dbcfgs)
 	qe.se.Open()
 	qe.Open()
 	defer qe.Close()
@@ -209,7 +211,7 @@ func TestNoQueryPlanCache(t *testing.T) {
 	ctx := context.Background()
 	logStats := tabletenv.NewLogStats(ctx, "GetPlanStats")
 	qe.SetQueryPlanCacheCap(1)
-	firstPlan, err := qe.GetPlan(ctx, logStats, firstQuery, true)
+	firstPlan, err := qe.GetPlan(ctx, logStats, firstQuery, true, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +237,7 @@ func TestNoQueryPlanCacheDirective(t *testing.T) {
 
 	testUtils := newTestUtils()
 	dbcfgs := testUtils.newDBConfigs(db)
-	qe := newTestQueryEngine(10, 10*time.Second, true, dbcfgs)
+	qe := newTestQueryEngine(10, 10*time.Second, dbcfgs)
 	qe.se.Open()
 	qe.Open()
 	defer qe.Close()
@@ -243,7 +245,7 @@ func TestNoQueryPlanCacheDirective(t *testing.T) {
 	ctx := context.Background()
 	logStats := tabletenv.NewLogStats(ctx, "GetPlanStats")
 	qe.SetQueryPlanCacheCap(1)
-	firstPlan, err := qe.GetPlan(ctx, logStats, firstQuery, false)
+	firstPlan, err := qe.GetPlan(ctx, logStats, firstQuery, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,6 +255,47 @@ func TestNoQueryPlanCacheDirective(t *testing.T) {
 	if qe.plans.Size() != 0 {
 		t.Fatalf("query plan cache should be 0")
 	}
+	qe.ClearQueryPlanCache()
+}
+
+func TestSqlCalcFoundRows(t *testing.T) {
+	db := fakesqldb.New(t)
+	defer db.Close()
+	for query, result := range schematest.Queries() {
+		db.AddQuery(query, result)
+	}
+
+	firstQuery := "select 42 from dual"
+	db.AddQuery("select 42 from dual where 1 != 1", &sqltypes.Result{})
+
+	testUtils := newTestUtils()
+	dbcfgs := testUtils.newDBConfigs(db)
+	qe := newTestQueryEngine(10, 10*time.Second, dbcfgs)
+	qe.se.Open()
+	qe.Open()
+	defer qe.Close()
+
+	ctx := context.Background()
+	logStats := tabletenv.NewLogStats(ctx, "GetPlanStats")
+	qe.SetQueryPlanCacheCap(1)
+	plan, err := qe.GetPlan(ctx, logStats, firstQuery, false, true)
+	require.NoError(t, err)
+	require.NotNil(t, plan)
+	wantPlan := &planbuilder.Plan{
+		PlanID: planbuilder.PlanMessageStream,
+		Table:  qe.tables["msg"],
+		Permissions: []planbuilder.Permission{{
+			TableName: "msg",
+			Role:      tableacl.WRITER,
+		}},
+	}
+
+	require.True(t, reflect.DeepEqual(plan.Plan, wantPlan), "GetMessageStreamPlan(msg): %v, want %v", plan.Plan, wantPlan)
+
+	if plan.Rules == nil || plan.Authorized == nil {
+		t.Errorf("GetMessageStreamPlan(msg): Rules or ACLResult are nil. Rules: %v, Authorized: %v", plan.Rules, plan.Authorized)
+	}
+	require.Zero(t, qe.plans.Size(), "query plan cache should be 0")
 	qe.ClearQueryPlanCache()
 }
 
@@ -266,14 +309,14 @@ func TestStatsURL(t *testing.T) {
 	db.AddQuery("select * from test_table_01 where 1 != 1", &sqltypes.Result{})
 	testUtils := newTestUtils()
 	dbcfgs := testUtils.newDBConfigs(db)
-	qe := newTestQueryEngine(10, 1*time.Second, true, dbcfgs)
+	qe := newTestQueryEngine(10, 1*time.Second, dbcfgs)
 	qe.se.Open()
 	qe.Open()
 	defer qe.Close()
 	// warm up cache
 	ctx := context.Background()
 	logStats := tabletenv.NewLogStats(ctx, "GetPlanStats")
-	qe.GetPlan(ctx, logStats, query, false)
+	qe.GetPlan(ctx, logStats, query, false, false)
 
 	request, _ := http.NewRequest("GET", "/debug/tablet_plans", nil)
 	response := httptest.NewRecorder()
@@ -292,7 +335,7 @@ func TestStatsURL(t *testing.T) {
 	qe.ServeHTTP(response, request)
 }
 
-func newTestQueryEngine(queryPlanCacheSize int, idleTimeout time.Duration, strict bool, dbcfgs *dbconfigs.DBConfigs) *QueryEngine {
+func newTestQueryEngine(queryPlanCacheSize int, idleTimeout time.Duration, dbcfgs *dbconfigs.DBConfigs) *QueryEngine {
 	config := tabletenv.DefaultQsConfig
 	config.QueryPlanCacheSize = queryPlanCacheSize
 	config.IdleTimeout = float64(idleTimeout) / 1e9
@@ -309,7 +352,7 @@ func runConsolidatedQuery(t *testing.T, sql string) *QueryEngine {
 
 	testUtils := newTestUtils()
 	dbcfgs := testUtils.newDBConfigs(db)
-	qe := newTestQueryEngine(10, 1*time.Second, true, dbcfgs)
+	qe := newTestQueryEngine(10, 1*time.Second, dbcfgs)
 	qe.se.Open()
 	qe.Open()
 	defer qe.Close()

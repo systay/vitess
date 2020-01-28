@@ -197,7 +197,7 @@ func analyzeSelect(sel *sqlparser.Select, tables map[string]*schema.Table) (plan
 	plan = &Plan{
 		PlanID:     PlanPassSelect,
 		FieldQuery: GenerateFieldQuery(sel),
-		FullQuery:  GenerateLimitQuery(sel),
+		FullQuery:  GenerateLimitQuery(sel, false),
 	}
 	if sel.Lock != "" {
 		plan.PlanID = PlanSelectLock
@@ -390,7 +390,7 @@ func analyzeInsertNoType(ins *sqlparser.Insert, plan *Plan, table *schema.Table)
 		}
 		plan.PlanID = PlanInsertSubquery
 		plan.OuterQuery = GenerateInsertOuterQuery(ins)
-		plan.Subquery = GenerateLimitQuery(sel)
+		plan.Subquery = GenerateLimitQuery(sel, false)
 		for _, col := range ins.Columns {
 			colIndex := table.FindColumn(col)
 			if colIndex == -1 {

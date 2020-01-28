@@ -303,6 +303,9 @@ message ExecuteOptions {
   // skip_query_plan_cache specifies if the query plan should be cached by vitess.
   // By default all query plans are cached.
   bool skip_query_plan_cache = 10;
+
+  // sql_calc_found_rows specifies if the tablet server needs to follow up the query with a `select found_rows()` call
+  bool sql_calc_found_rows = 11;
 }
 
 // Field describes a single column returned by a query

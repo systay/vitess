@@ -82,7 +82,7 @@ func TestPlan(t *testing.T) {
 		var err error
 		statement, err := sqlparser.Parse(tcase.input)
 		if err == nil {
-			plan, err = Build(statement, testSchema)
+			plan, err = Build(statement, testSchema, false)
 		}
 		PassthroughDMLs = false
 
@@ -132,7 +132,7 @@ func TestCustom(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Got error: %v, parsing sql: %v", err.Error(), tcase.input)
 				}
-				plan, err := Build(statement, schem)
+				plan, err := Build(statement, schem, false)
 				var out string
 				if err != nil {
 					out = err.Error()

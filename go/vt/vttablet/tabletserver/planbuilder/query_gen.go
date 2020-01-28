@@ -17,6 +17,9 @@ limitations under the License.
 package planbuilder
 
 import (
+	"fmt"
+	"reflect"
+
 	"vitess.io/vitess/go/vt/sqlparser"
 	"vitess.io/vitess/go/vt/vttablet/tabletserver/schema"
 )
@@ -40,9 +43,30 @@ func GenerateFieldQuery(statement sqlparser.Statement) *sqlparser.ParsedQuery {
 	return buf.ParsedQuery()
 }
 
+func getFirstSelect(in sqlparser.SelectStatement) *sqlparser.Select {
+	switch n := in.(type) {
+	case *sqlparser.ParenSelect:
+		return getFirstSelect(n.Select)
+	case *sqlparser.Select:
+		return n
+	case *sqlparser.Union:
+		return getFirstSelect(n.Left)
+	default:
+		panic(fmt.Sprintf("WUT!? unexpected type encountered: %v", reflect.TypeOf(in)))
+	}
+}
+
 // GenerateLimitQuery generates a select query with a limit clause.
-func GenerateLimitQuery(selStmt sqlparser.SelectStatement) *sqlparser.ParsedQuery {
+func GenerateLimitQuery(selStmt sqlparser.SelectStatement, calcFoundRows bool) *sqlparser.ParsedQuery {
 	buf := sqlparser.NewTrackedBuffer(nil)
+	if calcFoundRows {
+		leftMostSelect := getFirstSelect(selStmt)
+		leftMostSelect.CalcFoundRows = sqlparser.SQLCalcFoundRows
+		defer func() {
+			leftMostSelect.CalcFoundRows = ""
+		}()
+	}
+
 	switch sel := selStmt.(type) {
 	case *sqlparser.Select:
 		limit := sel.Limit
@@ -53,7 +77,6 @@ func GenerateLimitQuery(selStmt sqlparser.SelectStatement) *sqlparser.ParsedQuer
 			}()
 		}
 	case *sqlparser.Union:
-		// Code is identical to *Select, but this one is a *Union.
 		limit := sel.Limit
 		if limit == nil {
 			sel.Limit = execLimit

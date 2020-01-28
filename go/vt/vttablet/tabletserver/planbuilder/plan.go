@@ -229,6 +229,9 @@ type Plan struct {
 
 	// For PlanInsertSubquery: pk columns in the subquery result.
 	SubqueryPKColumns []int
+
+	// SQLCalcFoundRows signals whether we need to add SQL_CALC_FOUND_ROWS and follow up with a SELECT found_rows() call
+	SQLCalcFoundRows bool
 }
 
 // TableName returns the table name for the plan.
@@ -248,7 +251,7 @@ func (plan *Plan) setTable(tableName sqlparser.TableIdent, tables map[string]*sc
 }
 
 // Build builds a plan based on the schema.
-func Build(statement sqlparser.Statement, tables map[string]*schema.Table) (*Plan, error) {
+func Build(statement sqlparser.Statement, tables map[string]*schema.Table, calcFoundRows bool) (*Plan, error) {
 	var plan *Plan
 
 	err := checkForPoolingUnsafeConstructs(statement)
@@ -261,7 +264,7 @@ func Build(statement sqlparser.Statement, tables map[string]*schema.Table) (*Pla
 		plan, err = &Plan{
 			PlanID:     PlanPassSelect,
 			FieldQuery: GenerateFieldQuery(stmt),
-			FullQuery:  GenerateLimitQuery(stmt),
+			FullQuery:  GenerateLimitQuery(stmt, calcFoundRows),
 		}, nil
 	case *sqlparser.Select:
 		plan, err = analyzeSelect(stmt, tables)
