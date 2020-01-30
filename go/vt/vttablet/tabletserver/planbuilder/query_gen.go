@@ -24,14 +24,14 @@ import (
 // GenerateFullQuery generates the full query from the ast.
 func GenerateFullQuery(statement sqlparser.Statement) *sqlparser.ParsedQuery {
 	buf := sqlparser.NewTrackedBuffer(nil)
-	statement.Format(buf)
+	withParens(statement).Format(buf)
 	return buf.ParsedQuery()
 }
 
 // GenerateFieldQuery generates a query to just fetch the field info
 // by adding impossible where clauses as needed.
 func GenerateFieldQuery(statement sqlparser.Statement) *sqlparser.ParsedQuery {
-	buf := sqlparser.NewTrackedBuffer(sqlparser.FormatImpossibleQuery).WriteNode(statement)
+	buf := sqlparser.NewTrackedBuffer(sqlparser.FormatImpossibleQuery).WriteNode(withParens(statement))
 
 	if buf.HasBindVars() {
 		return nil
@@ -62,8 +62,12 @@ func GenerateLimitQuery(selStmt sqlparser.SelectStatement) *sqlparser.ParsedQuer
 			}()
 		}
 	}
-	buf.Myprintf("%v", selStmt)
+	buf.Myprintf("%v", withParens(selStmt))
 	return buf.ParsedQuery()
+}
+
+func withParens(statement sqlparser.Statement) sqlparser.Statement {
+	return sqlparser.Parenthesize(statement).(sqlparser.Statement)
 }
 
 // GenerateInsertOuterQuery generates the outer query for inserts.
@@ -97,7 +101,7 @@ func GenerateDeleteOuterQuery(del *sqlparser.Delete, aliased *sqlparser.AliasedT
 
 // GenerateUpdateSubquery generates the subquery for updates.
 func GenerateUpdateSubquery(upd *sqlparser.Update, table *schema.Table, aliased *sqlparser.AliasedTableExpr) *sqlparser.ParsedQuery {
-	return GenerateSubquery(
+	return generateSubquery(
 		table.Indexes[0].Columns,
 		aliased,
 		upd.Where,
@@ -109,7 +113,7 @@ func GenerateUpdateSubquery(upd *sqlparser.Update, table *schema.Table, aliased 
 
 // GenerateDeleteSubquery generates the subquery for deletes.
 func GenerateDeleteSubquery(del *sqlparser.Delete, table *schema.Table, aliased *sqlparser.AliasedTableExpr) *sqlparser.ParsedQuery {
-	return GenerateSubquery(
+	return generateSubquery(
 		table.Indexes[0].Columns,
 		aliased,
 		del.Where,
@@ -119,8 +123,8 @@ func GenerateDeleteSubquery(del *sqlparser.Delete, table *schema.Table, aliased 
 	)
 }
 
-// GenerateSubquery generates a subquery based on the input parameters.
-func GenerateSubquery(columns []sqlparser.ColIdent, table *sqlparser.AliasedTableExpr, where *sqlparser.Where, order sqlparser.OrderBy, limit *sqlparser.Limit, forUpdate bool) *sqlparser.ParsedQuery {
+// generateSubquery generates a subquery based on the input parameters.
+func generateSubquery(columns []sqlparser.ColIdent, table *sqlparser.AliasedTableExpr, where *sqlparser.Where, order sqlparser.OrderBy, limit *sqlparser.Limit, forUpdate bool) *sqlparser.ParsedQuery {
 	buf := sqlparser.NewTrackedBuffer(nil)
 	if limit == nil {
 		limit = execLimit

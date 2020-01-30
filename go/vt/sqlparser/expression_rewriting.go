@@ -49,8 +49,8 @@ type RewriteASTResult struct {
 }
 
 type expressionRewriter struct {
-	lastInsertID, database bool
-	err                    error
+	lastInsertID, database, otherChange bool
+	err                                 error
 }
 
 const (
@@ -99,12 +99,19 @@ func (er *expressionRewriter) goingDown(cursor *Cursor) bool {
 				er.database = true
 			}
 		}
+	case *ParenExpr:
+		_, isAlias := cursor.Parent().(*AliasedExpr)
+
+		if !isAlias {
+			er.otherChange = true
+			cursor.Replace(node.Expr)
+		}
 	}
 	return true
 }
 
 func (er *expressionRewriter) didAnythingChange() bool {
-	return er.database || er.lastInsertID
+	return er.database || er.lastInsertID || er.otherChange
 }
 
 func bindVarExpression(name string) *SQLVal {

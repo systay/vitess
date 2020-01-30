@@ -390,7 +390,11 @@ func (rb *route) generateFieldQuery(sel sqlparser.SelectStatement, jt *jointab) 
 		sqlparser.FormatImpossibleQuery(buf, node)
 	}
 
-	return sqlparser.NewTrackedBuffer(formatter).WriteNode(sel).ParsedQuery().Query
+	// Before writing out the query, let's put in any necessary parenthesis to keep the current
+	// abstract syntax tree even when producing a concrete syntax tree representation
+	rewritten := sqlparser.Parenthesize(sel)
+
+	return sqlparser.NewTrackedBuffer(formatter).WriteNode(rewritten).ParsedQuery().Query
 }
 
 // SupplyVar satisfies the builder interface.
