@@ -9,7 +9,7 @@ import (
 var _ Primitive = (*Projection)(nil)
 
 type Projection struct {
-	Exprs []*sqlparser.AliasedExpr
+	Exprs []sqlparser.Expr
 	Input Primitive
 }
 
@@ -26,7 +26,22 @@ func (p *Projection) GetTableName() string {
 }
 
 func (p *Projection) Execute(vcursor VCursor, bindVars map[string]*query.BindVariable, wantfields bool) (*sqltypes.Result, error) {
-	panic("implement me")
+	if wantfields {
+		panic("implement me")
+	}
+	result, err := p.Input.Execute(vcursor, bindVars, wantfields)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, row := range result.Rows {
+		for _, exp := range p.Exprs {
+			result := Evaluate(exp, bindVars, row)
+			row = append(row, result)
+		}
+	}
+
+	return result, nil
 }
 
 func (p *Projection) StreamExecute(vcursor VCursor, bindVars map[string]*query.BindVariable, wantields bool, callback func(*sqltypes.Result) error) error {
