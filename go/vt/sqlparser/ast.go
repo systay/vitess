@@ -55,9 +55,9 @@ type (
 
 	// Select represents a SELECT statement.
 	Select struct {
-		Cache       string
+		Cache       *bool // a reference here so it can be nil
 		Comments    Comments
-		Distinct    string
+		Distinct    bool
 		Hints       string
 		SelectExprs SelectExprs
 		From        TableExprs
@@ -810,8 +810,20 @@ type TableIdent struct {
 
 // Format formats the node.
 func (node *Select) Format(buf *TrackedBuffer) {
-	buf.astPrintf(node, "select %v%s%s%s%v from %v%v%v%v%v%v%s",
-		node.Comments, node.Cache, node.Distinct, node.Hints, node.SelectExprs,
+	var options string
+	if node.Distinct {
+		options = DistinctStr
+	}
+	if node.Cache != nil {
+		if *node.Cache {
+			options += SQLCacheStr
+		} else {
+			options += SQLNoCacheStr
+		}
+	}
+	
+	buf.astPrintf(node, "select %v%s%s%v from %v%v%v%v%v%v%s",
+		node.Comments, options, node.Hints, node.SelectExprs,
 		node.From, node.Where,
 		node.GroupBy, node.Having, node.OrderBy,
 		node.Limit, node.Lock)

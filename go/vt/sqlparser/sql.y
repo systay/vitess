@@ -224,6 +224,8 @@ func skipToEnd(yylex interface{}) {
 %type <expr> like_escape_opt
 %type <selectExprs> select_expression_list select_expression_list_opt
 %type <selectExpr> select_expression
+%type <strs> select_options
+%type <str> select_option
 %type <expr> expression
 %type <tableExprs> from_opt table_references
 %type <tableExpr> table_reference table_factor join_table
@@ -387,7 +389,7 @@ select_statement:
   }
 | SELECT comment_opt cache_opt NEXT num_val for_from table_name
   {
-    $$ = &Select{Comments: Comments($2), Cache: $3, SelectExprs: SelectExprs{Nextval{Expr: $5}}, From: TableExprs{&AliasedTableExpr{Expr: $7}}}
+    $$ = NewSelect(Comments($2), ""/*hints*/, SelectExprs{Nextval{Expr: $5}}, []string{$3}/*options*/, TableExprs{&AliasedTableExpr{Expr: $7}}, nil/*where*/, nil/*groupBy*/, nil/*having*/) 
   }
 
 stream_statement:
@@ -398,9 +400,10 @@ stream_statement:
 
 // base_select is an unparenthesized SELECT with no order by clause or beyond.
 base_select:
-  SELECT comment_opt cache_opt distinct_opt straight_join_opt select_expression_list from_opt where_expression_opt group_by_opt having_opt
+//  1         2            3                4               5                    6             7                8           9
+  SELECT comment_opt select_options straight_join_opt select_expression_list from_opt where_expression_opt group_by_opt having_opt
   {
-    $$ = &Select{Comments: Comments($2), Cache: $3, Distinct: $4, Hints: $5, SelectExprs: $6, From: $7, Where: NewWhere(WhereStr, $8), GroupBy: GroupBy($9), Having: NewWhere(HavingStr, $10)}
+    $$ = NewSelect(Comments($2), $4/*hints*/, $5/*SelectExprs*/, $3/*options*/, $6/*from*/, NewWhere(WhereStr, $7), GroupBy($8), NewWhere(HavingStr, $9)) 
   }
 
 union_lhs:
@@ -1908,6 +1911,37 @@ select_expression_list_opt:
 | select_expression_list
   {
     $$ = $1
+  }
+
+select_options:
+  {
+    $$ = []string{}
+  }
+| select_option
+  {
+    $$ = []string{$1}
+  }
+| select_options select_option
+  {
+    $$ = append($$, $2)
+  }
+
+select_option:
+  DISTINCT
+  {
+    $$ = DistinctStr
+  }
+| DISTINCTROW
+  {
+    $$ = DistinctStr
+  }
+| SQL_NO_CACHE
+  {
+    $$ = SQLNoCacheStr
+  }
+| SQL_CACHE
+  {
+    $$ = SQLCacheStr
   }
 
 select_expression_list:
