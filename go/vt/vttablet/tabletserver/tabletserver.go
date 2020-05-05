@@ -801,12 +801,18 @@ func (tsv *TabletServer) Commit(ctx context.Context, target *querypb.Target, tra
 			startTime := time.Now()
 			logStats.TransactionID = transactionID
 
-			var commitSQL string
-			conn, err := tsv.ch.Get(transactionID, "to commit")
-			if err != nil {
-				return err
-			}
-			commitSQL, err = tsv.te.Commit(ctx, conn)
+
+			tsv.te.connHandler.ExecInExclusiveConnection(ctx, nil, transactionID, "to commit", func(conn *ExclusiveConn) (*sqltypes.Result, error) {
+				tsv.te.Commit(ctx, conn)
+			})
+
+
+			//var commitSQL string
+			//conn, err := tsv.ch.Get(transactionID, "to commit")
+			//if err != nil {
+			//	return err
+			//}
+			//commitSQL, err = tsv.te.Commit(ctx, conn)
 
 			// If nothing was actually executed, don't count the operation in
 			// the tablet metrics, and clear out the logStats Method so that

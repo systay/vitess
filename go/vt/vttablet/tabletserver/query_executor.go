@@ -159,7 +159,8 @@ func (qre *QueryExecutor) execAutocommit(f func(conn *ExclusiveConn) (*sqltypes.
 }
 
 func (qre *QueryExecutor) execAsTransaction(f func(conn *ExclusiveConn) (*sqltypes.Result, error)) (*sqltypes.Result, error) {
-	conn, beginSQL, err := qre.tsv.te.Begin(qre.ctx, qre.options)
+	//qre.tsv.te.ExecAsTx(qre.ctx, qre.options)
+	connID, beginSQL, err := qre.tsv.te.Begin(qre.ctx, qre.options)
 	if err != nil {
 		return nil, err
 	}
