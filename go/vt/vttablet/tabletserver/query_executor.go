@@ -114,15 +114,15 @@ func (qre *QueryExecutor) Execute() (reply *sqltypes.Result, err error) {
 	if qre.transactionID != 0 {
 		return qre.tsv.te.connHandler.ExecInExclusiveConnection(qre.ctx, qre.options, qre.transactionID, "for query", qre.txConnExec)
 
-/*		// Need upfront connection for DMLs and transactions
-		conn, err := qre.tsv.te.txPool.Get(qre.transactionID, "for query")
-		if err != nil {
-			return nil, err
-		}
-		defer conn.Recycle()
-	return qre.txConnExec(conn)
+		/*		// Need upfront connection for DMLs and transactions
+					conn, err := qre.tsv.te.txPool.Get(qre.transactionID, "for query")
+					if err != nil {
+						return nil, err
+					}
+					defer conn.Recycle()
+				return qre.txConnExec(conn)
 
- */
+		*/
 	}
 
 	switch qre.plan.PlanID {
@@ -149,29 +149,24 @@ func (qre *QueryExecutor) Execute() (reply *sqltypes.Result, err error) {
 	return nil, vterrors.Errorf(vtrpcpb.Code_INTERNAL, "%s unexpected plan type", qre.plan.PlanID.String())
 }
 
-func (qre *QueryExecutor) execAutocommit(f func(conn *ExclusiveConn) (*sqltypes.Result, error)) (reply *sqltypes.Result, err error) {
+func (qre *QueryExecutor) execAutocommit(f func(conn *ExclusiveConn) (*sqltypes.Result, error)) (*sqltypes.Result, error) {
 	if qre.options == nil {
 		qre.options = &querypb.ExecuteOptions{}
 	}
 	qre.options.TransactionIsolation = querypb.ExecuteOptions_AUTOCOMMIT
-	conn, _, err := qre.tsv.te.Begin(qre.ctx, qre.options)
-	if err != nil {
-		return nil, err
-	}
-	defer qre.tsv.te.Rollback(qre.ctx, conn)
 
-	return f(conn)
+	return qre.tsv.te.ExecInTxConn(qre.ctx, qre.options, f)
 }
 
-func (qre *QueryExecutor) execAsTransaction(f func(conn *ExclusiveConn) (*sqltypes.Result, error)) (reply *sqltypes.Result, err error) {
+func (qre *QueryExecutor) execAsTransaction(f func(conn *ExclusiveConn) (*sqltypes.Result, error)) (*sqltypes.Result, error) {
 	conn, beginSQL, err := qre.tsv.te.Begin(qre.ctx, qre.options)
 	if err != nil {
 		return nil, err
 	}
 	defer qre.tsv.te.Rollback(qre.ctx, conn)
 	qre.logStats.AddRewrittenSQL(beginSQL, time.Now())
+	reply, err = qre.tsv.te.connHandler.ExecInExclusiveConnection(qre.ctx, qre.options, conn, "exec as tx", f)
 
-	reply, err = f(conn)
 	if err != nil {
 		// dbConn is nil, it means the transaction was aborted.
 		// If so, we should not relog the rollback.

@@ -299,6 +299,19 @@ func (te *TxEngine) AcceptReadOnly() error {
 	}
 }
 
+func (te *TxEngine) ExecInTxConn(ctx context.Context, options *querypb.ExecuteOptions, f func(conn *ExclusiveConn) (*sqltypes.Result, error)) (*sqltypes.Result, error) {
+	connectionID, _, err := te.Begin(ctx, options)
+	if err != nil {
+		return nil, err
+	}
+	//defer te.connHandler.Recycle(connectionID)
+	
+	return te.connHandler.ExecInExclusiveConnection(ctx, options, connectionID, "ExecInTxConn", func(conn *ExclusiveConn) (*sqltypes.Result, error) {
+		defer conn.Recycle()
+		return f(conn)
+	}) 
+}
+
 // Begin begins a transaction, and returns the associated transaction id and
 // the statements (if any) executed to initiate the transaction. In autocommit
 // mode the statement will be "".
