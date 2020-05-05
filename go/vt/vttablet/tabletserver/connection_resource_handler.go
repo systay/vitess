@@ -65,6 +65,10 @@ type ConnectionResourceHandler struct {
 	lastLog time.Time
 }
 
+func (crh *ConnectionResourceHandler) GetOutdated(age time.Duration, purpose string) []*ExclusiveConn {
+	panic("implement me")
+}
+
 // NewTxPool creates a new ConnectionResourceHandler. It's not operational until it's Open'd.
 func NewTxPool(env tabletenv.Env, limiter txlimiter.TxLimiter) *ConnectionResourceHandler {
 	config := env.Config()
@@ -185,6 +189,8 @@ func (crh *ConnectionResourceHandler) ClaimExclusiveConnection(ctx context.Conte
 */
 type ConnectionID = int64
 
+var _ IConnectionResourceHandler = (*ConnectionResourceHandler) (nil)
+
 //StartExclusiveConnection gets a connection from a pool and claims it for this session
 func (crh *ConnectionResourceHandler) StartExclusiveConnection(ctx context.Context, options *querypb.ExecuteOptions, f func(conn *ExclusiveConn) error) (ConnectionID, error) {
 	var conn *connpool.DBConn
@@ -216,7 +222,7 @@ func (crh *ConnectionResourceHandler) StartExclusiveConnection(ctx context.Conte
 	}
 	err = f(exclusiveConn)
 	if err != nil {
-		exclusiveConn.Recycle()
+		exclusiveConn.DoneForNow()
 		return 0, err
 	}
 
@@ -226,7 +232,7 @@ func (crh *ConnectionResourceHandler) StartExclusiveConnection(ctx context.Conte
 		options.GetWorkload() != querypb.ExecuteOptions_DBA,
 	)
 	if err != nil {
-		exclusiveConn.Recycle()
+		exclusiveConn.DoneForNow()
 		return 0, err
 	}
 	return exclusiveConn.ConnectionID, nil
@@ -239,7 +245,7 @@ func (crh *ConnectionResourceHandler) ExecInExclusiveConnection(ctx context.Cont
 		return nil, err
 	}
 	qr, err := f(conn)
-	crh.activePool.Put(connID)
+	conn.DoneForNow()
 	return qr, err
 }
 
@@ -290,7 +296,7 @@ func (exc *ExclusiveConn) Exec(ctx context.Context, query string, maxrows int, w
 
 // Recycle returns the connection to the pool. The transaction remains
 // active.
-func (exc *ExclusiveConn) Recycle() {
+func (exc *ExclusiveConn) DoneForNow() {
 	if exc.dbConn == nil {
 		return
 	}
@@ -305,6 +311,16 @@ func (exc *ExclusiveConn) Recycle() {
 func (exc *ExclusiveConn) RecordQuery(query string) {
 	exc.Queries = append(exc.Queries, query)
 }
+
+/*
+get conn from conn pool
+register - active pool
+use conn - (inUse) - done using conn( not in use)
+unregister - remove from active pool
+go back to conn pool
+
+
+ */
 
 func (exc *ExclusiveConn) release(conclusion, reason string) {
 	if exc.dbConn == nil {

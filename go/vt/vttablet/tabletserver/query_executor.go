@@ -159,33 +159,37 @@ func (qre *QueryExecutor) execAutocommit(f func(conn *ExclusiveConn) (*sqltypes.
 }
 
 func (qre *QueryExecutor) execAsTransaction(f func(conn *ExclusiveConn) (*sqltypes.Result, error)) (*sqltypes.Result, error) {
-	//qre.tsv.te.ExecAsTx(qre.ctx, qre.options)
 	connID, beginSQL, err := qre.tsv.te.Begin(qre.ctx, qre.options)
 	if err != nil {
 		return nil, err
 	}
-	defer qre.tsv.te.Rollback(qre.ctx, conn)
 	qre.logStats.AddRewrittenSQL(beginSQL, time.Now())
-	reply, err = qre.tsv.te.connHandler.ExecInExclusiveConnection(qre.ctx, qre.options, conn, "exec as tx", f)
-
-	if err != nil {
-		// dbConn is nil, it means the transaction was aborted.
-		// If so, we should not relog the rollback.
-		// TODO(sougou): these txPool functions should take the logstats
-		// and log any statements they issue. This needs to be done as
-		// a separate refactor because it impacts lot of code.
-		if conn.dbConn != nil {
-			defer qre.logStats.AddRewrittenSQL("rollback", time.Now())
-			qre.tsv.te.Rollback(qre.ctx, conn)
+	result, err := qre.tsv.te.connHandler.ExecInExclusiveConnection(qre.ctx, qre.options, connID, "exec as tx", func(conn *ExclusiveConn) (*sqltypes.Result, error) {
+		defer conn.release("execAsTransaction", "exec as tx")
+		defer qre.tsv.te.Rollback(qre.ctx, conn)
+		qr, err := f(conn)
+		if err != nil {
+			// dbConn is nil, it means the transaction was aborted.
+			// If so, we should not relog the rollback.
+			// TODO(sougou): these txPool functions should take the logstats
+			// and log any statements they issue. This needs to be done as
+			// a separate refactor because it impacts lot of code.
+			if conn.dbConn != nil {
+				defer qre.logStats.AddRewrittenSQL("rollback", time.Now())
+				qre.tsv.te.Rollback(qre.ctx, conn)
+			}
+			return nil, err
 		}
-		return nil, err
-	}
+		defer qre.logStats.AddRewrittenSQL("commit", time.Now())
+		if _, err := qre.tsv.te.Commit(qre.ctx, conn); err != nil {
+			return nil, err
+		}
+		return qr, err
+	})
+	if err != nil {
 
-	defer qre.logStats.AddRewrittenSQL("commit", time.Now())
-	if _, err := qre.tsv.te.Commit(qre.ctx, conn); err != nil {
-		return nil, err
 	}
-	return reply, nil
+	return result, nil
 }
 
 func (qre *QueryExecutor) txConnExec(conn *ExclusiveConn) (*sqltypes.Result, error) {

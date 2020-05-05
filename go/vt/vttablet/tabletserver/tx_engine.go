@@ -307,7 +307,7 @@ func (te *TxEngine) ExecInTxConn(ctx context.Context, options *querypb.ExecuteOp
 	//defer te.connHandler.Recycle(connectionID)
 	
 	return te.connHandler.ExecInExclusiveConnection(ctx, options, connectionID, "ExecInTxConn", func(conn *ExclusiveConn) (*sqltypes.Result, error) {
-		defer conn.Recycle()
+		defer conn.release("execAsAutocommit", "ExecInTxConn")
 		return f(conn)
 	}) 
 }
@@ -364,7 +364,6 @@ func (te *TxEngine) Begin(ctx context.Context, options *querypb.ExecuteOptions) 
 func (te *TxEngine) Commit(ctx context.Context, conn *ExclusiveConn) (string, error) {
 	span, ctx := trace.NewSpan(ctx, "TxEngine.Commit")
 	defer span.Finish()
-	defer conn.release(TxCommit, "transaction committed")
 
 	if conn.Autocommit {
 		return "", nil
@@ -676,10 +675,8 @@ func (te *TxEngine) Rollback(ctx context.Context, conn *ExclusiveConn) error {
 	span, ctx := trace.NewSpan(ctx, "TxEngine.LocalRollback")
 	defer span.Finish()
 	if conn.Autocommit {
-		conn.release(TxCommit, "returned to pool")
 		return nil
 	}
-	defer conn.release(TxRollback, "transaction rolled back")
 	if _, err := conn.Exec(ctx, "rollback", 1, false); err != nil {
 		conn.Close()
 		return err

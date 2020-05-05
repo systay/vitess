@@ -801,11 +801,12 @@ func (tsv *TabletServer) Commit(ctx context.Context, target *querypb.Target, tra
 			startTime := time.Now()
 			logStats.TransactionID = transactionID
 
-
-			tsv.te.connHandler.ExecInExclusiveConnection(ctx, nil, transactionID, "to commit", func(conn *ExclusiveConn) (*sqltypes.Result, error) {
-				tsv.te.Commit(ctx, conn)
+			commitSQL := ""
+			_, err = tsv.te.connHandler.ExecInExclusiveConnection(ctx, nil, transactionID, "to commit", func(conn *ExclusiveConn) (*sqltypes.Result, error) {
+				defer conn.release(TxCommit, "transaction committed")
+				commitSQL, err = tsv.te.Commit(ctx, conn)
+				return nil, err
 			})
-
 
 			//var commitSQL string
 			//conn, err := tsv.ch.Get(transactionID, "to commit")
@@ -836,11 +837,18 @@ func (tsv *TabletServer) Rollback(ctx context.Context, target *querypb.Target, t
 		func(ctx context.Context, logStats *tabletenv.LogStats) error {
 			defer tsv.stats.QueryTimings.Record("ROLLBACK", time.Now())
 			logStats.TransactionID = transactionID
-			conn, err := tsv.ch.Get(transactionID, "for rollback")
-			if err != nil {
-				return err
-			}
-			return tsv.te.Rollback(ctx, conn)
+
+			_, err := tsv.te.connHandler.ExecInExclusiveConnection(ctx, nil, transactionID, "for rollback", func(conn *ExclusiveConn) (*sqltypes.Result, error) {
+				defer conn.release(TxRollback, "transaction rolled back")
+				err := tsv.te.Rollback(ctx, conn)
+				return nil, err
+			})
+			return err
+			//conn, err := tsv.ch.Get(transactionID, "for rollback")
+			//if err != nil {
+			//	return err
+			//}
+			//return tsv.te.Rollback(ctx, conn)
 		},
 	)
 }
