@@ -197,7 +197,7 @@ func (conn *gRPCQueryClient) StreamExecute(ctx context.Context, target *querypb.
 }
 
 // Begin starts a transaction.
-func (conn *gRPCQueryClient) Begin(ctx context.Context, target *querypb.Target, options *querypb.ExecuteOptions) (transactionID int64, err error) {
+func (conn *gRPCQueryClient) Begin(ctx context.Context, target *querypb.Target, options *querypb.ExecuteOptions) (transactionID queryservice.TransactionId, err error) {
 	conn.mu.RLock()
 	defer conn.mu.RUnlock()
 	if conn.cc == nil {
@@ -214,7 +214,7 @@ func (conn *gRPCQueryClient) Begin(ctx context.Context, target *querypb.Target, 
 	if err != nil {
 		return 0, tabletconn.ErrorFromGRPC(err)
 	}
-	return br.TransactionId, nil
+	return queryservice.TransactionId(br.TransactionId), nil
 }
 
 // Commit commits the ongoing transaction.

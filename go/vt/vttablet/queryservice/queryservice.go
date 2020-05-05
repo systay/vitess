@@ -41,7 +41,7 @@ type QueryService interface {
 	// Transaction management
 
 	// Begin returns the transaction id to use for further operations
-	Begin(ctx context.Context, target *querypb.Target, options *querypb.ExecuteOptions) (int64, error)
+	Begin(ctx context.Context, target *querypb.Target, options *querypb.ExecuteOptions) (TransactionId, error)
 
 	// Commit commits the current transaction
 	Commit(ctx context.Context, target *querypb.Target, transactionID int64) error
@@ -110,6 +110,8 @@ type QueryService interface {
 	// Close must be called for releasing resources.
 	Close(ctx context.Context) error
 }
+
+type TransactionId int64
 
 type resultStreamer struct {
 	done chan struct{}

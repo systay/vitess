@@ -119,7 +119,7 @@ func newTablet(opts *Options, t *topodatapb.Tablet) *explainTablet {
 var _ queryservice.QueryService = (*explainTablet)(nil) // compile-time interface check
 
 // Begin is part of the QueryService interface.
-func (t *explainTablet) Begin(ctx context.Context, target *querypb.Target, options *querypb.ExecuteOptions) (int64, error) {
+func (t *explainTablet) Begin(ctx context.Context, target *querypb.Target, options *querypb.ExecuteOptions) (queryservice.TransactionId, error) {
 	t.mu.Lock()
 	t.currentTime = batchTime.Wait()
 	t.tabletQueries = append(t.tabletQueries, &TabletQuery{
@@ -129,7 +129,8 @@ func (t *explainTablet) Begin(ctx context.Context, target *querypb.Target, optio
 
 	t.mu.Unlock()
 
-	return t.tsv.Begin(ctx, target, options)
+	txId, err := t.tsv.Begin(ctx, target, options)
+	return queryservice.TransactionId(txId), err
 }
 
 // Commit is part of the QueryService interface.

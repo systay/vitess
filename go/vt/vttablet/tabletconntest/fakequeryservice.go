@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"vitess.io/vitess/go/vt/vttablet/queryservice"
 
 	"golang.org/x/net/context"
 
@@ -123,10 +124,10 @@ func (f *FakeQueryService) checkTargetCallerID(ctx context.Context, name string,
 }
 
 // BeginTransactionID is a test transaction id for Begin.
-const BeginTransactionID int64 = 9990
+const BeginTransactionID = queryservice.TransactionId(9990)
 
 // Begin is part of the queryservice.QueryService interface
-func (f *FakeQueryService) Begin(ctx context.Context, target *querypb.Target, options *querypb.ExecuteOptions) (int64, error) {
+func (f *FakeQueryService) Begin(ctx context.Context, target *querypb.Target, options *querypb.ExecuteOptions) (queryservice.TransactionId, error) {
 	if f.HasBeginError {
 		return 0, f.TabletError
 	}
@@ -570,8 +571,8 @@ func (f *FakeQueryService) BeginExecute(ctx context.Context, target *querypb.Tar
 		return nil, 0, err
 	}
 
-	result, err := f.Execute(ctx, target, sql, bindVariables, transactionID, options)
-	return result, transactionID, err
+	result, err := f.Execute(ctx, target, sql, bindVariables, int64(transactionID), options)
+	return result, int64(transactionID), err
 }
 
 // BeginExecuteBatch combines Begin and ExecuteBatch.
@@ -581,8 +582,8 @@ func (f *FakeQueryService) BeginExecuteBatch(ctx context.Context, target *queryp
 		return nil, 0, err
 	}
 
-	results, err := f.ExecuteBatch(ctx, target, queries, asTransaction, transactionID, options)
-	return results, transactionID, err
+	results, err := f.ExecuteBatch(ctx, target, queries, asTransaction, int64(transactionID), options)
+	return results, int64(transactionID), err
 }
 
 var (

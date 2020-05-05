@@ -1115,7 +1115,8 @@ func (tsv *TabletServer) ExecuteBatch(ctx context.Context, target *querypb.Targe
 	}
 
 	if asTransaction {
-		transactionID, err = tsv.Begin(ctx, target, options)
+		txID, err := tsv.Begin(ctx, target, options)
+		transactionID = int64(txID)
 		if err != nil {
 			return nil, err
 		}
@@ -1162,8 +1163,8 @@ func (tsv *TabletServer) BeginExecute(ctx context.Context, target *querypb.Targe
 		return nil, 0, err
 	}
 
-	result, err := tsv.Execute(ctx, target, sql, bindVariables, transactionID, options)
-	return result, transactionID, err
+	result, err := tsv.Execute(ctx, target, sql, bindVariables, int64(transactionID), options)
+	return result, int64(transactionID), err
 }
 
 func (tsv *TabletServer) beginWaitForSameRangeTransactions(ctx context.Context, target *querypb.Target, options *querypb.ExecuteOptions, sql string, bindVariables map[string]*querypb.BindVariable) (txserializer.DoneFunc, error) {
@@ -1253,8 +1254,8 @@ func (tsv *TabletServer) BeginExecuteBatch(ctx context.Context, target *querypb.
 		return nil, 0, err
 	}
 
-	results, err := tsv.ExecuteBatch(ctx, target, queries, asTransaction, transactionID, options)
-	return results, transactionID, err
+	results, err := tsv.ExecuteBatch(ctx, target, queries, asTransaction, int64(transactionID), options)
+	return results, int64(transactionID), err
 }
 
 // MessageStream streams messages from the requested table.
@@ -1333,14 +1334,14 @@ func (tsv *TabletServer) execDML(ctx context.Context, target *querypb.Target, qu
 	// that there was an error, roll it back.
 	defer func() {
 		if transactionID != 0 {
-			tsv.Rollback(ctx, target, transactionID)
+			tsv.Rollback(ctx, target, int64(transactionID))
 		}
 	}()
-	qr, err := tsv.Execute(ctx, target, query, bv, transactionID, nil)
+	qr, err := tsv.Execute(ctx, target, query, bv, int64(transactionID), nil)
 	if err != nil {
 		return 0, err
 	}
-	if err = tsv.Commit(ctx, target, transactionID); err != nil {
+	if err = tsv.Commit(ctx, target, int64(transactionID)); err != nil {
 		transactionID = 0
 		return 0, err
 	}

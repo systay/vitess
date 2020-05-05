@@ -56,7 +56,7 @@ func NewStreamHealthQueryService(target querypb.Target) *StreamHealthQueryServic
 }
 
 // Begin implemented as a no op
-func (q *StreamHealthQueryService) Begin(ctx context.Context, target *querypb.Target, options *querypb.ExecuteOptions) (int64, error) {
+func (q *StreamHealthQueryService) Begin(ctx context.Context, target *querypb.Target, options *querypb.ExecuteOptions) (queryservice.TransactionId, error) {
 	return 0, nil
 }
 

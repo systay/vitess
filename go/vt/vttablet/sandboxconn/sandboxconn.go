@@ -177,13 +177,13 @@ func (sbc *SandboxConn) StreamExecute(ctx context.Context, target *querypb.Targe
 }
 
 // Begin is part of the QueryService interface.
-func (sbc *SandboxConn) Begin(ctx context.Context, target *querypb.Target, options *querypb.ExecuteOptions) (int64, error) {
+func (sbc *SandboxConn) Begin(ctx context.Context, target *querypb.Target, options *querypb.ExecuteOptions) (queryservice.TransactionId, error) {
 	sbc.BeginCount.Add(1)
 	err := sbc.getError()
 	if err != nil {
 		return 0, err
 	}
-	return sbc.TransactionID.Add(1), nil
+	return queryservice.TransactionId(sbc.TransactionID.Add(1)), nil
 }
 
 // Commit is part of the QueryService interface.
@@ -291,8 +291,8 @@ func (sbc *SandboxConn) BeginExecute(ctx context.Context, target *querypb.Target
 	if err != nil {
 		return nil, 0, err
 	}
-	result, err := sbc.Execute(ctx, target, query, bindVars, transactionID, options)
-	return result, transactionID, err
+	result, err := sbc.Execute(ctx, target, query, bindVars, int64(transactionID), options)
+	return result, int64(transactionID), err
 }
 
 // BeginExecuteBatch is part of the QueryService interface.
@@ -301,8 +301,8 @@ func (sbc *SandboxConn) BeginExecuteBatch(ctx context.Context, target *querypb.T
 	if err != nil {
 		return nil, 0, err
 	}
-	results, err := sbc.ExecuteBatch(ctx, target, queries, asTransaction, transactionID, options)
-	return results, transactionID, err
+	results, err := sbc.ExecuteBatch(ctx, target, queries, asTransaction, int64(transactionID), options)
+	return results, int64(transactionID), err
 }
 
 // MessageStream is part of the QueryService interface.

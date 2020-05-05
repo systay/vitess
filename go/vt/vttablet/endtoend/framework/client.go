@@ -89,7 +89,7 @@ func (client *QueryClient) Begin(clientFoundRows bool) error {
 	if err != nil {
 		return err
 	}
-	client.transactionID = transactionID
+	client.transactionID = int64(transactionID)
 	return nil
 }
 
