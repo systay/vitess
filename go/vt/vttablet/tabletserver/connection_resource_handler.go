@@ -122,7 +122,7 @@ func (crh *ConnectionResourceHandler) WaitForEmpty() {
 
 // Get fetches the connection associated to the transactionID.
 // You must call Recycle on ExclusiveConn once done.
-func (crh *ConnectionResourceHandler) Get(transactionID int64, reason string) (*ExclusiveConn, error) {
+func (crh *ConnectionResourceHandler) get(transactionID int64, reason string) (*ExclusiveConn, error) {
 	v, err := crh.activePool.Get(transactionID, reason)
 	if err != nil {
 		return nil, vterrors.Errorf(vtrpcpb.Code_ABORTED, "transaction %d: %v", transactionID, err)
@@ -145,7 +145,7 @@ func (crh *ConnectionResourceHandler) LogActive() {
 	}
 }
 
-//ClaimExclusiveConnection gets a connection from a pool and claims it for this session
+/*//ClaimExclusiveConnection gets a connection from a pool and claims it for this session
 func (crh *ConnectionResourceHandler) ClaimExclusiveConnection(ctx context.Context, options *querypb.ExecuteOptions) (*ExclusiveConn, error) {
 	var conn *connpool.DBConn
 	var err error
@@ -181,6 +181,66 @@ func (crh *ConnectionResourceHandler) ClaimExclusiveConnection(ctx context.Conte
 		options.GetWorkload() != querypb.ExecuteOptions_DBA,
 	)
 	return exclusiveConn, nil
+}
+*/
+type ConnectionID = int64
+
+//StartExclusiveConnection gets a connection from a pool and claims it for this session
+func (crh *ConnectionResourceHandler) StartExclusiveConnection(ctx context.Context, options *querypb.ExecuteOptions, f func(conn *ExclusiveConn) error) (ConnectionID, error) {
+	var conn *connpool.DBConn
+	var err error
+	if options.GetClientFoundRows() {
+		conn, err = crh.foundRowsPool.Get(ctx)
+	} else {
+		conn, err = crh.conns.Get(ctx)
+	}
+	if err != nil {
+		switch err {
+		case connpool.ErrConnPoolClosed:
+			return 0, err
+		case pools.ErrCtxTimeout:
+			crh.LogActive()
+			return 0, vterrors.Errorf(vtrpcpb.Code_RESOURCE_EXHAUSTED, "transaction pool aborting request due to already expired context")
+		case pools.ErrTimeout:
+			crh.LogActive()
+			return 0, vterrors.Errorf(vtrpcpb.Code_RESOURCE_EXHAUSTED, "transaction pool connection limit exceeded")
+		}
+		return 0, err
+	}
+	connID := crh.lastID.Add(1)
+	exclusiveConn := &ExclusiveConn{
+		dbConn:       conn,
+		ConnectionID: connID,
+		pool:         crh,
+		StartTime:    time.Now(),
+	}
+	err = f(exclusiveConn)
+	if err != nil {
+		exclusiveConn.Recycle()
+		return 0, err
+	}
+
+	err = crh.activePool.Register(
+		connID,
+		exclusiveConn,
+		options.GetWorkload() != querypb.ExecuteOptions_DBA,
+	)
+	if err != nil {
+		exclusiveConn.Recycle()
+		return 0, err
+	}
+	return exclusiveConn.ConnectionID, nil
+}
+
+//ExecInExclusiveConnection
+func (crh *ConnectionResourceHandler) ExecInExclusiveConnection(ctx context.Context, options *querypb.ExecuteOptions, connID ConnectionID, reason string, f func(conn *ExclusiveConn) (*sqltypes.Result, error)) (*sqltypes.Result, error) {
+	conn, err := crh.get(connID, reason)
+	if err != nil {
+		return nil, err
+	}
+	qr, err := f(conn)
+	crh.activePool.Put(connID)
+	return qr, err
 }
 
 // ExclusiveConn is meant for executing transactions. It can return itself to

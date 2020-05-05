@@ -112,13 +112,17 @@ func (qre *QueryExecutor) Execute() (reply *sqltypes.Result, err error) {
 	}
 
 	if qre.transactionID != 0 {
-		// Need upfront connection for DMLs and transactions
+		return qre.tsv.te.connHandler.ExecInExclusiveConnection(qre.ctx, qre.options, qre.transactionID, "for query", qre.txConnExec)
+
+/*		// Need upfront connection for DMLs and transactions
 		conn, err := qre.tsv.te.txPool.Get(qre.transactionID, "for query")
 		if err != nil {
 			return nil, err
 		}
 		defer conn.Recycle()
-		return qre.txConnExec(conn)
+	return qre.txConnExec(conn)
+
+ */
 	}
 
 	switch qre.plan.PlanID {

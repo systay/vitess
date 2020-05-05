@@ -764,12 +764,13 @@ func (tsv *TabletServer) Begin(ctx context.Context, target *querypb.Target, opti
 				return vterrors.Errorf(vtrpcpb.Code_RESOURCE_EXHAUSTED, "Transaction throttled")
 			}
 
-			conn, beginSQL, err := tsv.te.Begin(ctx, options)
+
+			connID, beginSQL, err := tsv.te.Begin(ctx, options)
 			if err != nil {
 				return err
 			}
-			transactionID = conn.ConnectionID
-			logStats.TransactionID = transactionID
+			transactionID = connID
+			logStats.TransactionID = connID
 
 			// Record the actual statements that were executed in the logStats.
 			// If nothing was actually executed, don't count the operation in

@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"vitess.io/vitess/go/sqltypes"
 
 	"vitess.io/vitess/go/sync2"
 	"vitess.io/vitess/go/vt/callerid"
@@ -69,7 +70,8 @@ func (state txEngineState) String() string {
 
 // IConnectionResourceHandler is what the tx engine needs to do it's work
 type IConnectionResourceHandler interface {
-	ClaimExclusiveConnection(ctx context.Context, options *querypb.ExecuteOptions) (*ExclusiveConn, error)
+	StartExclusiveConnection(ctx context.Context, options *querypb.ExecuteOptions, f func(conn *ExclusiveConn) error) (ConnectionID, error)
+	ExecInExclusiveConnection(ctx context.Context, options *querypb.ExecuteOptions, connID ConnectionID, reason string, f func(conn *ExclusiveConn) (*sqltypes.Result, error) ) (*sqltypes.Result, error)
 
 	// Open allows new connections to be available
 	Open(appParams, dbaParams, appDebugParams dbconfigs.Connector)
@@ -302,61 +304,47 @@ func (te *TxEngine) AcceptReadOnly() error {
 // mode the statement will be "".
 //
 // Subsequent statements can access the connection through the transaction id.
-func (te *TxEngine) Begin(ctx context.Context, options *querypb.ExecuteOptions) (*ExclusiveConn, string, error) {
+func (te *TxEngine) Begin(ctx context.Context, options *querypb.ExecuteOptions) (ConnectionID, string, error) {
 	span, ctx := trace.NewSpan(ctx, "TxEngine.Begin")
 	defer span.Finish()
-	var conn *ExclusiveConn
+
 	immediateCaller := callerid.ImmediateCallerIDFromContext(ctx)
 	effectiveCaller := callerid.EffectiveCallerIDFromContext(ctx)
 
 	if !te.limiter.Get(immediateCaller, effectiveCaller) {
-		return nil, "", vterrors.Errorf(vtrpcpb.Code_RESOURCE_EXHAUSTED, "per-user transaction pool connection limit exceeded")
+		return 0, "", vterrors.Errorf(vtrpcpb.Code_RESOURCE_EXHAUSTED, "per-user transaction pool connection limit exceeded")
 	}
-
-	var beginSucceeded bool
-	defer func() {
-		if beginSucceeded {
-			return
-		}
-
-		if conn != nil {
-			conn.Recycle()
-		}
-		te.limiter.Release(immediateCaller, effectiveCaller)
-	}()
-
-	conn, err := te.connHandler.ClaimExclusiveConnection(ctx, options)
-	if err != nil {
-		return nil, "", err
-	}
-	conn.EffectiveCallerID = effectiveCaller
-	conn.ImmediateCallerID = immediateCaller
-
-	autocommitTransaction := false
 	beginQueries := ""
-	if queries, ok := txIsolations[options.GetTransactionIsolation()]; ok {
-		if queries.setIsolationLevel != "" {
-			if _, err := conn.Exec(ctx, "set transaction isolation level "+queries.setIsolationLevel, 1, false); err != nil {
-				return nil, "", err
+	connID, err := te.connHandler.StartExclusiveConnection(ctx, options, func(conn *ExclusiveConn) error {
+		conn.EffectiveCallerID = effectiveCaller
+		conn.ImmediateCallerID = immediateCaller
+		autocommitTransaction := false
+		if queries, ok := txIsolations[options.GetTransactionIsolation()]; ok {
+			if queries.setIsolationLevel != "" {
+				if _, err := conn.Exec(ctx, "set transaction isolation level "+queries.setIsolationLevel, 1, false); err != nil {
+					return err
+				}
+				beginQueries = queries.setIsolationLevel + "; "
 			}
-
-			beginQueries = queries.setIsolationLevel + "; "
+			if _, err := conn.Exec(ctx, queries.openTransaction, 1, false); err != nil {
+				return err
+			}
+			beginQueries = beginQueries + queries.openTransaction
+		} else if options.GetTransactionIsolation() == querypb.ExecuteOptions_AUTOCOMMIT {
+			autocommitTransaction = true
+		} else {
+			return vterrors.Errorf(vtrpcpb.Code_INVALID_ARGUMENT, "don't know how to open a transaction of this type: %v", options.GetTransactionIsolation())
 		}
+		conn.Autocommit = autocommitTransaction
+		return nil
+	})
 
-		if _, err := conn.Exec(ctx, queries.openTransaction, 1, false); err != nil {
-			return nil, "", err
-		}
-		beginQueries = beginQueries + queries.openTransaction
-	} else if options.GetTransactionIsolation() == querypb.ExecuteOptions_AUTOCOMMIT {
-		autocommitTransaction = true
-	} else {
-		return nil, "", vterrors.Errorf(vtrpcpb.Code_INVALID_ARGUMENT, "don't know how to open a transaction of this type: %v", options.GetTransactionIsolation())
+	if err != nil {
+		te.limiter.Release(immediateCaller, effectiveCaller)
+		return 0, "", err
 	}
 
-	conn.Autocommit = autocommitTransaction
-	beginSucceeded = true
-
-	return conn, beginQueries, nil
+	return connID, beginQueries, nil
 }
 
 // Commit commits the specified transaction.
