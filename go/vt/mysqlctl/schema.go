@@ -48,7 +48,7 @@ func (mysqld *Mysqld) executeSchemaCommands(sql string) error {
 }
 
 // tableList returns an IN clause "('t1', 't2'...) for a list of tables."
-func tableListSql(tables []string) string {
+func tableListSQL(tables []string) string {
 	if len(tables) == 0 {
 		return "()"
 	}
@@ -90,9 +90,22 @@ func (mysqld *Mysqld) GetSchema(ctx context.Context, dbName string, tables, excl
 		return nil, err
 	}
 
-	sd.TableDefinitions = make([]*tabletmanagerdatapb.TableDefinition, 0, len(qr.Rows))
-	tdMap := map[string]*tabletmanagerdatapb.TableDefinition{}
+	var tableNames []string
+
+	resChan := make(chan *tabletmanagerdatapb.TableDefinition, 100)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	var wg sync.WaitGroup
+
+	// we're getting the schema for each table concurrently.
+	// if anything goes wrong, this is the error that will mark the whole operation as failed
+	var getSchemaErr error
+
 	for _, row := range qr.Rows {
+		if getSchemaErr != nil {
+			break
+		}
 		tableName := row[0].ToString()
 		tableType := row[1].ToString()
 
@@ -119,58 +132,58 @@ func (mysqld *Mysqld) GetSchema(ctx context.Context, dbName string, tables, excl
 			}
 		}
 
-		td := &tabletmanagerdatapb.TableDefinition{
-			Name:       tableName,
-			Type:       tableType,
-			DataLength: dataLength,
-			RowCount:   rowCount,
-		}
-		sd.TableDefinitions = append(sd.TableDefinitions, td)
-		tdMap[tableName] = td
+		tableNames = append(tableNames, tableName)
+
+		wg.Add(1)
+		go func() {
+			// We are asynchronously getting the schema from mysqld
+			defer wg.Done()
+
+			res, err := mysqld.collectSchema(ctx, dbName, tableName, tableType)
+			if err != nil {
+				getSchemaErr = err
+				return
+			}
+			td := &tabletmanagerdatapb.TableDefinition{
+				Name:       tableName,
+				Type:       tableType,
+				DataLength: dataLength,
+				RowCount:   rowCount,
+				Fields:     res.fields,
+				Columns:    res.columns,
+				Schema:     res.schema,
+			}
+			resChan <- td
+		}()
+	}
+	// if we already failed, no need to get PKs
+	if getSchemaErr != nil {
+		close(resChan)
+		return nil, getSchemaErr
 	}
 
 	log.Infof("mysqld GetSchema: GetPrimaryKeyColumns")
-	tableNames := make([]string, 0, len(tdMap))
-	for tableName := range tdMap {
-		tableNames = append(tableNames, tableName)
-	}
 	colMap, err := mysqld.getPrimaryKeyColumns(ctx, dbName, tableNames...)
 	if err != nil {
+		close(resChan)
 		return nil, err
 	}
 	log.Infof("mysqld GetSchema: GetPrimaryKeyColumns done")
-	for tableName, td := range tdMap {
-		td.PrimaryKeyColumns = colMap[tableName]
-	}
 
-	log.Infof("mysqld GetSchema: Collecting all table schemas")
-	resChan := make(chan *schemaResult, 100)
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	var wg sync.WaitGroup
-	for tableName := range tdMap {
-		wg.Add(1)
-		go func(tableName, tableType string) {
-			res := mysqld.collectSchema(ctx, dbName, tableName, tableType)
-			resChan <- res
-		}(tableName, tdMap[tableName].Type)
-	}
+	// Now we want to wait for all the schema collection to have been finished before finishing this method
 	wg.Wait()
 	close(resChan)
 
-	for res := range resChan {
-		if res.err != nil {
-			cancel()
-			return nil, res.err
-		}
-
-		td := tdMap[res.tableName]
-		td.Fields = res.fields
-		td.Columns = res.columns
-		td.Schema = res.schema
+	// by now all collecting of schema should be done and if anything went wrong, we know about it
+	if getSchemaErr != nil {
+		cancel()
+		return nil, getSchemaErr
 	}
-	log.Infof("mysqld GetSchema: Collecting all table schemas done")
+
+	for td := range resChan {
+		td.PrimaryKeyColumns = colMap[td.Name]
+		sd.TableDefinitions = append(sd.TableDefinitions, td)
+	}
 
 	tmutils.GenerateSchemaVersion(sd)
 	return sd, nil
@@ -181,24 +194,17 @@ type schemaResult struct {
 	fields    []*querypb.Field
 	columns   []string
 	schema    string
-	err       error
 }
 
-func (mysqld *Mysqld) collectSchema(ctx context.Context, dbName, tableName, tableType string) *schemaResult {
+func (mysqld *Mysqld) collectSchema(ctx context.Context, dbName, tableName, tableType string) (*schemaResult, error) {
 	fields, columns, err := mysqld.GetColumns(ctx, dbName, tableName)
 	if err != nil {
-		return &schemaResult{
-			tableName: tableName,
-			err:       err,
-		}
+		return nil, err
 	}
 
 	schema, err := mysqld.normalizedSchema(ctx, dbName, tableName, tableType)
 	if err != nil {
-		return &schemaResult{
-			tableName: tableName,
-			err:       err,
-		}
+		return nil, err
 	}
 
 	return &schemaResult{
@@ -206,8 +212,7 @@ func (mysqld *Mysqld) collectSchema(ctx context.Context, dbName, tableName, tabl
 		fields:    fields,
 		columns:   columns,
 		schema:    schema,
-		err:       err,
-	}
+	}, nil
 }
 
 func (mysqld *Mysqld) normalizedSchema(ctx context.Context, dbName, tableName, tableType string) (string, error) {
@@ -286,7 +291,7 @@ func (mysqld *Mysqld) getPrimaryKeyColumns(ctx context.Context, dbName string, t
 	}
 	defer conn.Recycle()
 
-	tableList := tableListSql(tables)
+	tableList := tableListSQL(tables)
 	sql := fmt.Sprintf(`
 		SELECT table_name, ordinal_position, column_name
 		FROM information_schema.key_column_usage
@@ -303,13 +308,8 @@ func (mysqld *Mysqld) getPrimaryKeyColumns(ctx context.Context, dbName string, t
 	for _, row := range qr.Rows {
 		tableName := row[0].ToString()
 
-		columns, ok := colMap[tableName]
-		if !ok {
-			columns = make([]string, 0, 5)
-			colMap[tableName] = columns
-		}
-
-		columns = append(columns, row[2].ToString())
+		columns := colMap[tableName]
+		colMap[tableName] = append(columns, row[2].ToString())
 	}
 	return colMap, err
 }

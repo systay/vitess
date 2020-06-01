@@ -75,11 +75,12 @@ func TestMycnf(t *testing.T) {
 // Run this test if any changes are made to hook handling / make_mycnf hook
 // other tests fail if we keep the hook around
 // 1. ln -snf $VTROOT/test/vthook-make_mycnf $VTROOT/vthook/make_mycnf
-// 2. Remove "No" prefix from func name
+// 2. Remove "t.Skip"
 // 3. go test
 // 4. \rm $VTROOT/vthook/make_mycnf
 // 5. Add No Prefix back
-func NoTestMycnfHook(t *testing.T) {
+func TestMycnfHook(t *testing.T) {
+	t.Skip("only run manually")
 	uid := uint32(11111)
 	cnf := NewMycnf(uid, 6802)
 	// Assigning ServerID to be different from tablet UID to make sure that there are no
