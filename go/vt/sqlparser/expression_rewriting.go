@@ -83,25 +83,27 @@ const (
 
 func (er *expressionRewriter) goingDown(cursor *Cursor) bool {
 	switch node := cursor.Node().(type) {
-	case *AliasedExpr:
-		if node.As.IsEmpty() {
-			buf := NewTrackedBuffer(nil)
-			node.Expr.Format(buf)
-			inner := new(expressionRewriter)
-			inner.shouldRewriteDatabaseFunc = er.shouldRewriteDatabaseFunc
-			tmp := Rewrite(node.Expr, inner.goingDown, nil)
-			newExpr, ok := tmp.(Expr)
-			if !ok {
-				log.Errorf("failed to rewrite AST. function expected to return Expr returned a %s", String(tmp))
-				return false
+	case *Select:
+		for _, col := range node.SelectExprs {
+			aliasedExpr, ok := col.(*AliasedExpr)
+			if ok && aliasedExpr.As.IsEmpty() {
+				buf := NewTrackedBuffer(nil)
+				aliasedExpr.Expr.Format(buf)
+				inner := new(expressionRewriter)
+				inner.shouldRewriteDatabaseFunc = er.shouldRewriteDatabaseFunc
+				tmp := Rewrite(aliasedExpr.Expr, inner.goingDown, nil)
+				newExpr, ok := tmp.(Expr)
+				if !ok {
+					log.Errorf("failed to rewrite AST. function expected to return Expr returned a %s", String(tmp))
+					return false
+				}
+				aliasedExpr.Expr = newExpr
+				er.database = er.database || inner.database
+				er.lastInsertID = er.lastInsertID || inner.lastInsertID
+				if inner.didAnythingChange() {
+					aliasedExpr.As = NewColIdent(buf.String())
+				}
 			}
-			node.Expr = newExpr
-			er.database = er.database || inner.database
-			er.lastInsertID = er.lastInsertID || inner.lastInsertID
-			if inner.didAnythingChange() {
-				node.As = NewColIdent(buf.String())
-			}
-			return false
 		}
 
 	case *FuncExpr:

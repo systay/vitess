@@ -84,6 +84,11 @@ func TestRewrites(in *testing.T) {
 			expected: "select table_name from information_schema.tables where table_schema = database()",
 			db:       false, liid: false,
 		},
+		{
+			in:       "SELECT lower(database())",
+			expected: "SELECT lower(:__vtdbname) as `lower(database())`",
+			db:       true,
+		},
 	}
 
 	for _, tc := range tests {
