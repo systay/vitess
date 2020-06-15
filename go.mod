@@ -72,6 +72,7 @@ require (
 	github.com/uber/jaeger-lib v2.0.0+incompatible // indirect
 	github.com/ugorji/go v1.1.7 // indirect
 	github.com/z-division/go-zookeeper v0.0.0-20190128072838-6d7457066b9b
+	gitlab.com/cznic/goyacc v1.0.0 // indirect
 	golang.org/x/crypto v0.0.0-20191206172530-e9b2fee46413
 	golang.org/x/lint v0.0.0-20190409202823-959b441ac422
 	golang.org/x/net v0.0.0-20200202094626-16171245cfb2
@@ -91,5 +92,11 @@ require (
 	k8s.io/apiextensions-apiserver v0.17.3
 	k8s.io/apimachinery v0.17.3
 	k8s.io/client-go v0.17.3
+	modernc.org/goyacc v1.0.0 // indirect
+	modernc.org/mathutil v1.1.1 // indirect
+	modernc.org/parser v1.0.0 // indirect
+	modernc.org/sortutil v1.1.0 // indirect
+	modernc.org/strutil v1.1.0 // indirect
+	modernc.org/y v1.0.0 // indirect
 	sigs.k8s.io/yaml v1.1.0
 )

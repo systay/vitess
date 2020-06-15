@@ -217,7 +217,7 @@ func skipToEnd(yylex interface{}) {
 %token <bytes> FORMAT TREE VITESS TRADITIONAL
 
 %type <statement> command
-%type <selStmt> select_statement base_select union_lhs union_rhs
+%type <selStmt> select_statement base_select base_select2 union_lhs union_rhs
 %type <statement> explain_statement explainable_statement
 %type <statement> stream_statement insert_statement update_statement delete_statement set_statement set_transaction_statement
 %type <statement> create_statement alter_statement rename_statement drop_statement truncate_statement flush_statement do_statement
@@ -392,13 +392,20 @@ do_statement:
     $$ = &OtherAdmin{}
   }
 
+base_select2:
+  base_select
+  {
+    $$ = $1
+  }
+| '(' base_select ')'
+  {
+    $$ = $2
+  }
+
 select_statement:
-  base_select order_by_opt limit_opt lock_opt
+  base_select2 
   {
     sel := $1.(*Select)
-    sel.OrderBy = $2
-    sel.Limit = $3
-    sel.Lock = $4
     $$ = sel
   }
 | union_lhs union_op union_rhs order_by_opt limit_opt lock_opt
