@@ -64,11 +64,17 @@ func TestTxEngineClose(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "begin", beginSQL)
 	c.Unlock()
+	c, beginSQL, err = te.txPool.Begin(ctx, &querypb.ExecuteOptions{}, false, 0)
+	require.NoError(t, err)
+	require.Equal(t, "begin", beginSQL)
+	c.Unlock()
 	start = time.Now()
 	te.shutdown(false)
 	if diff := time.Since(start); diff < 500*time.Millisecond {
 		t.Errorf("Close time: %v, must be over 0.5s", diff)
 	}
+	assert.EqualValues(t, 2, te.txPool.env.Stats().KillCounters.Counts()["Transactions"])
+	te.txPool.env.Stats().KillCounters.ResetAll()
 
 	// Immediate close.
 	te.open()
@@ -139,6 +145,23 @@ func TestTxEngineClose(t *testing.T) {
 	if diff := time.Since(start); diff < 100*time.Millisecond {
 		t.Errorf("Close time: %v, must be over 0.1", diff)
 	}
+
+	// Normal close with Reserved connection timeout wait.
+	te.shutdownGracePeriod = 0 * time.Millisecond
+	te.open()
+	te.AcceptReadWrite()
+	_, err = te.Reserve(ctx, &querypb.ExecuteOptions{}, 0, nil)
+	require.NoError(t, err)
+	_, err = te.ReserveBegin(ctx, &querypb.ExecuteOptions{}, nil)
+	require.NoError(t, err)
+	start = time.Now()
+	te.shutdown(false)
+	if diff := time.Since(start); diff < 500*time.Millisecond {
+		t.Errorf("Close time: %v, must be over 0.5s", diff)
+	}
+	assert.EqualValues(t, 1, te.txPool.env.Stats().KillCounters.Counts()["Transactions"])
+	assert.EqualValues(t, 2, te.txPool.env.Stats().KillCounters.Counts()["ReservedConnection"])
+
 }
 
 func TestTxEngineBegin(t *testing.T) {
