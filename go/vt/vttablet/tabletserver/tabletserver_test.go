@@ -915,7 +915,11 @@ func TestTabletServerReserveConnection(t *testing.T) {
 	require.NoError(t, err)
 
 	// release the connection
+	startingCount := tsv.te.txPool.env.Stats().UserReservedCount.Counts()
 	err = tsv.Release(ctx, &target, 0, rID)
+	afterCount := tsv.te.txPool.env.Stats().UserReservedCount.Counts()
+	fmt.Printf("%v %v", startingCount, afterCount)
+	// TODO: assert stats
 	require.NoError(t, err)
 }
 
@@ -972,6 +976,7 @@ func TestMakeSureToCloseDbConnWhenBeginQueryFails(t *testing.T) {
 
 	// run a query with a non-existent reserved id
 	_, _, _, _, err = tsv.ReserveBeginExecute(ctx, &target, "select 42", []string{}, nil, options)
+	// TODO: assert stats
 	require.Error(t, err)
 }
 
@@ -1025,6 +1030,7 @@ func TestTabletServerReserveAndBeginCommit(t *testing.T) {
 	rID = newRID
 
 	// release the connection
+	// TODO: assert stats
 	err = tsv.Release(ctx, &target, 0, rID)
 	require.NoError(t, err)
 
@@ -2524,7 +2530,7 @@ func TestReserveBeginExecute(t *testing.T) {
 
 	_, transactionID, reservedID, _, err := tsv.ReserveBeginExecute(ctx, &target, "select 42", []string{"select 43"}, nil, &querypb.ExecuteOptions{})
 	require.NoError(t, err)
-	defer tsv.Release(ctx, &target, transactionID, reservedID)
+
 	assert.Greater(t, transactionID, int64(0), "transactionID")
 	assert.Equal(t, reservedID, transactionID, "reservedID should equal transactionID")
 	expected := []string{
@@ -2534,6 +2540,9 @@ func TestReserveBeginExecute(t *testing.T) {
 		"select 42 from dual limit 10001",
 	}
 	assert.Contains(t, db.QueryLog(), strings.Join(expected, ";"), "expected queries to run")
+	// TODO: assert stats
+	err = tsv.Release(ctx, &target, transactionID, reservedID)
+	require.NoError(t, err)
 }
 
 func TestReserveExecute_WithoutTx(t *testing.T) {
@@ -2549,7 +2558,6 @@ func TestReserveExecute_WithoutTx(t *testing.T) {
 
 	_, reservedID, _, err := tsv.ReserveExecute(ctx, &target, "select 42", []string{"select 43"}, nil, 0, &querypb.ExecuteOptions{})
 	require.NoError(t, err)
-	defer tsv.Release(ctx, &target, 0, reservedID)
 	assert.NotEqual(t, int64(0), reservedID, "reservedID should not be zero")
 	expected := []string{
 		"select 43",
@@ -2557,6 +2565,10 @@ func TestReserveExecute_WithoutTx(t *testing.T) {
 		"select 42 from dual limit 10001",
 	}
 	assert.Contains(t, db.QueryLog(), strings.Join(expected, ";"), "expected queries to run")
+	// TODO: assert stats
+	err = tsv.Release(ctx, &target, 0, reservedID)
+	require.NoError(t, err)
+	// TODO: assert stats
 }
 
 func TestReserveExecute_WithTx(t *testing.T) {
@@ -2585,6 +2597,9 @@ func TestReserveExecute_WithTx(t *testing.T) {
 		"select 42 from dual limit 10001",
 	}
 	assert.Contains(t, db.QueryLog(), strings.Join(expected, ";"), "expected queries to run")
+	// TODO: assert stats
+	err = tsv.Release(ctx, &target, transactionID, reservedID)
+	require.NoError(t, err)
 }
 
 func TestRelease(t *testing.T) {
@@ -2650,6 +2665,7 @@ func TestRelease(t *testing.T) {
 			db.ResetQueryLog()
 
 			err = tsv.Release(ctx, &target, transactionID, reservedID)
+			// TODO: assert stats
 			if test.err {
 				require.Error(t, err)
 			} else {
