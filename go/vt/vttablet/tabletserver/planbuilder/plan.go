@@ -151,7 +151,7 @@ func (plan *Plan) TableName() sqlparser.TableIdent {
 }
 
 // Build builds a plan based on the schema.
-func Build(statement sqlparser.Statement, tables map[string]*schema.Table) (*Plan, error) {
+func Build(statement sqlparser.Statement, tables map[string]*schema.Table, keyspace, dbName string) (*Plan, error) {
 	var plan *Plan
 
 	err := checkForPoolingUnsafeConstructs(statement)
@@ -181,7 +181,7 @@ func Build(statement sqlparser.Statement, tables map[string]*schema.Table) (*Pla
 		// We have to use the original query at the time of execution.
 		plan = &Plan{PlanID: PlanDDL}
 	case *sqlparser.Show:
-		plan, err = &Plan{PlanID: PlanOtherRead}, nil
+		plan, err = analyzeShow(stmt, keyspace, dbName), nil
 	case *sqlparser.OtherRead:
 		plan, err = &Plan{PlanID: PlanOtherRead}, nil
 	case *sqlparser.OtherAdmin:

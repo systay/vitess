@@ -112,14 +112,14 @@ func TestQueryExecutorPlans(t *testing.T) {
 		// not get re-executed.
 		inTxWant: "select * from t limit 1",
 	}, {
-		input: "set a=1",
+		input: "set a = 1",
 		dbResponses: []dbResponse{{
-			query:  "set a=1",
+			query:  "set a = 1",
 			result: dmlResult,
 		}},
 		resultWant: dmlResult,
 		planWant:   "Set",
-		logWant:    "set a=1",
+		logWant:    "set a = 1",
 	}, {
 		input: "show engines",
 		dbResponses: []dbResponse{{
@@ -241,7 +241,7 @@ func TestQueryExecutorPlans(t *testing.T) {
 		inTxWant:   "RELEASE savepoint a",
 	}}
 	for _, tcase := range testcases {
-		func() {
+		t.Run(tcase.input, func(t *testing.T) {
 			db := setUpQueryExecutorTest(t)
 			defer db.Close()
 			for _, dbr := range tcase.dbResponses {
@@ -279,7 +279,7 @@ func TestQueryExecutorPlans(t *testing.T) {
 				want = tcase.inTxWant
 			}
 			assert.Equal(t, want, qre.logStats.RewrittenSQL(), "in tx: %v", tcase.input)
-		}()
+		})
 	}
 }
 
@@ -1127,7 +1127,7 @@ func newTransaction(tsv *TabletServer, options *querypb.ExecuteOptions) int64 {
 
 func newTestQueryExecutor(ctx context.Context, tsv *TabletServer, sql string, txID int64) *QueryExecutor {
 	logStats := tabletenv.NewLogStats(ctx, "TestQueryExecutor")
-	plan, err := tsv.qe.GetPlan(ctx, logStats, sql, false)
+	plan, err := tsv.qe.GetPlan(ctx, logStats, sql, false, "keyspace")
 	if err != nil {
 		panic(err)
 	}

@@ -29,6 +29,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"vitess.io/vitess/go/vt/log"
 
 	"vitess.io/vitess/go/mysql"
@@ -150,19 +152,18 @@ type ExpectedExecuteFetch struct {
 }
 
 // New creates a server, and starts listening.
-func New(t *testing.T) *DB {
+func NewNamed(t *testing.T, name string) *DB {
 	// Pick a path for our socket.
-	socketDir, err := ioutil.TempDir("", "fakesqldb")
-	if err != nil {
-		t.Fatalf("ioutil.TempDir failed: %v", err)
-	}
-	socketFile := path.Join(socketDir, "fakesqldb.sock")
+	socketDir, err := ioutil.TempDir("", name)
+	require.NoError(t, err)
+
+	socketFile := path.Join(socketDir, name+".sock")
 
 	// Create our DB.
 	db := &DB{
 		t:                        t,
 		socketFile:               socketFile,
-		name:                     "fakesqldb",
+		name:                     name,
 		data:                     make(map[string]*ExpectedResult),
 		rejectedData:             make(map[string]error),
 		queryCalled:              make(map[string]int),
@@ -176,9 +177,7 @@ func New(t *testing.T) *DB {
 
 	// Start listening.
 	db.listener, err = mysql.NewListener("unix", socketFile, authServer, db, 0, 0, false)
-	if err != nil {
-		t.Fatalf("NewListener failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	db.acceptWG.Add(1)
 	go func() {
@@ -188,6 +187,11 @@ func New(t *testing.T) *DB {
 
 	// Return the db.
 	return db
+}
+
+// New creates a server, and starts listening.
+func New(t *testing.T) *DB {
+	return NewNamed(t, "fakesqldb")
 }
 
 // SetName sets the name of the DB. to differentiate them in tests if needed.
@@ -694,4 +698,16 @@ func (db *DB) VerifyAllExecutedOrFail() {
 	if db.expectedExecuteFetchIndex != len(db.expectedExecuteFetch) {
 		db.t.Errorf("%v: not all expected queries were executed. leftovers: %v", db.name, db.expectedExecuteFetch[db.expectedExecuteFetchIndex:])
 	}
+}
+
+func (db *DB) LastQuery() interface{} {
+	size := len(db.querylog)
+	if size == 0 {
+		return "no queries have been run"
+	}
+	return db.querylog[size-1]
+}
+
+func (db *DB) Name() string {
+	return db.name
 }
