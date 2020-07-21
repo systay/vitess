@@ -64,6 +64,14 @@ func (t noopVCursor) SetSysVar(name string, expr string) {
 	//panic("implement me")
 }
 
+func (t noopVCursor) InReservedConn() bool {
+	panic("implement me")
+}
+
+func (t noopVCursor) ShardSession() []*srvtopo.ResolvedShard {
+	panic("implement me")
+}
+
 func (t noopVCursor) ExecuteVSchema(keyspace string, vschemaDDL *sqlparser.DDL) error {
 	panic("implement me")
 }
@@ -75,6 +83,7 @@ func (t noopVCursor) Session() SessionActions {
 func (t noopVCursor) SetTarget(target string) error {
 	panic("implement me")
 }
+
 func (t noopVCursor) Context() context.Context {
 	if t.ctx == nil {
 		return context.Background()
@@ -84,7 +93,6 @@ func (t noopVCursor) Context() context.Context {
 func (t noopVCursor) MaxMemoryRows() int {
 	return testMaxMemoryRows
 }
-
 func (t noopVCursor) SetContextTimeout(timeout time.Duration) context.CancelFunc {
 	return func() {}
 }
@@ -127,6 +135,7 @@ func (t noopVCursor) ResolveDestinations(keyspace string, ids []*querypb.Value, 
 }
 
 var _ VCursor = (*loggingVCursor)(nil)
+
 var _ SessionActions = (*loggingVCursor)(nil)
 
 // loggingVCursor logs requests and allows you to verify
@@ -164,6 +173,14 @@ func (f *loggingVCursor) SetSysVar(name string, expr string) {
 }
 
 func (f *loggingVCursor) NeedsReservedConn() {
+}
+
+func (f *loggingVCursor) InReservedConn() bool {
+	panic("implement me")
+}
+
+func (f *loggingVCursor) ShardSession() []*srvtopo.ResolvedShard {
+	panic("implement me")
 }
 
 func (f *loggingVCursor) ExecuteVSchema(keyspace string, vschemaDDL *sqlparser.DDL) error {
