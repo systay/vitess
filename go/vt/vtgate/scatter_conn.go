@@ -195,7 +195,19 @@ func (stc *ScatterConn) ExecuteMultiShard(
 				}
 				innerqr, err = qs.Execute(ctx, rs.Target, queries[i].Sql, queries[i].BindVariables, info.transactionID, info.reservedID, opts)
 				if err != nil {
-					return nil, err
+					if vterrors.Code(err) == vtrpcpb.Code_UNAVAILABLE {
+						if info.transactionID == 0 {
+							innerqr, reservedID, alias, err = qs.ReserveExecute(ctx, rs.Target, session.SetPreQueries(), queries[i].Sql, queries[i].BindVariables, 0, opts)
+							if err != nil {
+								return info.updateReservedID(reservedID, alias), err
+							}
+						} else {
+							// we can't recreate the tx state, so we'll just pass the error on
+							return nil, err
+						}
+					} else {
+						return nil, err
+					}
 				}
 			case begin:
 				qs, err := getQueryService(rs, info)
