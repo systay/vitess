@@ -22,6 +22,8 @@ import (
 	"sync"
 	"time"
 
+	"vitess.io/vitess/go/mysql"
+
 	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
 
 	"vitess.io/vitess/go/vt/vttablet/queryservice"
@@ -196,6 +198,9 @@ func (stc *ScatterConn) ExecuteMultiShard(
 				}
 				innerqr, err = qs.Execute(ctx, rs.Target, queries[i].Sql, queries[i].BindVariables, info.transactionID, info.reservedID, opts)
 				if err != nil {
+					if mysql.IsConnErr(err) && info.reservedID != 0 && info.transactionID == 0 {
+						session.ResetShard(info.alias)
+					}
 					return nil, err
 				}
 			case begin:
@@ -205,6 +210,9 @@ func (stc *ScatterConn) ExecuteMultiShard(
 				}
 				innerqr, transactionID, alias, err = qs.BeginExecute(ctx, rs.Target, session.Savepoints, queries[i].Sql, queries[i].BindVariables, info.reservedID, opts)
 				if err != nil {
+					if mysql.IsConnErr(err) && info.reservedID != 0 && transactionID == 0 {
+						session.ResetShard(info.alias)
+					}
 					return info.updateTransactionID(transactionID, alias), err
 				}
 			case reserve:

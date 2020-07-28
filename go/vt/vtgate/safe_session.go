@@ -360,3 +360,58 @@ func (session *SafeSession) SetPreQueries() []string {
 	}
 	return result
 }
+
+func (session *SafeSession) ResetShard(tabletAlias *topodatapb.TabletAlias) error {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	session.mu.Lock()
+	defer session.mu.Unlock()
+
+	if session.autocommitState == autocommitted {
+		// Should be unreachable
+		return vterrors.New(vtrpcpb.Code_INTERNAL, "BUG: SafeSession.ResetShard: unexpected autocommit state")
+	}
+
+	// Always append, in order for rollback to succeed.
+	switch session.commitOrder {
+	case vtgatepb.CommitOrder_NORMAL:
+		newSessions, err := removeShard(tabletAlias, session.ShardSessions)
+		if err != nil {
+			return err
+		}
+		session.ShardSessions = newSessions
+	case vtgatepb.CommitOrder_PRE:
+		newSessions, err := removeShard(tabletAlias, session.PreSessions)
+		if err != nil {
+			return err
+		}
+		session.PreSessions = newSessions
+	case vtgatepb.CommitOrder_POST:
+		newSessions, err := removeShard(tabletAlias, session.PostSessions)
+		if err != nil {
+			return err
+		}
+		session.PostSessions = newSessions
+	default:
+		// Should be unreachable
+		return vterrors.Errorf(vtrpcpb.Code_INTERNAL, "BUG: SafeSession.ResetShard: unexpected commitOrder")
+	}
+
+	return nil
+}
+
+func removeShard(tabletAlias *topodatapb.TabletAlias, sessions []*vtgatepb.Session_ShardSession) ([]*vtgatepb.Session_ShardSession, error) {
+	idx := -1
+	for i, session := range sessions {
+		if proto.Equal(session.TabletAlias, tabletAlias) {
+			if session.TransactionId != 0 {
+				return nil, vterrors.New(vtrpcpb.Code_INTERNAL, "BUG: SafeSession.ResetShard: in transaction")
+			}
+			idx = i
+		}
+	}
+	if idx == -1 {
+		return sessions, nil
+	}
+	return append(sessions[:idx], sessions[idx+1:]...), nil
+}

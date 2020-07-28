@@ -211,6 +211,36 @@ func TestStartTxAndSetSystemVariableAndThenSuccessfulCommit(t *testing.T) {
 	assertMatches(t, conn, "select @@sql_safe_updates", "[[INT64(1)]]")
 }
 
+func TestSetSystemVarWithConnError(t *testing.T) {
+	vtParams := mysql.ConnParams{
+		Host: "localhost",
+		Port: clusterInstance.VtgateMySQLPort,
+	}
+
+	conn, err := mysql.Connect(context.Background(), &vtParams)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	checkedExec(t, conn, "delete from test")
+	checkedExec(t, conn, "insert into test (id, val1) values (80, null)")
+
+	checkedExec(t, conn, "set sql_safe_updates = 1") // this should force us into a reserved connection
+	checkedExec(t, conn, "select * from test")       // this will create a connection to all shards
+
+	qr := checkedExec(t, conn, "select connection_id() from test where id = 80")
+
+	// kill the mysql connection shard which has transaction open.
+	vttablet1 := clusterInstance.Keyspaces[0].Shards[0].MasterTablet() // 80-
+	vttablet1.VttabletProcess.QueryTablet(fmt.Sprintf("kill %s", qr.Rows[0][0].ToString()), keyspaceName, false)
+
+	// first query to this shard will fail
+	_, err = exec(t, conn, "select id from test where id = 80")
+	require.Error(t, err)
+
+	// if we try again, we should get a successful result back
+	assertMatches(t, conn, "select id, val1 from test where id = 80", "[[INT64(80) NULL]]")
+}
+
 func assertMatches(t *testing.T, conn *mysql.Conn, query, expected string) {
 	t.Helper()
 	qr, err := exec(t, conn, query)
