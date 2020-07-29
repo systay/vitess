@@ -24,6 +24,8 @@ import (
 	"sync"
 
 	"vitess.io/vitess/go/sqltypes"
+	"vitess.io/vitess/go/vt/concurrency"
+	"vitess.io/vitess/go/vt/vterrors"
 	"vitess.io/vitess/go/vt/vtgate/evalengine"
 
 	"golang.org/x/net/context"
@@ -104,20 +106,19 @@ func (mysqld *Mysqld) GetSchema(ctx context.Context, dbName string, tables, excl
 	}
 
 	type schemaResult struct {
-		idx int
-		err error
-
 		td *tabletmanagerdatapb.TableDefinition
 	}
 
-	resChan := make(chan *schemaResult, 100)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	var wg sync.WaitGroup
+	allErrors := &concurrency.AllErrorRecorder{}
+
+	var tds []*tabletmanagerdatapb.TableDefinition
+	var tdsMx sync.Mutex
 
 	tableNames := make([]string, 0, len(qr.Rows))
-	i := 0
 	for _, row := range qr.Rows {
 		tableName := row[0].ToString()
 		tableType := row[1].ToString()
@@ -148,63 +149,57 @@ func (mysqld *Mysqld) GetSchema(ctx context.Context, dbName string, tables, excl
 		}
 
 		wg.Add(1)
-		go func(idx int) {
+		go func() {
 			defer wg.Done()
 
 			fields, columns, schema, err := mysqld.collectSchema(ctx, dbName, tableName, tableType)
 			if err != nil {
-				resChan <- &schemaResult{
-					idx: idx,
-					err: err,
-				}
+				allErrors.RecordError(err)
+				cancel()
 				return
 			}
 
-			resChan <- &schemaResult{
-				idx: idx,
-				td: &tabletmanagerdatapb.TableDefinition{
-					Name:       tableName,
-					Type:       tableType,
-					DataLength: dataLength,
-					RowCount:   rowCount,
-					Fields:     fields,
-					Columns:    columns,
-					Schema:     schema,
-				},
-			}
-		}(i)
-
-		i++
+			tdsMx.Lock()
+			tds = append(tds, &tabletmanagerdatapb.TableDefinition{
+				Name:       tableName,
+				Type:       tableType,
+				DataLength: dataLength,
+				RowCount:   rowCount,
+				Fields:     fields,
+				Columns:    columns,
+				Schema:     schema,
+			})
+			tdsMx.Unlock()
+		}()
 	}
 
-	go func() {
-		wg.Wait()
-		close(resChan)
-	}()
-
+	// Get primary columns concurrently.
 	colMap := map[string][]string{}
 	if len(tableNames) > 0 {
-		log.Infof("mysqld GetSchema: GetPrimaryKeyColumns")
-		var err error
-		colMap, err = mysqld.getPrimaryKeyColumns(ctx, dbName, tableNames...)
-		if err != nil {
-			return nil, err
-		}
-		log.Infof("mysqld GetSchema: GetPrimaryKeyColumns done")
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			log.Infof("mysqld GetSchema: GetPrimaryKeyColumns")
+			var err error
+			colMap, err = mysqld.getPrimaryKeyColumns(ctx, dbName, tableNames...)
+			if err != nil {
+				allErrors.RecordError(err)
+				cancel()
+				return
+			}
+			log.Infof("mysqld GetSchema: GetPrimaryKeyColumns done")
+		}()
+	}
+
+	wg.Wait()
+	if err := allErrors.AggrError(vterrors.Aggregate); err != nil {
+		return nil, err
 	}
 
 	log.Infof("mysqld GetSchema: Collecting all table schemas")
-	tds := make([]*tabletmanagerdatapb.TableDefinition, i)
-	for res := range resChan {
-		if res.err != nil {
-			cancel()
-			return nil, res.err
-		}
-
-		td := res.td
+	for _, td := range tds {
 		td.PrimaryKeyColumns = colMap[td.Name]
-
-		tds[res.idx] = res.td
 	}
 	log.Infof("mysqld GetSchema: Collecting all table schemas done")
 
