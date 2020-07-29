@@ -68,7 +68,7 @@ func tableListSql(tables []string) (string, error) {
 		encodedTables[i] = encodeTableName(tableName)
 	}
 
-	return "('" + strings.Join(encodedTables, ", ") + "')", nil
+	return "(" + strings.Join(encodedTables, ", ") + ")", nil
 }
 
 // GetSchema returns the schema for database for tables listed in
