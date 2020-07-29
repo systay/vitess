@@ -105,20 +105,13 @@ func (mysqld *Mysqld) GetSchema(ctx context.Context, dbName string, tables, excl
 		return nil, err
 	}
 
-	type schemaResult struct {
-		td *tabletmanagerdatapb.TableDefinition
+	type table struct {
+		name, typ            string
+		dataLength, rowCount uint64
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	var wg sync.WaitGroup
-	allErrors := &concurrency.AllErrorRecorder{}
-
-	var tds []*tabletmanagerdatapb.TableDefinition
-	var tdsMx sync.Mutex
-
-	tableNames := make([]string, 0, len(qr.Rows))
+	var tableStructs []table
+	var tableNames []string
 	for _, row := range qr.Rows {
 		tableName := row[0].ToString()
 		tableType := row[1].ToString()
@@ -126,8 +119,6 @@ func (mysqld *Mysqld) GetSchema(ctx context.Context, dbName string, tables, excl
 		if !filter.Includes(tableName, tableType) {
 			continue
 		}
-
-		tableNames = append(tableNames, tableName)
 
 		// compute dataLength
 		var dataLength uint64
@@ -147,35 +138,48 @@ func (mysqld *Mysqld) GetSchema(ctx context.Context, dbName string, tables, excl
 				return nil, err
 			}
 		}
+		tableNames = append(tableNames, tableName)
+		tableStructs = append(tableStructs, table{
+			name:       tableName,
+			typ:        tableType,
+			dataLength: dataLength,
+			rowCount:   rowCount,
+		})
+	}
 
-		wg.Add(1)
-		go func() {
+	tds := make([]*tabletmanagerdatapb.TableDefinition, len(tableStructs))
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	var wg sync.WaitGroup
+	allErrors := &concurrency.AllErrorRecorder{}
+
+	for i, t := range tableStructs {
+		go func(idx int) {
 			defer wg.Done()
 
-			fields, columns, schema, err := mysqld.collectSchema(ctx, dbName, tableName, tableType)
+			fields, columns, schema, err := mysqld.collectSchema(ctx, dbName, t.name, t.typ)
 			if err != nil {
 				allErrors.RecordError(err)
 				cancel()
 				return
 			}
 
-			tdsMx.Lock()
-			tds = append(tds, &tabletmanagerdatapb.TableDefinition{
-				Name:       tableName,
-				Type:       tableType,
-				DataLength: dataLength,
-				RowCount:   rowCount,
+			tds[idx] = &tabletmanagerdatapb.TableDefinition{
+				Name:       t.name,
+				Type:       t.typ,
+				DataLength: t.dataLength,
+				RowCount:   t.rowCount,
 				Fields:     fields,
 				Columns:    columns,
 				Schema:     schema,
-			})
-			tdsMx.Unlock()
-		}()
+			}
+		}(i)
 	}
 
 	// Get primary columns concurrently.
 	colMap := map[string][]string{}
-	if len(tableNames) > 0 {
+	if len(tableStructs) > 0 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
