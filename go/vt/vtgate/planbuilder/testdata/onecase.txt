@@ -1,1 +1,21 @@
-# Add your test case here for debugging and run go test -run=One.
+# Add your test case here for debugging and run go test -run=One.# set autocommit with backticks
+"set @foo = 'abc', @bar = 42, @baz = 30.5, @tablet = concat('foo','bar')"
+{
+  "QueryType": "SET",
+  "Original": "set @@session.`autocommit` = 0",
+  "Instructions": {
+    "OperatorType": "Set",
+    "Ops": [
+      {
+        "Type": "SysVarAware",
+        "Name": "autocommit",
+        "Expr": "INT64(0)"
+      }
+    ],
+    "Inputs": [
+      {
+        "OperatorType": "SingleRow"
+      }
+    ]
+  }
+}
