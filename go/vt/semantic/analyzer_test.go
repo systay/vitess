@@ -30,17 +30,19 @@ func TestAnalyse(t *testing.T) {
 		name                     string
 		query                    string
 		col1Qualifier, col1Table string
+		col1Local                bool
 		col2Qualifier, col2Table string
+		col2Local                bool
 		error                    string
 	}
 	tests := []testCase{{
 		name:          "one table, explicit alias usage",
 		query:         "select x.col from information_schema.tables as x",
-		col1Qualifier: "information_schema", col1Table: "tables",
+		col1Qualifier: "information_schema", col1Table: "tables", col1Local: true,
 	}, {
 		name:          "one table, no alias and no explicit columns",
 		query:         "select col from information_schema.tables",
-		col1Qualifier: "information_schema", col1Table: "tables",
+		col1Qualifier: "information_schema", col1Table: "tables", col1Local: true,
 	}, {
 		name:  "missing table ",
 		query: "select x.col from y",
@@ -52,12 +54,12 @@ func TestAnalyse(t *testing.T) {
 	}, {
 		name:          "two tables with qualifiers, and columns do not specify qualifier",
 		query:         "select y.col1, x.col2 from qualify1.y, qualify2.x",
-		col1Qualifier: "qualify1", col1Table: "y",
-		col2Qualifier: "qualify2", col2Table: "x",
+		col1Qualifier: "qualify1", col1Table: "y", col1Local: true,
+		col2Qualifier: "qualify2", col2Table: "x", col2Local: true,
 	}, {
 		name:          "subqueries can use columns from the outer scope",
 		query:         "select col1 from t as x where EXISTS (select id from z where x.id = id)",
-		col1Qualifier: "", col1Table: "t",
+		col1Qualifier: "", col1Table: "t", col1Local: true,
 	}, {
 		name:  "derived tables cannot access tables from the outer scope",
 		query: "select t.col from t, (select * from x where x.col = t.col) as y",
@@ -66,6 +68,10 @@ func TestAnalyse(t *testing.T) {
 		name:  "can't do a subquery in a group by",
 		query: "select (select count(*) from x) as col from dual group by (select count(*) from x)",
 		error: "unsupported: subqueries disallowed in GROUP or ORDER BY",
+		//}, {
+		//	name:          "columns are accessible through derived tables",
+		//	query:         "select col1 from (select col1 from x) as t",
+		//	col1Qualifier: "", col1Table: "y", col1Local: false,
 	}}
 
 	for _, tc := range tests {
@@ -81,12 +87,14 @@ func TestAnalyse(t *testing.T) {
 				col1Table := colName.Metadata.(Table)
 				assert.Equal(t, col1Table.Qualifier, tc.col1Qualifier, "first column qualifier")
 				assert.Equal(t, col1Table.Name, tc.col1Table, "first column table name")
+				assert.Equal(t, col1Table.Local, tc.col1Local, "first column isLocal")
 
 				if tc.col2Table != "" {
 					colName2 := ast.(*sqlparser.Select).SelectExprs[1].(*sqlparser.AliasedExpr).Expr.(*sqlparser.ColName)
 					col2Table := colName2.Metadata.(Table)
-					assert.Equal(t, col2Table.Qualifier, tc.col2Qualifier, "first column qualifier")
-					assert.Equal(t, col2Table.Name, tc.col2Table, "first column table name")
+					assert.Equal(t, col2Table.Qualifier, tc.col2Qualifier, "second column qualifier")
+					assert.Equal(t, col2Table.Name, tc.col2Table, "second column table name")
+					assert.Equal(t, col2Table.Local, tc.col2Local, "second column isLocal")
 				}
 			} else {
 				require.Error(t, err)

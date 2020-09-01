@@ -99,7 +99,7 @@ func inFromClause(parent sqlparser.SQLNode) bool {
 func (s *scope) FindTable(qualifier, table string) (*table, bool) {
 	if qualifier == "" && table == "" {
 		if len(s.tableExprs) != 1 {
-			panic("i dont know!!!!")
+			return nil, false
 		}
 		return s.tableExprs[0], true
 	}
