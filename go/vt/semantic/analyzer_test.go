@@ -68,10 +68,10 @@ func TestAnalyse(t *testing.T) {
 		name:  "can't do a subquery in a group by",
 		query: "select (select count(*) from x) as col from dual group by (select count(*) from x)",
 		error: "unsupported: subqueries disallowed in GROUP or ORDER BY",
-		//}, {
-		//	name:          "columns are accessible through derived tables",
-		//	query:         "select col1 from (select col1 from x) as t",
-		//	col1Qualifier: "", col1Table: "y", col1Local: false,
+	}, {
+		name:          "columns are accessible through derived tables",
+		query:         "select col1 from (select col1 from x) as t",
+		col1Qualifier: "", col1Table: "x", col1Local: false,
 	}}
 
 	for _, tc := range tests {
