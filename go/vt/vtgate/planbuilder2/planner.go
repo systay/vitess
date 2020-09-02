@@ -28,7 +28,7 @@ import (
 
 // BuildFromStmt builds a plan based on the AST provided.
 func BuildFromStmt(query string, stmt sqlparser.Statement, vschema planbuilder.ContextVSchema, bindVarNeeds sqlparser.BindVarNeeds) (*engine.Plan, error) {
-	instruction, err := createInstructionFor(query, stmt, vschema)
+	instruction, err := createInstructionFor(stmt, vschema)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +57,7 @@ func Build(query string, vschema planbuilder.ContextVSchema) (*engine.Plan, erro
 	return BuildFromStmt(query, result.AST, vschema, result.BindVarNeeds)
 }
 
-func createInstructionFor(query string, stmt sqlparser.Statement, vschema planbuilder.ContextVSchema) (engine.Primitive, error) {
+func createInstructionFor(stmt sqlparser.Statement, vschema planbuilder.ContextVSchema) (engine.Primitive, error) {
 	switch n := stmt.(type) {
 	case *sqlparser.Select:
 		return planSelect(n, vschema)
@@ -77,11 +77,13 @@ func planSelect(stmt *sqlparser.Select, vschema planbuilder.ContextVSchema) (eng
 	}
 
 	if len(plans) != 1 {
+		// no joins yet
 		return nil, vterrors.Errorf(vtrpc.Code_UNIMPLEMENTED, "implement me")
 	}
 
-	return plans[0].Primitive(), nil
+	// split predicates and select expressions and push to the correct plan
 
+	return plans[0].Primitive(), nil
 }
 
 func planTableExpr(expr sqlparser.TableExpr, vschema planbuilder.ContextVSchema) (logicalPlan, error) {
@@ -130,3 +132,15 @@ func (r *route) Primitive() engine.Primitive {
 	route.TableName = "unsharded"
 	return route
 }
+
+/*
+
+select A.col, B.COL
+from
+	db2.r,
+	t,
+	t as B,
+	(select.. ) as C
+WHERE A.col2 = 42 AND B.col3 = 42
+
+*/
