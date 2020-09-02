@@ -1,6 +1,7 @@
 package semantic
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -18,11 +19,15 @@ func TestDependencies(t *testing.T) {
 	tests := []testCase{{
 		name:     "simplest case",
 		query:    "select col from x",
-		col1Deps: "x(L)",
+		col1Deps: "0",
 	}, {
 		name:     "simple with alias",
 		query:    "select col from x as alias",
-		col1Deps: "x AS alias(L)",
+		col1Deps: "0",
+	}, {
+		name:     "two tables",
+		query:    "select x.col + y.col from x,y,z",
+		col1Deps: "0:1",
 	}}
 
 	for _, tc := range tests {
@@ -41,7 +46,7 @@ func TestDependencies(t *testing.T) {
 			deps := DepencenciesFor(expr)
 			var result []string
 			for k := range deps {
-				result = append(result, k.ToString())
+				result = append(result, fmt.Sprintf("%d", k))
 			}
 
 			assert.Equal(tc.col1Deps, strings.Join(result, ":"))

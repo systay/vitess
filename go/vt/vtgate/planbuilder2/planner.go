@@ -19,6 +19,7 @@ package planbuilder2
 import (
 	querypb "vitess.io/vitess/go/vt/proto/query"
 	"vitess.io/vitess/go/vt/proto/vtrpc"
+	"vitess.io/vitess/go/vt/semantic"
 	"vitess.io/vitess/go/vt/sqlparser"
 	"vitess.io/vitess/go/vt/vterrors"
 	"vitess.io/vitess/go/vt/vtgate/engine"
@@ -76,6 +77,17 @@ func planSelect(stmt *sqlparser.Select, vschema planbuilder.ContextVSchema) (eng
 		plans = append(plans, plan)
 	}
 
+	predicates := sqlparser.SplitAndExpression(nil, stmt.Where.Expr)
+	for _, predicate := range predicates {
+		deps := semantic.DepencenciesFor(predicate)
+		for i, plan := range plans {
+			if CoveredBy(deps, plan.Covers()) {
+				newPlan := addPredicateToPlan(plan, predicate)
+				plans[i] = newPlan
+			}
+		}
+	}
+
 	if len(plans) != 1 {
 		// no joins yet
 		return nil, vterrors.Errorf(vtrpc.Code_UNIMPLEMENTED, "implement me")
@@ -84,6 +96,10 @@ func planSelect(stmt *sqlparser.Select, vschema planbuilder.ContextVSchema) (eng
 	// split predicates and select expressions and push to the correct plan
 
 	return plans[0].Primitive(), nil
+}
+
+func addPredicateToPlan(plan logicalPlan, predicate sqlparser.Expr) logicalPlan {
+
 }
 
 func planTableExpr(expr sqlparser.TableExpr, vschema planbuilder.ContextVSchema) (logicalPlan, error) {
@@ -99,6 +115,7 @@ func planTableExpr(expr sqlparser.TableExpr, vschema planbuilder.ContextVSchema)
 				opcode:   engine.SelectUnsharded,
 				keyspace: table.Keyspace,
 				query:    &sqlparser.Select{From: sqlparser.TableExprs{expr}},
+				covers:   []semantic.TableID{n.Metadata.(semantic.TableID)},
 			}, nil
 		}
 	}
@@ -106,8 +123,25 @@ func planTableExpr(expr sqlparser.TableExpr, vschema planbuilder.ContextVSchema)
 	return nil, vterrors.Errorf(vtrpc.Code_UNIMPLEMENTED, "implement me")
 }
 
+type tableSet = map[semantic.TableID]interface{}
+
+func (c tableSet) Add(id semantic.TableID) {
+	c[id] = nil
+}
+
+func CoveredBy(this, other tableSet) bool {
+	for k := range this {
+		_, ok := other[k]
+		if !ok {
+			return false
+		}
+	}
+	return true
+}
+
 type logicalPlan interface {
 	Primitive() engine.Primitive
+	Covers() tableSet
 }
 
 var _ logicalPlan = (*route)(nil)
@@ -116,6 +150,11 @@ type route struct {
 	opcode   engine.RouteOpcode
 	keyspace *vindexes.Keyspace
 	query    *sqlparser.Select
+	covers   tableSet
+}
+
+func (r *route) Covers() tableSet {
+	return r.covers
 }
 
 func (r *route) Primitive() engine.Primitive {

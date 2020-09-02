@@ -79,12 +79,12 @@ func DoBinding(s *scope, node sqlparser.SQLNode, id identifier) error {
 	return nil
 }
 
-func DepencenciesFor(expr sqlparser.Expr) map[Table]interface{} {
-	result := map[Table]interface{}{}
+func DepencenciesFor(expr sqlparser.Expr) map[TableID]interface{} {
+	result := map[TableID]interface{}{}
 	sqlparser.Rewrite(expr, func(cursor *sqlparser.Cursor) bool {
 		switch col := cursor.Node().(type) {
 		case *sqlparser.ColName:
-			result[col.Metadata.(Table)] = nil
+			result[col.Metadata.(Table).ID] = nil
 		}
 		return true
 	}, nil)
