@@ -494,6 +494,8 @@ type (
 		Partitions Partitions
 		As         TableIdent
 		Hints      *IndexHints
+
+		Metadata interface{}
 	}
 
 	// JoinTableExpr represents a TableExpr that's a JOIN operation.

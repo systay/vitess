@@ -31,7 +31,8 @@ func TestDependencies(t *testing.T) {
 			require := require.New(t)
 			ast, err := sqlparser.Parse(tc.query)
 			require.NoError(err)
-			_, err = Analyse(ast)
+			a := &analyser{}
+			_, err = a.Analyse(ast)
 			require.NoError(err)
 
 			// get the first expression of the query as a ColName

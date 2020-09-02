@@ -132,15 +132,3 @@ func (r *route) Primitive() engine.Primitive {
 	route.TableName = "unsharded"
 	return route
 }
-
-/*
-
-select A.col, B.COL
-from
-	db2.r,
-	t,
-	t as B,
-	(select.. ) as C
-WHERE A.col2 = 42 AND B.col3 = 42
-
-*/

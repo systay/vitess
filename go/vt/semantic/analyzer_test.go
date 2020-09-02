@@ -78,7 +78,8 @@ func TestAnalyse(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ast, err := sqlparser.Parse(tc.query)
 			require.NoError(t, err)
-			_, err = Analyse(ast)
+			a := &analyser{}
+			_, err = a.Analyse(ast)
 			if tc.error == "" {
 				require.NoError(t, err)
 

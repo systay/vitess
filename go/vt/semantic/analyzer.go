@@ -22,7 +22,7 @@ import (
 
 //Analyse traverses the AST and finds some errors and
 //annotates all ColName's to point to the table they originate from
-func Analyse(stmt sqlparser.Statement) (*scope, error) {
+func (a *analyser) Analyse(stmt sqlparser.Statement) (*scope, error) {
 	scoper := &scoper{current: []*scope{{}}}
 	check := &checker{}
 	var err error
@@ -30,7 +30,7 @@ func Analyse(stmt sqlparser.Statement) (*scope, error) {
 		if err == nil {
 			current := cursor.Node()
 			scope := scoper.VisitDown(current, cursor.Parent())
-			err = DoBinding(scope, current)
+			err = DoBinding(scope, current, a)
 			if err == nil {
 				err = check.VisitDown(current)
 			}
@@ -52,4 +52,14 @@ func Analyse(stmt sqlparser.Statement) (*scope, error) {
 		return nil, err
 	}
 	return scoper.Result()
+}
+
+type analyser struct {
+	id int
+}
+
+func (a *analyser) next() int {
+	id := a.id
+	a.id++
+	return id
 }

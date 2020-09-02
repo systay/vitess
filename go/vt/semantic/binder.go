@@ -28,33 +28,41 @@ type (
 	// table is an internal struct used while binding
 	table struct {
 		name, qualifier, alias string
-		source                 *sqlparser.AliasedTableExpr
+		ID                     int
 	}
 
 	// Table is the information known about which table this column belongs to
 	Table struct {
+		ID              TableID
 		Name, Qualifier string
 		Local           bool
-		Source          *sqlparser.AliasedTableExpr
 	}
 )
+
+type TableID int
 
 func (t table) hasAlias() bool {
 	return t.alias != ""
 }
 
+type identifier interface {
+	next() int
+}
+
 //DoBinding annotates the provided scope with table info, or writes table info to the ColNames
-func DoBinding(s *scope, node sqlparser.SQLNode) error {
+func DoBinding(s *scope, node sqlparser.SQLNode, id identifier) error {
 	switch n := node.(type) {
 	case *sqlparser.AliasedTableExpr:
 		switch t := n.Expr.(type) {
 		case sqlparser.TableName:
-			s.tableExprs = append(s.tableExprs, &table{
+			newTable := &table{
 				name:      t.Name.String(),
 				qualifier: t.Qualifier.String(),
 				alias:     n.As.String(),
-				source:    n,
-			})
+				ID:        id.next(),
+			}
+			s.tableExprs = append(s.tableExprs, newTable)
+			n.Metadata = newTable.ID
 		}
 	case *sqlparser.ColName:
 		table, local := s.FindTable(n.Qualifier.Qualifier.String(), n.Qualifier.Name.String())
@@ -65,7 +73,7 @@ func DoBinding(s *scope, node sqlparser.SQLNode) error {
 			Name:      table.name,
 			Qualifier: table.qualifier,
 			Local:     local,
-			Source:    table.source,
+			ID:        TableID(table.ID),
 		}
 	}
 	return nil
@@ -84,19 +92,16 @@ func DepencenciesFor(expr sqlparser.Expr) map[Table]interface{} {
 }
 
 func (t Table) ToString() string {
-	var source, alias, local string
+	var source, local string
 	if t.Qualifier == "" {
 		source = t.Name
 	} else {
 		source = t.Qualifier + "." + t.Name
-	}
-	if !t.Source.As.IsEmpty() {
-		alias = " AS " + t.Source.As.String()
 	}
 	if t.Local {
 		local = "L"
 	} else {
 		local = "NL"
 	}
-	return fmt.Sprintf("%s%s(%s)", source, alias, local)
+	return fmt.Sprintf("%s%d(%s)", source, t.ID, local)
 }
