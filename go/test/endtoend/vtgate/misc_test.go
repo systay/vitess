@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"vitess.io/vitess/go/test/utils"
 
@@ -54,6 +55,18 @@ func TestSelectNull(t *testing.T) {
 	assertMatches(t, conn, "select id, idx from t5_null_vindex where id NOT IN (1,3)", "[[INT64(2) VARCHAR(\"b\")]]")
 
 	exec(t, conn, "delete from t5_null_vindex")
+}
+
+func TestStartVitess(t *testing.T) {
+	fmt.Println(vtParams.DbName)
+	fmt.Println(vtParams.Port)
+	fmt.Println(vtParams.Uname)
+	fmt.Println(vtParams.Pass)
+
+	for {
+		time.Sleep(1 * time.Minute)
+		fmt.Print(".")
+	}
 }
 
 func TestDoStatement(t *testing.T) {

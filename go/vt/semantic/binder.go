@@ -33,13 +33,11 @@ type (
 
 	// Table is the information known about which table this column belongs to
 	Table struct {
-		ID              TableID
+		ID              int
 		Name, Qualifier string
 		Local           bool
 	}
 )
-
-type TableID int
 
 func (t table) hasAlias() bool {
 	return t.alias != ""
@@ -73,14 +71,14 @@ func DoBinding(s *scope, node sqlparser.SQLNode, id identifier) error {
 			Name:      table.name,
 			Qualifier: table.qualifier,
 			Local:     local,
-			ID:        TableID(table.ID),
+			ID:        table.ID,
 		}
 	}
 	return nil
 }
 
-func DepencenciesFor(expr sqlparser.Expr) map[TableID]interface{} {
-	result := map[TableID]interface{}{}
+func DepencenciesFor(expr sqlparser.Expr) map[int]interface{} {
+	result := map[int]interface{}{}
 	sqlparser.Rewrite(expr, func(cursor *sqlparser.Cursor) bool {
 		switch col := cursor.Node().(type) {
 		case *sqlparser.ColName:

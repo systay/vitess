@@ -63,3 +63,9 @@ func (a *analyser) next() int {
 	a.id++
 	return id
 }
+
+func Analyse(stmt sqlparser.Statement) error {
+	a := &analyser{}
+	_, err := a.Analyse(stmt)
+	return err
+}
