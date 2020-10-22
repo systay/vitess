@@ -110,9 +110,15 @@ func TestMain(m *testing.M) {
 	os.Exit(exitCode)
 }
 
+var skip = true
+
 func TestSelectIntoAndLoadFrom(t *testing.T) {
-	// Test is skipped because it requires secure-file-priv variable to be set to not NULL or empty.
-	t.Skip()
+	if skip {
+		// Test is skipped because it requires secure-file-priv variable to be set to not NULL or empty.
+		// this weird if statement is here to stop the linter from complaining
+		skip = false
+		t.Skip()
+	}
 	defer cluster.PanicHandler(t)
 	ctx := context.Background()
 	vtParams := mysql.ConnParams{
