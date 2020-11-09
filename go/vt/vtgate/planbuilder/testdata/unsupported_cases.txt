@@ -1,6 +1,36 @@
 # Unions
 "select * from user union select * from user_extra"
-"unsupported: UNION cannot be executed as a single route"
+{
+  "QueryType": "SELECT",
+  "Original": "select * from user union select * from user_extra",
+  "Instructions": {
+    "OperatorType": "UnionDistinct",
+    "Inputs": [
+      {
+        "OperatorType": "Route",
+        "Variant": "SelectScatter",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select * from user where 1 != 1",
+        "Query": "select * from user",
+        "Table": "user"
+      },
+      {
+        "OperatorType": "Route",
+        "Variant": "SelectScatter",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select * from user_extra where 1 != 1",
+        "Query": "select * from user_extra",
+        "Table": "user_extra"
+      }
+    ]
+  }
+}
 
 # SHOW
 "show create database"
@@ -8,7 +38,7 @@
 
 # union operations in subqueries (expressions)
 "select * from user where id in (select * from user union select * from user_extra)"
-"unsupported: UNION cannot be executed as a single route"
+"unsupported: '*' expression in cross-shard query"
 
 # TODO: Implement support for select with a target destination
 "select * from `user[-]`.user_metadata"
@@ -320,37 +350,407 @@
 
 # union of information_schema with normal table
 "select * from information_schema.a union select * from unsharded"
-"unsupported: UNION cannot be executed as a single route"
+{
+  "QueryType": "SELECT",
+  "Original": "select * from information_schema.a union select * from unsharded",
+  "Instructions": {
+    "OperatorType": "UnionDistinct",
+    "Inputs": [
+      {
+        "OperatorType": "Route",
+        "Variant": "SelectDBA",
+        "Keyspace": {
+          "Name": "main",
+          "Sharded": false
+        },
+        "FieldQuery": "select * from information_schema.a where 1 != 1",
+        "Query": "select * from information_schema.a"
+      },
+      {
+        "OperatorType": "Route",
+        "Variant": "SelectUnsharded",
+        "Keyspace": {
+          "Name": "main",
+          "Sharded": false
+        },
+        "FieldQuery": "select * from unsharded where 1 != 1",
+        "Query": "select * from unsharded",
+        "Table": "unsharded"
+      }
+    ]
+  }
+}
 
 # union of information_schema with normal table
 "select * from unsharded union select * from information_schema.a"
-"unsupported: UNION cannot be executed as a single route"
+{
+  "QueryType": "SELECT",
+  "Original": "select * from unsharded union select * from information_schema.a",
+  "Instructions": {
+    "OperatorType": "UnionDistinct",
+    "Inputs": [
+      {
+        "OperatorType": "Route",
+        "Variant": "SelectUnsharded",
+        "Keyspace": {
+          "Name": "main",
+          "Sharded": false
+        },
+        "FieldQuery": "select * from unsharded where 1 != 1",
+        "Query": "select * from unsharded",
+        "Table": "unsharded"
+      },
+      {
+        "OperatorType": "Route",
+        "Variant": "SelectDBA",
+        "Keyspace": {
+          "Name": "main",
+          "Sharded": false
+        },
+        "FieldQuery": "select * from information_schema.a where 1 != 1",
+        "Query": "select * from information_schema.a"
+      }
+    ]
+  }
+}
 
 # multi-shard union
 "(select id from user union select id from music) union select 1 from dual"
-"unsupported: UNION cannot be executed as a single route"
+{
+  "QueryType": "SELECT",
+  "Original": "(select id from user union select id from music) union select 1 from dual",
+  "Instructions": {
+    "OperatorType": "UnionDistinct",
+    "Inputs": [
+      {
+        "OperatorType": "UnionDistinct",
+        "Inputs": [
+          {
+            "OperatorType": "Route",
+            "Variant": "SelectScatter",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select id from user where 1 != 1",
+            "Query": "select id from user",
+            "Table": "user"
+          },
+          {
+            "OperatorType": "Route",
+            "Variant": "SelectScatter",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select id from music where 1 != 1",
+            "Query": "select id from music",
+            "Table": "music"
+          }
+        ]
+      },
+      {
+        "OperatorType": "Route",
+        "Variant": "SelectReference",
+        "Keyspace": {
+          "Name": "main",
+          "Sharded": false
+        },
+        "FieldQuery": "select 1 from dual where 1 != 1",
+        "Query": "select 1 from dual",
+        "Table": "dual"
+      }
+    ]
+  }
+}
 
 # multi-shard union
 "select 1 from music union (select id from user union all select name from unsharded)"
-"unsupported: SELECT of UNION is non-trivial"
+{
+  "QueryType": "SELECT",
+  "Original": "select 1 from music union (select id from user union all select name from unsharded)",
+  "Instructions": {
+    "OperatorType": "UnionDistinct",
+    "Inputs": [
+      {
+        "OperatorType": "Route",
+        "Variant": "SelectScatter",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select 1 from music where 1 != 1",
+        "Query": "select 1 from music",
+        "Table": "music"
+      },
+      {
+        "OperatorType": "Concatenate",
+        "Inputs": [
+          {
+            "OperatorType": "Route",
+            "Variant": "SelectScatter",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select id from user where 1 != 1",
+            "Query": "select id from user",
+            "Table": "user"
+          },
+          {
+            "OperatorType": "Route",
+            "Variant": "SelectUnsharded",
+            "Keyspace": {
+              "Name": "main",
+              "Sharded": false
+            },
+            "FieldQuery": "select name from unsharded where 1 != 1",
+            "Query": "select name from unsharded",
+            "Table": "unsharded"
+          }
+        ]
+      }
+    ]
+  }
+}
 
 # multi-shard union
 "select 1 from music union (select id from user union select name from unsharded)"
-"unsupported: UNION cannot be executed as a single route"
+{
+  "QueryType": "SELECT",
+  "Original": "select 1 from music union (select id from user union select name from unsharded)",
+  "Instructions": {
+    "OperatorType": "UnionDistinct",
+    "Inputs": [
+      {
+        "OperatorType": "Route",
+        "Variant": "SelectScatter",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select 1 from music where 1 != 1",
+        "Query": "select 1 from music",
+        "Table": "music"
+      },
+      {
+        "OperatorType": "UnionDistinct",
+        "Inputs": [
+          {
+            "OperatorType": "Route",
+            "Variant": "SelectScatter",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select id from user where 1 != 1",
+            "Query": "select id from user",
+            "Table": "user"
+          },
+          {
+            "OperatorType": "Route",
+            "Variant": "SelectUnsharded",
+            "Keyspace": {
+              "Name": "main",
+              "Sharded": false
+            },
+            "FieldQuery": "select name from unsharded where 1 != 1",
+            "Query": "select name from unsharded",
+            "Table": "unsharded"
+          }
+        ]
+      }
+    ]
+  }
+}
 
 # union with the same target shard because of vindex
 "select * from music where id = 1 union select * from user where id = 1"
-"unsupported: UNION cannot be executed as a single route"
+{
+  "QueryType": "SELECT",
+  "Original": "select * from music where id = 1 union select * from user where id = 1",
+  "Instructions": {
+    "OperatorType": "UnionDistinct",
+    "Inputs": [
+      {
+        "OperatorType": "Route",
+        "Variant": "SelectEqualUnique",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select * from music where 1 != 1",
+        "Query": "select * from music where id = 1",
+        "Table": "music",
+        "Values": [
+          1
+        ],
+        "Vindex": "music_user_map"
+      },
+      {
+        "OperatorType": "Route",
+        "Variant": "SelectEqualUnique",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select * from user where 1 != 1",
+        "Query": "select * from user where id = 1",
+        "Table": "user",
+        "Values": [
+          1
+        ],
+        "Vindex": "user_index"
+      }
+    ]
+  }
+}
 
 # union with different target shards
 "select 1 from music where id = 1 union select 1 from music where id = 2"
-"unsupported: UNION cannot be executed as a single route"
+{
+  "QueryType": "SELECT",
+  "Original": "select 1 from music where id = 1 union select 1 from music where id = 2",
+  "Instructions": {
+    "OperatorType": "UnionDistinct",
+    "Inputs": [
+      {
+        "OperatorType": "Route",
+        "Variant": "SelectEqualUnique",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select 1 from music where 1 != 1",
+        "Query": "select 1 from music where id = 1",
+        "Table": "music",
+        "Values": [
+          1
+        ],
+        "Vindex": "music_user_map"
+      },
+      {
+        "OperatorType": "Route",
+        "Variant": "SelectEqualUnique",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select 1 from music where 1 != 1",
+        "Query": "select 1 from music where id = 2",
+        "Table": "music",
+        "Values": [
+          2
+        ],
+        "Vindex": "music_user_map"
+      }
+    ]
+  }
+}
 
 "(select user.id, user.name from user join user_extra where user_extra.extra = 'asdf') union select 'b','c' from user"
-"unsupported: SELECT of UNION is non-trivial"
+{
+  "QueryType": "SELECT",
+  "Original": "(select user.id, user.name from user join user_extra where user_extra.extra = 'asdf') union select 'b','c' from user",
+  "Instructions": {
+    "OperatorType": "UnionDistinct",
+    "Inputs": [
+      {
+        "OperatorType": "Join",
+        "Variant": "Join",
+        "JoinColumnIndexes": "-1,-2",
+        "TableName": "user_user_extra",
+        "Inputs": [
+          {
+            "OperatorType": "Route",
+            "Variant": "SelectScatter",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select user.id, user.name from user where 1 != 1",
+            "Query": "select user.id, user.name from user",
+            "Table": "user"
+          },
+          {
+            "OperatorType": "Route",
+            "Variant": "SelectScatter",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select 1 from user_extra where 1 != 1",
+            "Query": "select 1 from user_extra where user_extra.extra = 'asdf'",
+            "Table": "user_extra"
+          }
+        ]
+      },
+      {
+        "OperatorType": "Route",
+        "Variant": "SelectScatter",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select 'b', 'c' from user where 1 != 1",
+        "Query": "select 'b', 'c' from user",
+        "Table": "user"
+      }
+    ]
+  }
+}
 
 "select 'b','c' from user union (select user.id, user.name from user join user_extra where user_extra.extra = 'asdf')"
-"unsupported: SELECT of UNION is non-trivial"
+{
+  "QueryType": "SELECT",
+  "Original": "select 'b','c' from user union (select user.id, user.name from user join user_extra where user_extra.extra = 'asdf')",
+  "Instructions": {
+    "OperatorType": "UnionDistinct",
+    "Inputs": [
+      {
+        "OperatorType": "Route",
+        "Variant": "SelectScatter",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select 'b', 'c' from user where 1 != 1",
+        "Query": "select 'b', 'c' from user",
+        "Table": "user"
+      },
+      {
+        "OperatorType": "Join",
+        "Variant": "Join",
+        "JoinColumnIndexes": "-1,-2",
+        "TableName": "user_user_extra",
+        "Inputs": [
+          {
+            "OperatorType": "Route",
+            "Variant": "SelectScatter",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select user.id, user.name from user where 1 != 1",
+            "Query": "select user.id, user.name from user",
+            "Table": "user"
+          },
+          {
+            "OperatorType": "Route",
+            "Variant": "SelectScatter",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select 1 from user_extra where 1 != 1",
+            "Query": "select 1 from user_extra where user_extra.extra = 'asdf'",
+            "Table": "user_extra"
+          }
+        ]
+      }
+    ]
+  }
+}
 
 "select keyspace_id from user_index where id = 1 and id = 2"
 "unsupported: where clause for vindex function must be of the form id = <val> (multiple filters)"
@@ -394,7 +794,37 @@
 
 # multiple select statement have inner order by with union
 "(select 1 from user order by 1 desc) union (select 1 from user order by 1 asc)"
-"unsupported: SELECT of UNION is non-trivial"
+{
+  "QueryType": "SELECT",
+  "Original": "(select 1 from user order by 1 desc) union (select 1 from user order by 1 asc)",
+  "Instructions": {
+    "OperatorType": "UnionDistinct",
+    "Inputs": [
+      {
+        "OperatorType": "Route",
+        "Variant": "SelectScatter",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select 1 from user where 1 != 1",
+        "Query": "select 1 from user order by 1 desc",
+        "Table": "user"
+      },
+      {
+        "OperatorType": "Route",
+        "Variant": "SelectScatter",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select 1 from user where 1 != 1",
+        "Query": "select 1 from user order by 1 asc",
+        "Table": "user"
+      }
+    ]
+  }
+}
 
 # different number of columns
 "select id, 42 from user where id = 1 union all select id from user where id = 5"
@@ -435,4 +865,3 @@
 # Multi shard query using into outfile s3
 "select * from user into outfile s3 'out_file_name'"
 "unsupported: this construct is not supported on sharded keyspace"
-

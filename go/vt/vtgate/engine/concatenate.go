@@ -34,11 +34,15 @@ var _ Primitive = (*Concatenate)(nil)
 
 //Concatenate specified the parameter for concatenate primitive
 type Concatenate struct {
-	Sources []Primitive
+	Distinct bool
+	Sources  []Primitive
 }
 
 //RouteType returns a description of the query routing type used by the primitive
 func (c *Concatenate) RouteType() string {
+	if c.Distinct {
+		return "UnionDistinct"
+	}
 	return "Concatenate"
 }
 

@@ -53,10 +53,6 @@ func (pb *primitiveBuilder) processUnion(union *sqlparser.Union, outer *symtab) 
 		}
 		err := unionRouteMerge(pb.bldr, rpb.bldr, us)
 		if err != nil {
-			if us.Distinct {
-				return err
-			}
-
 			// we are merging between two routes - let's check if we can see so that we have the same amount of columns on both sides of the union
 			lhsCols := len(pb.bldr.ResultColumns())
 			rhsCols := len(rpb.bldr.ResultColumns())

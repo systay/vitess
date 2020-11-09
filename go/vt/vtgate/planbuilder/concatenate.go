@@ -24,6 +24,7 @@ import (
 )
 
 type concatenate struct {
+	distinct bool
 	lhs, rhs builder
 	order    int
 }
@@ -109,7 +110,8 @@ func (c *concatenate) Primitive() engine.Primitive {
 	rhs := c.rhs.Primitive()
 
 	return &engine.Concatenate{
-		Sources: []engine.Primitive{lhs, rhs},
+		Distinct: c.distinct,
+		Sources:  []engine.Primitive{lhs, rhs},
 	}
 }
 

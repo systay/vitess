@@ -30,6 +30,7 @@ import (
 
 func TestConcatenate_NoSourcesErr(t *testing.T) {
 	type testCase struct {
+		distinct       bool
 		testName       string
 		inputs         []*sqltypes.Result
 		expectedResult *sqltypes.Result
@@ -72,6 +73,15 @@ func TestConcatenate_NoSourcesErr(t *testing.T) {
 			sqltypes.MakeTestResult(sqltypes.MakeTestFields("id|col1|col2", "int64|varchar|varbinary"), "1|a1|b1", "2|a2|b2"),
 		},
 		expectedResult: sqltypes.MakeTestResult(sqltypes.MakeTestFields("myid|mycol1|mycol2", "int64|varchar|varbinary"), "1|a1|b1", "2|a2|b2"),
+	}, {
+		testName: "DISTINCT between 2 single rows",
+		distinct: true,
+		inputs: []*sqltypes.Result{
+			sqltypes.MakeTestResult(sqltypes.MakeTestFields("id", "int64"), "42"),
+			sqltypes.MakeTestResult(sqltypes.MakeTestFields("id", "int64"), "42"),
+		},
+		expectedResult: sqltypes.MakeTestResult(sqltypes.MakeTestFields("id", "int64"),
+			"42"),
 	}}
 
 	for _, tc := range testCases {
@@ -80,7 +90,7 @@ func TestConcatenate_NoSourcesErr(t *testing.T) {
 			for _, input := range tc.inputs {
 				fps = append(fps, &fakePrimitive{results: []*sqltypes.Result{input, input}, sendErr: errors.New("abc")})
 			}
-			concatenate := &Concatenate{Sources: fps}
+			concatenate := &Concatenate{Distinct: tc.distinct, Sources: fps}
 
 			t.Run("Execute wantfields true", func(t *testing.T) {
 				qr, err := concatenate.Execute(&noopVCursor{ctx: context.Background()}, nil, true)
@@ -127,18 +137,6 @@ func TestConcatenate_WithSourcesErrFirst(t *testing.T) {
 			sqltypes.MakeTestResult(sqltypes.MakeTestFields("id|col1|col2", "int64|varchar|varbinary"), "1|a1|b1", "2|a2|b2"),
 		},
 	}, {
-		testName: "mismatch field type",
-		inputs: []*sqltypes.Result{
-			sqltypes.MakeTestResult(sqltypes.MakeTestFields("id|col1|col2", "int64|varbinary|varbinary"), "1|a1|b1", "2|a2|b2"),
-			sqltypes.MakeTestResult(sqltypes.MakeTestFields("id|col3|col4", "int64|varchar|varbinary"), "1|a1|b1", "2|a2|b2"),
-		},
-	}, {
-		testName: "input source has different column count",
-		inputs: []*sqltypes.Result{
-			sqltypes.MakeTestResult(sqltypes.MakeTestFields("id|col1|col2", "int64|varchar|varchar"), "1|a1|b1", "2|a2|b2"),
-			sqltypes.MakeTestResult(sqltypes.MakeTestFields("id|col3|col4|col5", "int64|varchar|varchar|int32"), "1|a1|b1|5", "2|a2|b2|6"),
-		},
-	}, {
 		testName: "1 empty result and 1 non empty result",
 		inputs: []*sqltypes.Result{
 			sqltypes.MakeTestResult(sqltypes.MakeTestFields("myid|mycol1|mycol2", "int64|varchar|varbinary")),
@@ -174,7 +172,6 @@ func TestConcatenate_WithSourcesErrLast(t *testing.T) {
 		testName               string
 		inputs                 []*sqltypes.Result
 		execErr, streamExecErr string
-		nonDeterministicErr    bool
 	}
 
 	strFailed := "failed"
@@ -196,24 +193,6 @@ func TestConcatenate_WithSourcesErrLast(t *testing.T) {
 		},
 		execErr:       executeErr,
 		streamExecErr: strFailed,
-	}, {
-		testName: "mismatch field type",
-		inputs: []*sqltypes.Result{
-			sqltypes.MakeTestResult(sqltypes.MakeTestFields("id|col1|col2", "int64|varbinary|varbinary"), "1|a1|b1", "2|a2|b2"),
-			sqltypes.MakeTestResult(sqltypes.MakeTestFields("id|col3|col4", "int64|varchar|varbinary"), "1|a1|b1", "2|a2|b2"),
-		},
-		execErr:             "column field type does not match for name: (col1, col3) types: (VARBINARY, VARCHAR)",
-		streamExecErr:       "column field type does not match for name: (col1, col3) types: (VARBINARY, VARCHAR)",
-		nonDeterministicErr: true,
-	}, {
-		testName: "input source has different column count",
-		inputs: []*sqltypes.Result{
-			sqltypes.MakeTestResult(sqltypes.MakeTestFields("id|col1|col2", "int64|varchar|varchar"), "1|a1|b1", "2|a2|b2"),
-			sqltypes.MakeTestResult(sqltypes.MakeTestFields("id|col3|col4|col5", "int64|varchar|varchar|int32"), "1|a1|b1|5", "2|a2|b2|6"),
-		},
-		execErr:             "The used SELECT statements have a different number of columns (errno 1222) (sqlstate 21000)",
-		streamExecErr:       strFailed,
-		nonDeterministicErr: true,
 	}, {
 		testName: "1 empty result and 1 non empty result",
 		inputs: []*sqltypes.Result{
@@ -241,9 +220,7 @@ func TestConcatenate_WithSourcesErrLast(t *testing.T) {
 			t.Run("StreamExecute wantfields true", func(t *testing.T) {
 				_, err := wrapStreamExecute(concatenate, &noopVCursor{ctx: context.Background()}, nil, true)
 				require.Error(t, err)
-				if !tc.nonDeterministicErr {
-					require.EqualError(t, err, tc.streamExecErr)
-				}
+				require.EqualError(t, err, tc.streamExecErr)
 			})
 		})
 	}
