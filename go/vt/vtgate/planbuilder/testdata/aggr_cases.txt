@@ -964,7 +964,21 @@
 
 # scatter aggregate with complex select list (can't build order by)
 "select distinct a+1 from user"
-"generating order by clause: cannot reference a complex expression"
+{
+  "QueryType": "SELECT",
+  "Original": "select distinct a+1 from user",
+  "Instructions": {
+    "OperatorType": "Route",
+    "Variant": "SelectScatter",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "FieldQuery": "select a + 1 from user where 1 != 1",
+    "Query": "select distinct a + 1 from user",
+    "Table": "user"
+  }
+}
 
 # scatter aggregate with numbered order by columns
 "select a, b, c, d, count(*) from user group by 1, 2, 3 order by 1, 2, 3"

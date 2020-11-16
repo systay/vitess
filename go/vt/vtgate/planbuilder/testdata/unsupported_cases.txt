@@ -116,7 +116,21 @@
 
 # scatter aggregate with ambiguous aliases
 "select distinct a, b as a from user"
-"generating order by clause: ambiguous symbol reference: a"
+{
+  "QueryType": "SELECT",
+  "Original": "select distinct a, b as a from user",
+  "Instructions": {
+    "OperatorType": "Route",
+    "Variant": "SelectScatter",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "FieldQuery": "select a, b as a from user where 1 != 1",
+    "Query": "select distinct a, b as a from user",
+    "Table": "user"
+  }
+}
 
 # scatter aggregate complex order by
 "select id from user group by id order by id+1"
@@ -136,7 +150,7 @@
 
 # Aggregate detection (distinct)
 "select distinct user.a from user join user_extra"
-"unsupported: cross-shard query with aggregates"
+"unsupported: distinct on cross-shard join"
 
 # Aggregate detection (group_concat)
 "select group_concat(user.a) from user join user_extra"

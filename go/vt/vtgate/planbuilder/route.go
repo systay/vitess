@@ -163,8 +163,28 @@ func (rb *route) PushAnonymous(expr sqlparser.SelectExpr) *resultColumn {
 
 // MakeDistinct satisfies the builder interface.
 func (rb *route) MakeDistinct() (builder, error) {
-	rb.Select.(*sqlparser.Select).Distinct = true
-	return rb, nil
+	// let's make the query that we send down unique
+	switch s := rb.Select.(type) {
+	case *sqlparser.Select:
+		s.Distinct = true
+	case *sqlparser.Union:
+		unions := s.UnionSelects
+		// make the last union in the chain as distinct
+		// in practice, this makes the whole union distinct
+		unions[len(unions)-1].Distinct = true
+	}
+
+	//if rb.eroute.Opcode == engine.SelectUnsharded ||
+	//	rb.eroute.Opcode == engine.SelectEqualUnique ||
+	//	rb.eroute.Opcode == engine.SelectEqual ||
+	//	rb.eroute.Opcode == engine.SelectReference ||
+	//	rb.eroute.Opcode == engine.SelectDBA ||
+	//	rb.eroute.Opcode == engine.SelectNone {
+	//	// for these opcodes, we don't need to do any more work
+		return rb, nil
+	//}
+	//
+	//return newDistinct(rb), nil
 }
 
 // PushGroupBy satisfies the builder interface.
