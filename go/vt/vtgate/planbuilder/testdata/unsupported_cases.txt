@@ -6,8 +6,10 @@
 "select * from user where id in (select * from user union select * from user_extra)"
 "unsupported: '*' expression in cross-shard query"
 
-# TODO: Implement support for select with a target destination
 "select * from `user[-]`.user_metadata"
+"unsupported: SELECT with a target destination"
+
+"select music.col from `user[-]`.user_metadata join music"
 "unsupported: SELECT with a target destination"
 
 # Unsupported INSERT statement with a target destination

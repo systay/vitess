@@ -122,17 +122,10 @@ func (pb *primitiveBuilder) processSelect(sel *sqlparser.Select, outer *symtab, 
 		return err
 	}
 
-	if rb, ok := pb.plan.(*route); ok {
-		// TODO(sougou): this can probably be improved.
-		directives := sqlparser.ExtractCommentDirectives(sel.Comments)
-		rb.eroute.QueryTimeout = queryTimeout(directives)
-		if rb.eroute.TargetDestination != nil {
-			return errors.New("unsupported: SELECT with a target destination")
-		}
-
-		if directives.IsSet(sqlparser.DirectiveScatterErrorsAsWarnings) {
-			rb.eroute.ScatterErrorsAsWarnings = true
-		}
+	directives := sqlparser.ExtractCommentDirectives(sel.Comments)
+	err := pb.applyDirectivesAndCheckRoutes(directives)
+	if err != nil {
+		return err
 	}
 
 	// Set the outer symtab after processing of FROM clause.
@@ -162,6 +155,27 @@ func (pb *primitiveBuilder) processSelect(sel *sqlparser.Select, outer *symtab, 
 	}
 
 	return setMiscFunc(pb.plan, sel)
+}
+
+func (pb *primitiveBuilder) applyDirectivesAndCheckRoutes(directives sqlparser.CommentDirectives) error {
+	plan, err := visit(pb.plan, func(in logicalPlan) (bool, logicalPlan, error) {
+		if rb, ok := in.(*route); ok {
+			rb.eroute.QueryTimeout = queryTimeout(directives)
+			if rb.eroute.TargetDestination != nil {
+				return false, nil, vterrors.Errorf(vtrpcpb.Code_INVALID_ARGUMENT, "unsupported: SELECT with a target destination")
+			}
+
+			if directives.IsSet(sqlparser.DirectiveScatterErrorsAsWarnings) {
+				rb.eroute.ScatterErrorsAsWarnings = true
+			}
+		}
+		return true, in, nil
+	})
+	if err != nil {
+		return err
+	}
+	pb.plan = plan
+	return nil
 }
 
 func setMiscFunc(in logicalPlan, sel *sqlparser.Select) error {
