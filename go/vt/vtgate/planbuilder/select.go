@@ -536,3 +536,105 @@ func (pb *primitiveBuilder) expandStar(inrcs []*resultColumn, expr *sqlparser.St
 	}
 	return inrcs, true, nil
 }
+
+func createColumnsFor(tables []*table) sqlparser.SelectExprs {
+	result := sqlparser.SelectExprs{}
+	singleTable := false
+	if len(tables) == 1 {
+		singleTable = true
+	}
+	for _, t := range tables {
+		for _, col := range t.columnNames {
+			var expr *sqlparser.AliasedExpr
+			if singleTable {
+				// If there's only one table, we use unqualified column names.
+				expr = &sqlparser.AliasedExpr{
+					Expr: &sqlparser.ColName{
+						Name: col,
+					},
+				}
+			} else {
+				// If a and b have id as their column, then
+				// select * from a join b should result in
+				// select a.id as id, b.id as id from a join b.
+				expr = &sqlparser.AliasedExpr{
+					Expr: columnForQualifiedStar(col, t.alias),
+					As:   col,
+				}
+			}
+			result = append(result, expr)
+		}
+	}
+	return result
+}
+
+func expandStars(
+	tables []*table,
+	selectExprs sqlparser.SelectExprs,
+	findTable func(sqlparser.TableName) (*table, error),
+) (stillHasStars bool, result sqlparser.SelectExprs, err error) {
+	isAuthoritative := func(t *table, expr *sqlparser.StarExpr) bool {
+		if t.isAuthoritative {
+			return true
+		}
+		// we don't know the columns of this table, we have to just return the star and hope we are dealing with a route
+		stillHasStars = true
+		result = append(result, expr)
+		return false
+	}
+
+	for _, expr := range selectExprs {
+		star, isStar := expr.(*sqlparser.StarExpr)
+		if !isStar {
+			result = append(result, expr)
+			continue
+		}
+
+		if star.TableName.IsEmpty() {
+			// SELECT *
+			for _, t := range tables {
+				// All tables must have authoritative column lists.
+				if !isAuthoritative(t, star) {
+					return stillHasStars, result, nil
+				}
+			}
+			result = append(result, createColumnsFor(tables)...)
+		} else {
+			// star qualified with table name
+			// SELECT user.*
+			t, err := findTable(star.TableName)
+			if err != nil {
+				return false, nil, err
+			}
+			if !isAuthoritative(t, star) {
+				return stillHasStars, result, nil
+			}
+
+			// we have all we need - let's expand
+			for _, col := range t.columnNames {
+				result = append(result, &sqlparser.AliasedExpr{Expr: columnForQualifiedStar(col, star.TableName)})
+			}
+		}
+	}
+
+	return stillHasStars, result, nil
+}
+
+func columnForQualifiedStar(col sqlparser.ColIdent, tableName sqlparser.TableName) *sqlparser.ColName {
+	return &sqlparser.ColName{
+		Name:      col,
+		Qualifier: tableName,
+	}
+}
+
+type Horizon struct {
+	aggregateFuncs []AnalysedExpr
+	groupingKeys   []AnalysedExpr
+	hasStar        bool
+}
+
+type AnalysedExpr struct {
+	pullouts []*pulloutSubquery
+	origin   logicalPlan
+	expr     sqlparser.Expr
+}
