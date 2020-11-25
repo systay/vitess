@@ -19,21 +19,28 @@ package planbuilder
 import (
 	"fmt"
 
+	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
+	"vitess.io/vitess/go/vt/vterrors"
+
 	"vitess.io/vitess/go/vt/sqlparser"
 	"vitess.io/vitess/go/vt/vtgate/engine"
 )
 
 type (
 	Horizon struct {
-		aggregateFuncs []AnalysedExpr
-		groupingKeys   []AnalysedExpr
-		projections    []AnalysedExpr
+		aggregateFuncs []AnalysedAliasedExpr
+		projections    []AnalysedAliasedExpr
 		hasStar        bool
 	}
 	AnalysedExpr struct {
 		pullouts []*pulloutSubquery
 		origin   logicalPlan
 		expr     sqlparser.Expr
+	}
+	AnalysedAliasedExpr struct {
+		pullouts []*pulloutSubquery
+		origin   logicalPlan
+		expr     *sqlparser.AliasedExpr
 	}
 )
 
@@ -147,10 +154,10 @@ func (pb *primitiveBuilder) analyseSelectExpr(sel *sqlparser.Select) (*Horizon, 
 				return nil, err
 			}
 			node.Expr = expr
-			analysedExpr := AnalysedExpr{
+			analysedExpr := AnalysedAliasedExpr{
 				pullouts: pullouts,
 				origin:   origin,
-				expr:     expr,
+				expr:     node,
 			}
 			if isAggregateExpression(expr) {
 				result.aggregateFuncs = append(result.aggregateFuncs, analysedExpr)
@@ -182,5 +189,57 @@ func (pb *primitiveBuilder) planHorizon(sel *sqlparser.Select, horizon *Horizon)
 		rb.Select = sel
 		return nil
 	}
+	resultColumns := make([]*resultColumn, 0, len(horizon.projections)+len(horizon.aggregateFuncs))
+	for _, projection := range horizon.projections {
+		newBuilder, rc, _, err := pb.pushProjection(pb.plan, projection.expr, projection.origin)
+		if err != nil {
+			return err
+		}
+		pb.plan = newBuilder
+		resultColumns = append(resultColumns, rc)
+	}
+	pb.st.SetResultColumns(resultColumns)
 	return nil
+}
+
+func (pb *primitiveBuilder) pushProjection(in logicalPlan, expr *sqlparser.AliasedExpr, origin logicalPlan) (logicalPlan, *resultColumn, int, error) {
+	switch node := in.(type) {
+	case *join:
+		var rc *resultColumn
+		if node.isOnLeft(origin.Order()) {
+			newLeft, col, colNumber, err := pb.pushProjection(node.Left, expr, origin)
+			if err != nil {
+				return nil, nil, 0, err
+			}
+			node.ejoin.Cols = append(node.ejoin.Cols, -colNumber-1)
+			rc = col
+			node.Left = newLeft
+		} else {
+			// Pushing of non-trivial expressions not allowed for RHS of left joins.
+			if _, ok := expr.Expr.(*sqlparser.ColName); !ok && node.ejoin.Opcode == engine.LeftJoin {
+				return nil, nil, 0, vterrors.New(vtrpcpb.Code_UNIMPLEMENTED, "unsupported: cross-shard left join and column expressions")
+			}
+
+			newRight, col, colNumber, err := pb.pushProjection(node.Right, expr, origin)
+			if err != nil {
+				return nil, nil, 0, err
+			}
+			node.ejoin.Cols = append(node.ejoin.Cols, colNumber+1)
+			rc = col
+			node.Right = newRight
+		}
+		node.resultColumns = append(node.resultColumns, rc)
+		return in, rc, len(node.resultColumns) - 1, nil
+
+	case *route:
+		sel := node.Select.(*sqlparser.Select)
+		sel.SelectExprs = append(sel.SelectExprs, expr)
+
+		rc := newResultColumn(expr, node)
+		node.resultColumns = append(node.resultColumns, rc)
+		return node, rc, len(node.resultColumns) - 1, nil
+
+	default:
+		return nil, nil, 0, vterrors.Errorf(vtrpcpb.Code_UNIMPLEMENTED, "%T.pushProjection: unreachable", in)
+	}
 }
