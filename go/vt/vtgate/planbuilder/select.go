@@ -92,6 +92,9 @@ func buildSelectPlan(query string) func(sqlparser.Statement, ContextVSchema) (en
 // pushed into a route, then a primitive is created on top of any
 // of the above trees to make it discard unwanted rows.
 func (pb *primitiveBuilder) processSelect(sel *sqlparser.Select, outer *symtab, query string) error {
+	if pb.newPlanner {
+		return pb.processSelect2(sel, outer, query)
+	}
 	// Check and error if there is any locking function present in select expression.
 	for _, expr := range sel.SelectExprs {
 		if aExpr, ok := expr.(*sqlparser.AliasedExpr); ok && sqlparser.IsLockingFunc(aExpr.Expr) {
@@ -104,7 +107,7 @@ func (pb *primitiveBuilder) processSelect(sel *sqlparser.Select, outer *symtab, 
 		}
 		sel.SQLCalcFoundRows = false
 		if sel.Limit != nil {
-			plan, err := buildSQLCalcFoundRowsPlan(query, sel, outer, pb.vschema)
+			plan, err := buildSQLCalcFoundRowsPlan(query, sel, nil, pb.vschema)
 			if err != nil {
 				return err
 			}
@@ -118,24 +121,11 @@ func (pb *primitiveBuilder) processSelect(sel *sqlparser.Select, outer *symtab, 
 		return mysql.NewSQLError(mysql.ERCantUseOptionHere, mysql.SSSyntaxErrorOrAccessViolation, "Incorrect usage/placement of 'INTO'")
 	}
 
-	if err := pb.processTableExprs(sel.From); err != nil {
-		return err
-	}
-
-	directives := sqlparser.ExtractCommentDirectives(sel.Comments)
-	err := pb.applyDirectivesAndCheckRoutes(directives)
+	err := pb.planJoinTree(sel, outer, query)
 	if err != nil {
 		return err
 	}
 
-	// Set the outer symtab after processing of FROM clause.
-	// This is because correlation is not allowed there.
-	pb.st.Outer = outer
-	if sel.Where != nil {
-		if err := pb.pushFilter(sel.Where.Expr, sqlparser.WhereStr); err != nil {
-			return err
-		}
-	}
 	if err := pb.checkAggregates(sel); err != nil {
 		return err
 	}
@@ -155,6 +145,46 @@ func (pb *primitiveBuilder) processSelect(sel *sqlparser.Select, outer *symtab, 
 	}
 
 	return setMiscFunc(pb.plan, sel)
+}
+
+func (pb *primitiveBuilder) planJoinTree(sel *sqlparser.Select, outer *symtab, query string) error {
+
+	if err := pb.processTableExprs(sel.From); err != nil {
+		return err
+	}
+
+	directives := sqlparser.ExtractCommentDirectives(sel.Comments)
+	err := pb.applyDirectivesAndCheckRoutes(directives)
+	if err != nil {
+		return err
+	}
+
+	// Set the outer symtab after processing of FROM clause.
+	// This is because correlation is not allowed there.
+	pb.st.Outer = outer
+	if sel.Where != nil {
+		if err := pb.pushFilter(sel.Where.Expr, sqlparser.WhereStr); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (pb *primitiveBuilder) processSelect2(sel *sqlparser.Select, outer *symtab, query string) error {
+	err := pb.planJoinTree(sel, outer, query)
+	if err != nil {
+		return vterrors.Wrapf(err, "failed to plan the query horizon")
+	}
+
+	horizon, err := pb.analyseSelectExpr(sel)
+	if err != nil {
+		return vterrors.Wrapf(err, "failed to plan the query horizon")
+	}
+	err = pb.planHorizon(sel, horizon)
+	if err != nil {
+		return vterrors.Wrapf(err, "failed to plan the query horizon")
+	}
+	return nil
 }
 
 func (pb *primitiveBuilder) applyDirectivesAndCheckRoutes(directives sqlparser.CommentDirectives) error {

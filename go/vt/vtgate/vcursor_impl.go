@@ -579,6 +579,11 @@ func (vc *vcursorImpl) SysVarSetEnabled() bool {
 	return *sysVarSetEnabled
 }
 
+// SysVarSetEnabled implements the SessionActions interface
+func (vc *vcursorImpl) NewPlanner() bool {
+	return false
+}
+
 // SetFoundRows implements the SessionActions interface
 func (vc *vcursorImpl) SetFoundRows(foundRows uint64) {
 	vc.safeSession.FoundRows = foundRows

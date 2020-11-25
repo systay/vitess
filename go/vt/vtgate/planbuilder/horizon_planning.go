@@ -127,11 +127,13 @@ func columnForQualifiedStar(col sqlparser.ColIdent, tableName sqlparser.TableNam
 	}
 }
 
-func (pb *primitiveBuilder) analyseSelectExpr(input sqlparser.SelectExprs) (*Horizon, error) {
-	stillHasStars, selectExprs, err := expandStars(pb.st.AllTables(), input, pb.st.FindTable)
+func (pb *primitiveBuilder) analyseSelectExpr(sel *sqlparser.Select) (*Horizon, error) {
+	stillHasStars, selectExprs, err := expandStars(pb.st.AllTables(), sel.SelectExprs, pb.st.FindTable)
 	if err != nil {
 		return nil, err
 	}
+	sel.SelectExprs = selectExprs
+
 	result := &Horizon{hasStar: stillHasStars}
 	if stillHasStars {
 		// We'll allow select * for simple routes.
@@ -170,4 +172,15 @@ func isAggregateExpression(expr sqlparser.Expr) bool {
 		}
 	}
 	return false
+}
+
+func (pb *primitiveBuilder) planHorizon(sel *sqlparser.Select, horizon *Horizon) error {
+	rb, isRoute := pb.plan.(*route)
+	if isRoute {
+		// since we can push down all of the aggregation to the route,
+		// we don't need to do anything else here
+		rb.Select = sel
+		return nil
+	}
+	return nil
 }

@@ -26,6 +26,8 @@ import (
 	"strings"
 	"testing"
 
+	"vitess.io/vitess/go/test/utils"
+
 	"github.com/google/go-cmp/cmp"
 
 	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
@@ -280,10 +282,15 @@ type vschemaWrapper struct {
 	tabletType    topodatapb.TabletType
 	dest          key.Destination
 	sysVarEnabled bool
+	newPlanner    bool
 }
 
 func (vw *vschemaWrapper) SysVarSetEnabled() bool {
 	return vw.sysVarEnabled
+}
+
+func (vw *vschemaWrapper) NewPlanner() bool {
+	return vw.newPlanner
 }
 
 func (vw *vschemaWrapper) TargetDestination(qualifier string) (key.Destination, *vindexes.Keyspace, topodatapb.TabletType, error) {
@@ -358,10 +365,12 @@ func testFile(t *testing.T, filename, tempDir string, vschema *vschemaWrapper) {
 		expected := &strings.Builder{}
 		fail := false
 		for tcase := range iterateExecFile(filename) {
+			var out string
 			t.Run(tcase.comments, func(t *testing.T) {
+				vschema.newPlanner = false
 				plan, err := Build(tcase.input, vschema)
 
-				out := getPlanOrErrorOutput(err, plan)
+				out = getPlanOrErrorOutput(err, plan)
 
 				if out != tcase.output {
 					fail = true
@@ -371,9 +380,24 @@ func testFile(t *testing.T, filename, tempDir string, vschema *vschemaWrapper) {
 				if err != nil {
 					out = `"` + out + `"`
 				}
-
 				expected.WriteString(fmt.Sprintf("%s\"%s\"\n%s\n\n", tcase.comments, tcase.input, out))
 			})
+			t.Run(tcase.comments+" - new planner", func(t *testing.T) {
+				defer func() {
+					if r := recover(); r != nil {
+						t.Fatalf(fmt.Sprintf("panicked: %v", r))
+					}
+				}()
+				vschema.newPlanner = true
+				plan2, err := Build(tcase.input, vschema)
+
+				out2 := getPlanOrErrorOutput(err, plan2)
+				if out != out2 {
+					t.Errorf("File: %s, Line: %d\nDiff:\n%s\nWant: [%s] \nGot: [%s]", filename, tcase.lineno, cmp.Diff(out, out2), out, out2)
+				}
+				utils.MustMatch(t, out, out2, "new planner and old planner disagree")
+			})
+
 		}
 		if fail && tempDir != "" {
 			gotFile := fmt.Sprintf("%s/%s", tempDir, filename)

@@ -21,15 +21,17 @@ package planbuilder
 // the jointab. It can create transient planBuilders due
 // to the recursive nature of SQL.
 type primitiveBuilder struct {
-	vschema ContextVSchema
-	jt      *jointab
-	plan    logicalPlan
-	st      *symtab
+	vschema    ContextVSchema
+	jt         *jointab
+	plan       logicalPlan
+	st         *symtab
+	newPlanner bool
 }
 
 func newPrimitiveBuilder(vschema ContextVSchema, jt *jointab) *primitiveBuilder {
 	return &primitiveBuilder{
-		vschema: vschema,
-		jt:      jt,
+		vschema:    vschema,
+		jt:         jt,
+		newPlanner: vschema.NewPlanner(),
 	}
 }
