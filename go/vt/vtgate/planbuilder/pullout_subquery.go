@@ -32,14 +32,14 @@ type pulloutSubquery struct {
 	order      int
 	subquery   logicalPlan
 	underlying logicalPlan
-	eSubquery  *engine.PulloutSubquery
+	primitive  *engine.PulloutSubquery
 }
 
 // newPulloutSubquery builds a new pulloutSubquery.
 func newPulloutSubquery(opcode engine.PulloutOpcode, sqName, hasValues string, subquery logicalPlan) *pulloutSubquery {
 	return &pulloutSubquery{
 		subquery: subquery,
-		eSubquery: &engine.PulloutSubquery{
+		primitive: &engine.PulloutSubquery{
 			Opcode:         opcode,
 			SubqueryResult: sqName,
 			HasValues:      hasValues,
@@ -68,9 +68,9 @@ func (ps *pulloutSubquery) Reorder(order int) {
 
 // Primitive implements the logicalPlan interface
 func (ps *pulloutSubquery) Primitive() engine.Primitive {
-	ps.eSubquery.Subquery = ps.subquery.Primitive()
-	ps.eSubquery.Underlying = ps.underlying.Primitive()
-	return ps.eSubquery
+	ps.primitive.Subquery = ps.subquery.Primitive()
+	ps.primitive.Underlying = ps.underlying.Primitive()
+	return ps.primitive
 }
 
 // ResultColumns implements the logicalPlan interface

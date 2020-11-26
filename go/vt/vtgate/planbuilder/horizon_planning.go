@@ -143,7 +143,8 @@ func (pb *primitiveBuilder) analyseSelectExpr(sel *sqlparser.Select) (*Horizon, 
 
 	result := &Horizon{hasStar: stillHasStars}
 	if stillHasStars {
-		// We'll allow select * for simple routes.
+		// There is no point to continue to plan here.
+		// we might still allow this query, if it is a single sharded route
 		return result, nil
 	}
 	for _, node := range selectExprs {
@@ -183,53 +184,75 @@ func isAggregateExpression(expr sqlparser.Expr) bool {
 
 func (pb *primitiveBuilder) planHorizon(sel *sqlparser.Select, horizon *Horizon) error {
 	rb, isRoute := pb.plan.(*route)
-	if isRoute {
+	if isRoute && len(horizon.aggregateFuncs) == 0 {
 		// since we can push down all of the aggregation to the route,
 		// we don't need to do anything else here
 		rb.Select = sel
 		return nil
 	}
+
 	resultColumns := make([]*resultColumn, 0, len(horizon.projections)+len(horizon.aggregateFuncs))
 	for _, projection := range horizon.projections {
-		newBuilder, rc, _, err := pb.pushProjection(pb.plan, projection.expr, projection.origin)
+		rc, _, err := pb.pushProjection(pb.plan, projection.expr, projection.origin)
 		if err != nil {
 			return err
 		}
-		pb.plan = newBuilder
 		resultColumns = append(resultColumns, rc)
+	}
+	if len(horizon.aggregateFuncs) > 0 {
+		newColumns, err := pb.planAggregation(rb, horizon)
+		if err != nil {
+			return err
+		}
+		resultColumns = append(resultColumns, newColumns...)
 	}
 	pb.st.SetResultColumns(resultColumns)
 	return nil
 }
 
-func (pb *primitiveBuilder) pushProjection(in logicalPlan, expr *sqlparser.AliasedExpr, origin logicalPlan) (logicalPlan, *resultColumn, int, error) {
+func (pb *primitiveBuilder) planAggregation(rb *route, horizon *Horizon) ([]*resultColumn, error) {
+	var resultColumns []*resultColumn
+	eaggr := &engine.OrderedAggregate{}
+	newPlan := &orderedAggregate{
+		resultsBuilder: newResultsBuilder(rb, eaggr),
+		eaggr:          eaggr,
+	}
+	pb.plan = newPlan
+	for _, aggrFunc := range horizon.aggregateFuncs {
+		rc, _, err := newPlan.pushAggr2(pb, aggrFunc.expr, aggrFunc.origin)
+		if err != nil {
+			return nil, err
+		}
+		resultColumns = append(resultColumns, rc)
+	}
+	return resultColumns, nil
+}
+
+func (pb *primitiveBuilder) pushProjection(in logicalPlan, expr *sqlparser.AliasedExpr, origin logicalPlan) (*resultColumn, int, error) {
 	switch node := in.(type) {
 	case *join:
 		var rc *resultColumn
 		if node.isOnLeft(origin.Order()) {
-			newLeft, col, colNumber, err := pb.pushProjection(node.Left, expr, origin)
+			col, colNumber, err := pb.pushProjection(node.Left, expr, origin)
 			if err != nil {
-				return nil, nil, 0, err
+				return nil, 0, err
 			}
 			node.ejoin.Cols = append(node.ejoin.Cols, -colNumber-1)
 			rc = col
-			node.Left = newLeft
 		} else {
 			// Pushing of non-trivial expressions not allowed for RHS of left joins.
 			if _, ok := expr.Expr.(*sqlparser.ColName); !ok && node.ejoin.Opcode == engine.LeftJoin {
-				return nil, nil, 0, vterrors.New(vtrpcpb.Code_UNIMPLEMENTED, "unsupported: cross-shard left join and column expressions")
+				return nil, 0, vterrors.New(vtrpcpb.Code_UNIMPLEMENTED, "unsupported: cross-shard left join and column expressions")
 			}
-
-			newRight, col, colNumber, err := pb.pushProjection(node.Right, expr, origin)
+			col, colNumber, err := pb.pushProjection(node.Right, expr, origin)
 			if err != nil {
-				return nil, nil, 0, err
+				return nil, 0, err
 			}
 			node.ejoin.Cols = append(node.ejoin.Cols, colNumber+1)
 			rc = col
-			node.Right = newRight
 		}
 		node.resultColumns = append(node.resultColumns, rc)
-		return in, rc, len(node.resultColumns) - 1, nil
+		return rc, len(node.resultColumns) - 1, nil
 
 	case *route:
 		sel := node.Select.(*sqlparser.Select)
@@ -237,9 +260,9 @@ func (pb *primitiveBuilder) pushProjection(in logicalPlan, expr *sqlparser.Alias
 
 		rc := newResultColumn(expr, node)
 		node.resultColumns = append(node.resultColumns, rc)
-		return node, rc, len(node.resultColumns) - 1, nil
+		return rc, len(node.resultColumns) - 1, nil
 
 	default:
-		return nil, nil, 0, vterrors.Errorf(vtrpcpb.Code_UNIMPLEMENTED, "%T.pushProjection: unreachable", in)
+		return nil, 0, vterrors.Errorf(vtrpcpb.Code_UNIMPLEMENTED, "%T.pushProjection: unreachable", in)
 	}
 }

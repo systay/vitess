@@ -234,6 +234,36 @@ func (oa *orderedAggregate) Primitive() engine.Primitive {
 	return oa.eaggr
 }
 
+func (oa *orderedAggregate) pushAggr2(pb *primitiveBuilder, expr *sqlparser.AliasedExpr, origin logicalPlan) (rc *resultColumn, colNumber int, err error) {
+	funcExpr := expr.Expr.(*sqlparser.FuncExpr)
+	opcode := engine.SupportedAggregates[funcExpr.Name.Lowered()]
+	if len(funcExpr.Exprs) != 1 {
+		return nil, 0, fmt.Errorf("unsupported: only one expression allowed inside aggregates: %s", sqlparser.String(funcExpr))
+	}
+	handleDistinct, _, err := oa.needDistinctHandling(pb, funcExpr, opcode)
+	if err != nil {
+		return nil, 0, err
+	}
+	if handleDistinct {
+		// TODO
+	} else {
+		_, innerCol, err := pb.pushProjection(oa.input, expr, origin)
+		if err != nil {
+			return nil, 0, err
+		}
+		oa.eaggr.Aggregates = append(oa.eaggr.Aggregates, engine.AggregateParams{
+			Opcode: opcode,
+			Col:    innerCol,
+		})
+	}
+
+	// Build a new rc with oa as origin because it's semantically different
+	// from the expression we pushed down.
+	rc = newResultColumn(expr, oa)
+	oa.resultColumns = append(oa.resultColumns, rc)
+	return rc, len(oa.resultColumns) - 1, nil
+}
+
 func (oa *orderedAggregate) pushAggr(pb *primitiveBuilder, expr *sqlparser.AliasedExpr, origin logicalPlan) (rc *resultColumn, colNumber int, err error) {
 	funcExpr := expr.Expr.(*sqlparser.FuncExpr)
 	opcode := engine.SupportedAggregates[funcExpr.Name.Lowered()]
