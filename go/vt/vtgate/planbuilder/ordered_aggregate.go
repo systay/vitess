@@ -20,6 +20,8 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
+	"vitess.io/vitess/go/vt/vterrors"
 
 	"vitess.io/vitess/go/sqltypes"
 	"vitess.io/vitess/go/vt/sqlparser"
@@ -238,7 +240,7 @@ func (oa *orderedAggregate) pushAggr2(pb *primitiveBuilder, expr *sqlparser.Alia
 	funcExpr := expr.Expr.(*sqlparser.FuncExpr)
 	opcode := engine.SupportedAggregates[funcExpr.Name.Lowered()]
 	if len(funcExpr.Exprs) != 1 {
-		return nil, 0, fmt.Errorf("unsupported: only one expression allowed inside aggregates: %s", sqlparser.String(funcExpr))
+		return nil, 0, vterrors.Errorf(vtrpcpb.Code_UNIMPLEMENTED, "unsupported: only one expression allowed inside aggregates: %s", sqlparser.String(funcExpr))
 	}
 	handleDistinct, _, err := oa.needDistinctHandling(pb, funcExpr, opcode)
 	if err != nil {
