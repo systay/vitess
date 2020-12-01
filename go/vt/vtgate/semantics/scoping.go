@@ -52,11 +52,13 @@ func (a *analyzer) scopeExprs(n sqlparser.SQLNode) (bool, error) {
 	case *sqlparser.Subquery:
 		a.exprScope[expr] = current
 		a.push(newScope(current))
-		if err := a.analyze(expr.Select); err != nil {
-			return false, err
-		}
+		//deps, err := a.analyze(expr.Select)
+		//if err != nil {
+		//	return false, err
+		//}
 		a.pop()
 		return false, nil
+		
 	case sqlparser.Expr:
 		a.exprScope[expr] = current
 	}

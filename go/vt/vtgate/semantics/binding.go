@@ -26,6 +26,7 @@ import (
 func (a *analyzer) bindExpr(n sqlparser.SQLNode, childrenState []interface{}) (interface{}, error) {
 	current := a.peek()
 	log(n, "%d bindExpr %T", current.i, n)
+	
 
 	deps := collectChildrenDeps(childrenState)
 
@@ -99,7 +100,7 @@ func (a *analyzer) bindTable(alias *sqlparser.AliasedTableExpr, expr sqlparser.S
 	switch t := expr.(type) {
 	case *sqlparser.DerivedTable:
 		a.push(newScope(nil))
-		if err := a.analyze(t.Select); err != nil {
+		if _, err := a.analyze(t.Select); err != nil {
 			return err
 		}
 		a.pop()
