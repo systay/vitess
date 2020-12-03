@@ -1534,6 +1534,8 @@ func VisitWithState(
 					todo = append(todo, &pre{n.Hints})
 					todo = append(todo, &pre{n.Partitions})
 
+				case *AlterDatabase:
+
 				case *AndExpr:
 					todo = append(todo, &pre{n.Left})
 					todo = append(todo, &pre{n.Right})
