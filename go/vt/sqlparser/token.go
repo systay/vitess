@@ -44,7 +44,7 @@ type Tokenizer struct {
 	LastError           error
 	posVarIndex         int
 	ParseTree           Statement
-	partialDDL          *DDL
+	partialDDL          Statement
 	nesting             int
 	multi               bool
 	specialComment      *Tokenizer
@@ -88,6 +88,7 @@ var keywords = map[string]int{
 	"action":              ACTION,
 	"add":                 ADD,
 	"against":             AGAINST,
+	"algorithm":           ALGORITHM,
 	"all":                 ALL,
 	"alter":               ALTER,
 	"analyze":             ANALYZE,
@@ -131,6 +132,7 @@ var keywords = map[string]int{
 	"constraint":          CONSTRAINT,
 	"continue":            UNUSED,
 	"convert":             CONVERT,
+	"copy":                COPY,
 	"substr":              SUBSTR,
 	"substring":           SUBSTRING,
 	"create":              CREATE,
@@ -159,6 +161,7 @@ var keywords = map[string]int{
 	"desc":                DESC,
 	"describe":            DESCRIBE,
 	"deterministic":       UNUSED,
+	"directory":           DIRECTORY,
 	"distinct":            DISTINCT,
 	"distinctrow":         DISTINCTROW,
 	"div":                 DIV,
@@ -176,6 +179,7 @@ var keywords = map[string]int{
 	"enum":                ENUM,
 	"escape":              ESCAPE,
 	"escaped":             ESCAPED,
+	"exclusive":           EXCLUSIVE,
 	"exists":              EXISTS,
 	"exit":                UNUSED,
 	"explain":             EXPLAIN,
@@ -217,6 +221,7 @@ var keywords = map[string]int{
 	"infile":              UNUSED,
 	"inout":               UNUSED,
 	"inner":               INNER,
+	"inplace":             INPLACE,
 	"insensitive":         UNUSED,
 	"insert":              INSERT,
 	"int":                 INT,
@@ -276,11 +281,13 @@ var keywords = map[string]int{
 	"multilinestring":     MULTILINESTRING,
 	"multipoint":          MULTIPOINT,
 	"multipolygon":        MULTIPOLYGON,
+	"name":                NAME,
 	"names":               NAMES,
 	"natural":             NATURAL,
 	"nchar":               NCHAR,
 	"next":                NEXT,
 	"no":                  NO,
+	"none":                NONE,
 	"not":                 NOT,
 	"no_write_to_binlog":  UNUSED,
 	"null":                NULL,
@@ -299,6 +306,7 @@ var keywords = map[string]int{
 	"outer":               OUTER,
 	"outfile":             OUTFILE,
 	"overwrite":           OVERWRITE,
+	"parser":              PARSER,
 	"partition":           PARTITION,
 	"plugins":             PLUGINS,
 	"point":               POINT,
@@ -342,6 +350,7 @@ var keywords = map[string]int{
 	"session":             SESSION,
 	"set":                 SET,
 	"share":               SHARE,
+	"shared":              SHARED,
 	"show":                SHOW,
 	"signal":              UNUSED,
 	"signed":              SIGNED,
@@ -393,6 +402,7 @@ var keywords = map[string]int{
 	"unlock":              UNLOCK,
 	"unsigned":            UNSIGNED,
 	"update":              UPDATE,
+	"upgrade":             UPGRADE,
 	"usage":               UNUSED,
 	"use":                 USE,
 	"using":               USING,

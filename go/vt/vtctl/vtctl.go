@@ -117,6 +117,7 @@ import (
 	"vitess.io/vitess/go/vt/wrangler"
 
 	replicationdatapb "vitess.io/vitess/go/vt/proto/replicationdata"
+	tabletmanagerdatapb "vitess.io/vitess/go/vt/proto/tabletmanagerdata"
 	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
 	vschemapb "vitess.io/vitess/go/vt/proto/vschema"
 	vtctldatapb "vitess.io/vitess/go/vt/proto/vtctldata"
@@ -406,8 +407,8 @@ var commands = []commandGroup{
 				"[-exclude_tables=''] [-include-views] [-skip-no-master] <keyspace name>",
 				"Validates that the master schema from shard 0 matches the schema on all of the other tablets in the keyspace."},
 			{"ApplySchema", commandApplySchema,
-				"[-allow_long_unavailability] [-wait_replicas_timeout=10s] {-sql=<sql> || -sql-file=<filename>} <keyspace>",
-				"Applies the schema change to the specified keyspace on every master, running in parallel on all shards. The changes are then propagated to replicas via replication. If -allow_long_unavailability is set, schema changes affecting a large number of rows (and possibly incurring a longer period of unavailability) will not be rejected."},
+				"[-allow_long_unavailability] [-wait_replicas_timeout=10s] [-ddl_strategy=<ddl_strategy>] {-sql=<sql> || -sql-file=<filename>} <keyspace>",
+				"Applies the schema change to the specified keyspace on every master, running in parallel on all shards. The changes are then propagated to replicas via replication. If -allow_long_unavailability is set, schema changes affecting a large number of rows (and possibly incurring a longer period of unavailability) will not be rejected. ddl_strategy is used to intruct migrations via gh-ost or pt-osc with optional parameters"},
 			{"CopySchemaShard", commandCopySchemaShard,
 				"[-tables=<table1>,<table2>,...] [-exclude_tables=<table1>,<table2>,...] [-include-views] [-skip-verify] [-wait_replicas_timeout=10s] {<source keyspace/shard> || <source tablet alias>} <destination keyspace/shard>",
 				"Copies the schema from a source shard's master (or a specific tablet) to a destination shard. The schema is applied directly on the master of the destination shard, and it is propagated to the replicas through binlogs."},
@@ -1909,19 +1910,32 @@ func commandMoveTables(ctx context.Context, wr *wrangler.Wrangler, subFlags *fla
 	workflow := subFlags.String("workflow", "", "Workflow name. Can be any descriptive string. Will be used to later migrate traffic via SwitchReads/SwitchWrites.")
 	cells := subFlags.String("cells", "", "Cell(s) or CellAlias(es) (comma-separated) to replicate from.")
 	tabletTypes := subFlags.String("tablet_types", "", "Source tablet types to replicate from (e.g. master, replica, rdonly). Defaults to -vreplication_tablet_type parameter value for the tablet, which has the default value of replica.")
+	allTables := subFlags.Bool("all", false, "Move all tables from the source keyspace")
+	excludes := subFlags.String("exclude", "", "Tables to exclude (comma-separated) if -all is specified")
+
 	if err := subFlags.Parse(args); err != nil {
 		return err
 	}
 	if *workflow == "" {
 		return fmt.Errorf("a workflow name must be specified")
 	}
-	if subFlags.NArg() != 3 {
-		return fmt.Errorf("three arguments are required: source_keyspace, target_keyspace, tableSpecs")
+	if !*allTables && len(*excludes) > 0 {
+		return fmt.Errorf("you can only specify tables to exclude if all tables are to be moved (with -all)")
 	}
+	if *allTables {
+		if subFlags.NArg() != 2 {
+			return fmt.Errorf("two arguments are required: source_keyspace, target_keyspace")
+		}
+	} else {
+		if subFlags.NArg() != 3 {
+			return fmt.Errorf("three arguments are required: source_keyspace, target_keyspace, tableSpecs")
+		}
+	}
+
 	source := subFlags.Arg(0)
 	target := subFlags.Arg(1)
 	tableSpecs := subFlags.Arg(2)
-	return wr.MoveTables(ctx, *workflow, source, target, tableSpecs, *cells, *tabletTypes)
+	return wr.MoveTables(ctx, *workflow, source, target, tableSpecs, *cells, *tabletTypes, *allTables, *excludes)
 }
 
 func commandCreateLookupVindex(ctx context.Context, wr *wrangler.Wrangler, subFlags *flag.FlagSet, args []string) error {
@@ -2301,6 +2315,8 @@ func commandGetSchema(ctx context.Context, wr *wrangler.Wrangler, subFlags *flag
 	excludeTables := subFlags.String("exclude_tables", "", "Specifies a comma-separated list of tables to exclude. Each is either an exact match, or a regular expression of the form /regexp/")
 	includeViews := subFlags.Bool("include-views", false, "Includes views in the output")
 	tableNamesOnly := subFlags.Bool("table_names_only", false, "Only displays table names that match")
+	tableSizesOnly := subFlags.Bool("table_sizes_only", false, "Only displays size information for tables. Ignored if -table_names_only is passed.")
+
 	if err := subFlags.Parse(args); err != nil {
 		return err
 	}
@@ -2330,6 +2346,21 @@ func commandGetSchema(ctx context.Context, wr *wrangler.Wrangler, subFlags *flag
 		}
 		return nil
 	}
+
+	if *tableSizesOnly {
+		sizeTds := make([]*tabletmanagerdatapb.TableDefinition, len(sd.TableDefinitions))
+		for i, td := range sd.TableDefinitions {
+			sizeTds[i] = &tabletmanagerdatapb.TableDefinition{
+				Name:       td.Name,
+				Type:       td.Type,
+				RowCount:   td.RowCount,
+				DataLength: td.DataLength,
+			}
+		}
+
+		sd.TableDefinitions = sizeTds
+	}
+
 	return printJSON(wr.Logger(), sd)
 }
 
@@ -2422,6 +2453,7 @@ func commandApplySchema(ctx context.Context, wr *wrangler.Wrangler, subFlags *fl
 	allowLongUnavailability := subFlags.Bool("allow_long_unavailability", false, "Allow large schema changes which incur a longer unavailability of the database.")
 	sql := subFlags.String("sql", "", "A list of semicolon-delimited SQL commands")
 	sqlFile := subFlags.String("sql-file", "", "Identifies the file that contains the SQL commands")
+	ddlStrategy := subFlags.String("ddl_strategy", "", "Online DDL strategy, compatible with @@ddl_strategy session variable (examples: 'gh-ost', 'pt-osc', 'gh-ost --max-load=Threads_running=100'")
 	// for backwards compatibility
 	deprecatedTimeout := subFlags.Duration("wait_slave_timeout", wrangler.DefaultWaitReplicasTimeout, "DEPRECATED -- use -wait_replicas_timeout")
 	waitReplicasTimeout := subFlags.Duration("wait_replicas_timeout", wrangler.DefaultWaitReplicasTimeout, "The amount of time to wait for replicas to receive the schema change via replication.")
@@ -2445,6 +2477,10 @@ func commandApplySchema(ctx context.Context, wr *wrangler.Wrangler, subFlags *fl
 	if *allowLongUnavailability {
 		executor.AllowBigSchemaChange()
 	}
+	if err := executor.SetDDLStrategy(*ddlStrategy); err != nil {
+		return nil
+	}
+
 	return schemamanager.Run(
 		ctx,
 		schemamanager.NewPlainController(change, keyspace),
@@ -2731,7 +2767,7 @@ func commandApplyVSchema(ctx context.Context, wr *wrangler.Wrangler, subFlags *f
 		if err != nil {
 			return fmt.Errorf("error parsing vschema statement `%s`: %v", *sql, err)
 		}
-		ddl, ok := stmt.(*sqlparser.DDL)
+		ddl, ok := stmt.(sqlparser.DDLStatement)
 		if !ok {
 			return fmt.Errorf("error parsing vschema statement `%s`: not a ddl statement", *sql)
 		}

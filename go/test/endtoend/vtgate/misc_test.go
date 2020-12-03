@@ -85,6 +85,21 @@ func TestCastConvert(t *testing.T) {
 	assertMatches(t, conn, `SELECT CAST("test" AS CHAR(60))`, `[[VARCHAR("test")]]`)
 }
 
+func TestCompositeIN(t *testing.T) {
+	conn, err := mysql.Connect(context.Background(), &vtParams)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	// clean up before & after
+	exec(t, conn, "delete from t1")
+	defer exec(t, conn, "delete from t1")
+
+	exec(t, conn, "insert into t1(id1, id2) values(1, 2), (4, 5)")
+
+	// Just check for correct results. Plan generation is tested in unit tests.
+	assertMatches(t, conn, "select id1 from t1 where (id1, id2) in ((1, 2))", "[[INT64(1)]]")
+}
+
 func TestUnionAll(t *testing.T) {
 	conn, err := mysql.Connect(context.Background(), &vtParams)
 	require.NoError(t, err)
@@ -448,6 +463,20 @@ func TestDistinct(t *testing.T) {
 	exec(t, conn, "delete from t3")
 	exec(t, conn, "delete from t7_xxhash")
 	exec(t, conn, "delete from aggr_test")
+}
+
+func TestCreateIndex(t *testing.T) {
+	defer cluster.PanicHandler(t)
+	ctx := context.Background()
+	conn, err := mysql.Connect(ctx, &vtParams)
+	require.NoError(t, err)
+	defer conn.Close()
+	// Test that create index with the correct table name works
+	_, err = conn.ExecuteFetch(`create index i1 on t1 (id1)`, 1000, true)
+	require.NoError(t, err)
+	// Test routing rules for create index.
+	_, err = conn.ExecuteFetch(`create index i2 on ks.t1000 (id1)`, 1000, true)
+	require.NoError(t, err)
 }
 
 func assertMatches(t *testing.T, conn *mysql.Conn, query, expected string) {

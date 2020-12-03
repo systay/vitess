@@ -19,6 +19,9 @@ package planbuilder
 import (
 	"errors"
 
+	"vitess.io/vitess/go/sqltypes"
+	querypb "vitess.io/vitess/go/vt/proto/query"
+
 	"vitess.io/vitess/go/vt/vterrors"
 
 	"vitess.io/vitess/go/vt/key"
@@ -44,6 +47,7 @@ type ContextVSchema interface {
 	FirstSortedKeyspace() (*vindexes.Keyspace, error)
 	SysVarSetEnabled() bool
 	NewPlanner() bool
+	KeyspaceExists(keyspace string) bool
 }
 
 type truncater interface {
@@ -102,14 +106,11 @@ func createInstructionFor(query string, stmt sqlparser.Statement, vschema Contex
 		return buildRoutePlan(stmt, vschema, buildDeletePlan)
 	case *sqlparser.Union:
 		return buildRoutePlan(stmt, vschema, buildUnionPlan)
-	case *sqlparser.DDL:
+	case sqlparser.DDLStatement:
 		if sqlparser.IsVschemaDDL(stmt) {
 			return buildVSchemaDDLPlan(stmt, vschema)
 		}
-		if sqlparser.IsOnlineSchemaDDL(stmt, query) {
-			return buildOnlineDDLPlan(query, stmt, vschema)
-		}
-		return buildDDLPlan(query, stmt, vschema)
+		return buildGeneralDDLPlan(query, stmt, vschema)
 	case *sqlparser.Use:
 		return buildUsePlan(stmt, vschema)
 	case *sqlparser.Explain:
@@ -127,8 +128,8 @@ func createInstructionFor(query string, stmt sqlparser.Statement, vschema Contex
 		return buildSetPlan(stmt, vschema)
 	case *sqlparser.Load:
 		return buildLoadPlan(query, vschema)
-	case *sqlparser.DBDDL:
-		return nil, vterrors.Errorf(vtrpcpb.Code_UNIMPLEMENTED, "unsupported: Database DDL %v", sqlparser.String(stmt))
+	case sqlparser.DBDDLStatement:
+		return buildRoutePlan(stmt, vschema, buildDBDDLPlan)
 	case *sqlparser.SetTransaction:
 		return nil, ErrPlanNotSupported
 	case *sqlparser.Begin, *sqlparser.Commit, *sqlparser.Rollback, *sqlparser.Savepoint, *sqlparser.SRollback, *sqlparser.Release:
@@ -139,6 +140,49 @@ func createInstructionFor(query string, stmt sqlparser.Statement, vschema Contex
 	}
 
 	return nil, vterrors.Errorf(vtrpcpb.Code_INTERNAL, "BUG: unexpected statement type: %T", stmt)
+}
+
+func buildDBDDLPlan(stmt sqlparser.Statement, vschema ContextVSchema) (engine.Primitive, error) {
+	dbDDLstmt := stmt.(sqlparser.DBDDLStatement)
+	ksName := dbDDLstmt.GetDatabaseName()
+	if ksName == "" {
+		ks, err := vschema.DefaultKeyspace()
+		if err != nil {
+			return nil, err
+		}
+		ksName = ks.Name
+	}
+	ksExists := vschema.KeyspaceExists(ksName)
+
+	switch dbDDL := dbDDLstmt.(type) {
+	case *sqlparser.DBDDL:
+		switch dbDDL.Action {
+		case sqlparser.DropDBDDLAction:
+			if dbDDL.IfExists && !ksExists {
+				return engine.NewRowsPrimitive(make([][]sqltypes.Value, 0), make([]*querypb.Field, 0)), nil
+			}
+			if !ksExists {
+				return nil, vterrors.Errorf(vtrpcpb.Code_FAILED_PRECONDITION, "cannot drop database '%s'; database does not exists", ksName)
+			}
+			return nil, vterrors.New(vtrpcpb.Code_UNIMPLEMENTED, "drop database not allowed")
+		default:
+			return nil, vterrors.Errorf(vtrpcpb.Code_INTERNAL, "[BUG] unreachable code path: %s", sqlparser.String(dbDDLstmt))
+		}
+	case *sqlparser.AlterDatabase:
+		if !ksExists {
+			return nil, vterrors.Errorf(vtrpcpb.Code_FAILED_PRECONDITION, "cannot alter database '%s'; database does not exists", ksName)
+		}
+		return nil, vterrors.New(vtrpcpb.Code_UNIMPLEMENTED, "alter database not allowed")
+	case *sqlparser.CreateDatabase:
+		if dbDDL.IfNotExists && ksExists {
+			return engine.NewRowsPrimitive(make([][]sqltypes.Value, 0), make([]*querypb.Field, 0)), nil
+		}
+		if !dbDDL.IfNotExists && ksExists {
+			return nil, vterrors.Errorf(vtrpcpb.Code_ALREADY_EXISTS, "cannot create database '%s'; database exists", ksName)
+		}
+		return nil, vterrors.New(vtrpcpb.Code_UNIMPLEMENTED, "create database not allowed")
+	}
+	return nil, vterrors.Errorf(vtrpcpb.Code_INTERNAL, "[BUG] unreachable code path: %s", sqlparser.String(dbDDLstmt))
 }
 
 func buildLoadPlan(query string, vschema ContextVSchema) (engine.Primitive, error) {

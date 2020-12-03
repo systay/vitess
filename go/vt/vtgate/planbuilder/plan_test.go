@@ -285,6 +285,13 @@ type vschemaWrapper struct {
 	newPlanner    bool
 }
 
+func (vw *vschemaWrapper) KeyspaceExists(keyspace string) bool {
+	if vw.keyspace != nil {
+		return vw.keyspace.Name == keyspace
+	}
+	return false
+}
+
 func (vw *vschemaWrapper) SysVarSetEnabled() bool {
 	return vw.sysVarEnabled
 }

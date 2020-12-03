@@ -75,8 +75,9 @@ func Append(buf *strings.Builder, node SQLNode) {
 
 // IndexColumn describes a column in an index definition with optional length
 type IndexColumn struct {
-	Column ColIdent
-	Length *Literal
+	Column    ColIdent
+	Length    *Literal
+	Direction OrderDirection
 }
 
 // LengthScaleOption is used for types that have an optional length
@@ -86,11 +87,11 @@ type LengthScaleOption struct {
 	Scale  *Literal
 }
 
-// IndexOption is used for trailing options for indexes: COMMENT, KEY_BLOCK_SIZE, USING
+// IndexOption is used for trailing options for indexes: COMMENT, KEY_BLOCK_SIZE, USING, WITH PARSER
 type IndexOption struct {
-	Name  string
-	Value *Literal
-	Using string
+	Name   string
+	Value  *Literal
+	String string
 }
 
 // ColumnKeyOption indicates whether or not the given column is defined as an
@@ -146,17 +147,6 @@ const (
 	HexVal
 	BitVal
 )
-
-// AffectedTables returns the list table names affected by the DDL.
-func (node *DDL) AffectedTables() TableNames {
-	if node.Action == RenameDDLAction || node.Action == DropDDLAction {
-		list := make(TableNames, 0, len(node.FromTables)+len(node.ToTables))
-		list = append(list, node.FromTables...)
-		list = append(list, node.ToTables...)
-		return list
-	}
-	return TableNames{node.Table}
-}
 
 // AddColumn appends the given column to the list in the spec
 func (ts *TableSpec) AddColumn(cd *ColumnDefinition) {
@@ -1138,6 +1128,7 @@ func (ty ExplainType) ToString() string {
 	}
 }
 
+// ToString returns the type as a string
 func (sel SelectIntoType) ToString() string {
 	switch sel {
 	case IntoOutfile:
@@ -1148,6 +1139,18 @@ func (sel SelectIntoType) ToString() string {
 		return IntoDumpfileStr
 	default:
 		return "Unknown Select Into Type"
+	}
+}
+
+// ToString returns the type as a string
+func (node CollateAndCharsetType) ToString() string {
+	switch node {
+	case CharacterSetType:
+		return CharacterSetStr
+	case CollateType:
+		return CollateStr
+	default:
+		return "Unknown CollateAndCharsetType Type"
 	}
 }
 

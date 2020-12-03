@@ -32,9 +32,9 @@ var _ Primitive = (*OnlineDDL)(nil)
 //OnlineDDL represents the instructions to perform an online schema change via vtctld
 type OnlineDDL struct {
 	Keyspace *vindexes.Keyspace
-	DDL      *sqlparser.DDL
+	DDL      sqlparser.DDLStatement
 	SQL      string
-	Strategy sqlparser.DDLStrategy
+	Strategy schema.DDLStrategy
 	Options  string
 
 	noTxNeeded
@@ -47,7 +47,7 @@ func (v *OnlineDDL) description() PrimitiveDescription {
 		OperatorType: "OnlineDDL",
 		Keyspace:     v.Keyspace,
 		Other: map[string]interface{}{
-			"query": sqlparser.String(v.DDL),
+			"query": v.SQL,
 		},
 	}
 }
@@ -64,7 +64,7 @@ func (v *OnlineDDL) GetKeyspaceName() string {
 
 //GetTableName implements the Primitive interface
 func (v *OnlineDDL) GetTableName() string {
-	return v.DDL.Table.Name.String()
+	return v.DDL.GetTable().Name.String()
 }
 
 //Execute implements the Primitive interface
@@ -96,11 +96,15 @@ func (v *OnlineDDL) Execute(vcursor VCursor, bindVars map[string]*query.BindVari
 }
 
 //StreamExecute implements the Primitive interface
-func (v *OnlineDDL) StreamExecute(vcursor VCursor, bindVars map[string]*query.BindVariable, wantields bool, callback func(*sqltypes.Result) error) error {
-	return vterrors.Errorf(vtrpcpb.Code_INTERNAL, "not reachable") // TODO: shlomi - have no idea if this should work
+func (v *OnlineDDL) StreamExecute(vcursor VCursor, bindVars map[string]*query.BindVariable, wantfields bool, callback func(*sqltypes.Result) error) error {
+	results, err := v.Execute(vcursor, bindVars, wantfields)
+	if err != nil {
+		return err
+	}
+	return callback(results)
 }
 
 //GetFields implements the Primitive interface
 func (v *OnlineDDL) GetFields(vcursor VCursor, bindVars map[string]*query.BindVariable) (*sqltypes.Result, error) {
-	return nil, vterrors.Errorf(vtrpcpb.Code_INTERNAL, "not reachable") // TODO: shlomi - have no idea if this should work
+	return nil, vterrors.Errorf(vtrpcpb.Code_INTERNAL, "not reachable")
 }

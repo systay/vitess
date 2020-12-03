@@ -99,7 +99,11 @@ type vcursorImpl struct {
 	vm                    VSchemaOperator
 }
 
-func (vc *vcursorImpl) ExecuteVSchema(keyspace string, vschemaDDL *sqlparser.DDL) error {
+func (vc *vcursorImpl) GetKeyspace() string {
+	return vc.keyspace
+}
+
+func (vc *vcursorImpl) ExecuteVSchema(keyspace string, vschemaDDL sqlparser.DDLStatement) error {
 	srvVschema := vc.vm.GetCurrentSrvVschema()
 	if srvVschema == nil {
 		return vterrors.Errorf(vtrpcpb.Code_INTERNAL, "vschema not loaded")
@@ -113,8 +117,8 @@ func (vc *vcursorImpl) ExecuteVSchema(keyspace string, vschemaDDL *sqlparser.DDL
 
 	// Resolve the keyspace either from the table qualifier or the target keyspace
 	var ksName string
-	if !vschemaDDL.Table.IsEmpty() {
-		ksName = vschemaDDL.Table.Qualifier.String()
+	if !vschemaDDL.GetTable().IsEmpty() {
+		ksName = vschemaDDL.GetTable().Qualifier.String()
 	}
 	if ksName == "" {
 		ksName = keyspace
@@ -316,6 +320,16 @@ func (vc *vcursorImpl) FirstSortedKeyspace() (*vindexes.Keyspace, error) {
 	sort.Strings(keys)
 
 	return kss[keys[0]].Keyspace, nil
+}
+
+// SysVarSetEnabled implements the ContextVSchema interface
+func (vc *vcursorImpl) SysVarSetEnabled() bool {
+	return *sysVarSetEnabled
+}
+
+// KeyspaceExists provides whether the keyspace exists or not.
+func (vc *vcursorImpl) KeyspaceExists(ks string) bool {
+	return vc.vschema.Keyspaces[ks] != nil
 }
 
 // TargetString returns the current TargetString of the session.
@@ -575,11 +589,6 @@ func (vc *vcursorImpl) SetWorkload(workload querypb.ExecuteOptions_Workload) {
 }
 
 // SysVarSetEnabled implements the SessionActions interface
-func (vc *vcursorImpl) SysVarSetEnabled() bool {
-	return *sysVarSetEnabled
-}
-
-// SysVarSetEnabled implements the SessionActions interface
 func (vc *vcursorImpl) NewPlanner() bool {
 	return false
 }
@@ -591,8 +600,13 @@ func (vc *vcursorImpl) SetFoundRows(foundRows uint64) {
 }
 
 // SetReadAfterWriteGTID implements the SessionActions interface
-func (vc *vcursorImpl) SetDDLStrategy(strategy sqlparser.DDLStrategy) {
+func (vc *vcursorImpl) SetDDLStrategy(strategy string) {
 	vc.safeSession.SetDDLStrategy(strategy)
+}
+
+// SetReadAfterWriteGTID implements the SessionActions interface
+func (vc *vcursorImpl) GetDDLStrategy() string {
+	return vc.safeSession.GetDDLStrategy()
 }
 
 // SetReadAfterWriteGTID implements the SessionActions interface
