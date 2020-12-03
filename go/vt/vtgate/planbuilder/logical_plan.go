@@ -73,7 +73,10 @@ type logicalPlan interface {
 	Primitive() engine.Primitive
 
 	Inputs() []logicalPlan
+
 	Rewrite(inputs ...logicalPlan) error
+
+	Tables() []*sqlparser.AliasedTableExpr
 }
 
 //-------------------------------------------------------------------------
@@ -171,6 +174,11 @@ func (bc *logicalPlanCommon) Rewrite(inputs ...logicalPlan) error {
 // Inputs implements the logicalPlan interface
 func (bc *logicalPlanCommon) Inputs() []logicalPlan {
 	return []logicalPlan{bc.input}
+}
+
+// Tables implements the logicalPlan interface
+func (bc *logicalPlanCommon) Tables() []*sqlparser.AliasedTableExpr {
+	return bc.input.Tables()
 }
 
 //-------------------------------------------------------------------------

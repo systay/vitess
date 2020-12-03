@@ -20,6 +20,8 @@ import (
 	"errors"
 	"fmt"
 
+	"vitess.io/vitess/go/vt/vtgate/semantics"
+
 	"vitess.io/vitess/go/mysql"
 
 	"vitess.io/vitess/go/vt/key"
@@ -35,6 +37,13 @@ import (
 
 func buildSelectPlan(query string) func(sqlparser.Statement, ContextVSchema) (engine.Primitive, error) {
 	return func(stmt sqlparser.Statement, vschema ContextVSchema) (engine.Primitive, error) {
+		// TODO: we need to do it for all the statements and this should be moved out.
+		semTable, err := semantics.Analyse(stmt, nil)
+		if err != nil {
+			return nil, err
+		}
+		vschema.SetSemTable(semTable)
+
 		sel := stmt.(*sqlparser.Select)
 
 		p, err := handleDualSelects(sel, vschema)

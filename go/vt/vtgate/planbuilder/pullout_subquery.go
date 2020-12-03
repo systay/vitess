@@ -35,6 +35,10 @@ type pulloutSubquery struct {
 	primitive  *engine.PulloutSubquery
 }
 
+func (ps *pulloutSubquery) Tables() []*sqlparser.AliasedTableExpr {
+	return ps.underlying.Tables()
+}
+
 // newPulloutSubquery builds a new pulloutSubquery.
 func newPulloutSubquery(opcode engine.PulloutOpcode, sqName, hasValues string, subquery logicalPlan) *pulloutSubquery {
 	return &pulloutSubquery{

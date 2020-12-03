@@ -30,6 +30,10 @@ type sqlCalcFoundRows struct {
 	ljt, cjt               *jointab
 }
 
+func (s *sqlCalcFoundRows) Tables() []*sqlparser.AliasedTableExpr {
+	return s.LimitQuery.Tables()
+}
+
 //Wireup implements the logicalPlan interface
 func (s *sqlCalcFoundRows) Wireup(logicalPlan, *jointab) error {
 	err := s.LimitQuery.Wireup(s.LimitQuery, s.ljt)

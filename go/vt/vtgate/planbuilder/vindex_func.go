@@ -42,6 +42,10 @@ type vindexFunc struct {
 	eVindexFunc *engine.VindexFunc
 }
 
+func (vf *vindexFunc) Tables() []*sqlparser.AliasedTableExpr {
+	return []*sqlparser.AliasedTableExpr{}
+}
+
 func newVindexFunc(alias sqlparser.TableName, vindex vindexes.SingleColumn) (*vindexFunc, *symtab) {
 	vf := &vindexFunc{
 		order: 1,

@@ -65,17 +65,24 @@ type route struct {
 
 	// eroute is the primitive being built.
 	eroute *engine.Route
+
+	tables []*sqlparser.AliasedTableExpr
+}
+
+func (rb *route) Tables() []*sqlparser.AliasedTableExpr {
+	return rb.tables
 }
 
 type tableSubstitution struct {
 	newExpr, oldExpr *sqlparser.AliasedTableExpr
 }
 
-func newRoute(stmt sqlparser.SelectStatement) (*route, *symtab) {
+func newRoute(stmt sqlparser.SelectStatement, table *sqlparser.AliasedTableExpr) (*route, *symtab) {
 	rb := &route{
 		Select:        stmt,
 		order:         1,
 		weightStrings: make(map[*resultColumn]int),
+		tables:        []*sqlparser.AliasedTableExpr{table},
 	}
 	return rb, newSymtabWithRoute(rb)
 }

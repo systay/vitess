@@ -28,6 +28,10 @@ type concatenate struct {
 	order    int
 }
 
+func (c *concatenate) Tables() []*sqlparser.AliasedTableExpr {
+	return append(c.lhs.Tables(), c.rhs.Tables()...)
+}
+
 var _ logicalPlan = (*concatenate)(nil)
 
 func (c *concatenate) Order() int {

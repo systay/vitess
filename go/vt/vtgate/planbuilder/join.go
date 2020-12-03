@@ -69,6 +69,10 @@ type join struct {
 	ejoin *engine.Join
 }
 
+func (jb *join) Tables() []*sqlparser.AliasedTableExpr {
+	return append(jb.Left.Tables(), jb.Right.Tables()...)
+}
+
 // newJoin makes a new join using the two planBuilder. ajoin can be nil
 // if the join is on a ',' operator. lpb will contain the resulting join.
 // rpb will be discarded.

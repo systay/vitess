@@ -26,6 +26,8 @@ import (
 	"strings"
 	"testing"
 
+	"vitess.io/vitess/go/vt/vtgate/semantics"
+
 	"vitess.io/vitess/go/test/utils"
 
 	"github.com/google/go-cmp/cmp"
@@ -283,6 +285,15 @@ type vschemaWrapper struct {
 	dest          key.Destination
 	sysVarEnabled bool
 	newPlanner    bool
+	semTable      *semantics.SemTable
+}
+
+func (vw *vschemaWrapper) SetSemTable(semTable *semantics.SemTable) {
+	vw.semTable = semTable
+}
+
+func (vw *vschemaWrapper) GetSemTable() *semantics.SemTable {
+	return vw.semTable
 }
 
 func (vw *vschemaWrapper) KeyspaceExists(keyspace string) bool {

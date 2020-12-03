@@ -23,6 +23,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"vitess.io/vitess/go/vt/vtgate/semantics"
+
 	"golang.org/x/sync/errgroup"
 
 	"vitess.io/vitess/go/mysql"
@@ -97,6 +99,16 @@ type vcursorImpl struct {
 	ignoreMaxMemoryRows   bool
 	vschema               *vindexes.VSchema
 	vm                    VSchemaOperator
+
+	semTable *semantics.SemTable
+}
+
+func (vc *vcursorImpl) SetSemTable(semTable *semantics.SemTable) {
+	vc.semTable = semTable
+}
+
+func (vc *vcursorImpl) GetSemTable() *semantics.SemTable {
+	return vc.semTable
 }
 
 func (vc *vcursorImpl) GetKeyspace() string {
