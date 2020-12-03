@@ -48,9 +48,9 @@ func (a *analyzer) scopeUp(n sqlparser.SQLNode) {
 	}
 }
 
-func (a *analyzer) scopeDown(n sqlparser.SQLNode) (bool, error) {
+func (a *analyzer) analyzeDown(n sqlparser.SQLNode) (bool, error) {
 	current := a.currentScope()
-	log(n, "%p scopeDown %T", current, n)
+	log(n, "%p analyzeDown %T", current, n)
 	switch node := n.(type) {
 	case *sqlparser.Select:
 		a.push(newScope(current))
@@ -64,10 +64,9 @@ func (a *analyzer) scopeDown(n sqlparser.SQLNode) (bool, error) {
 		return false, nil
 
 	case *sqlparser.Subquery:
-		a.exprScope[node] = current
 		a.push(newScope(current))
 
-	case sqlparser.Expr:
+	case *sqlparser.ColName:
 		a.exprScope[node] = current
 	}
 	return true, nil

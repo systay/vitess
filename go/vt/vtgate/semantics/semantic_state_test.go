@@ -41,7 +41,7 @@ from x as t`
 
 	// extract the `t.col2` expression from the subquery
 	sel2 := sel.SelectExprs[1].(*sqlparser.AliasedExpr).Expr.(*sqlparser.Subquery).Select.(*sqlparser.Select)
-	s1 := semTable.dependencies(extract(sel2, 0))
+	s1 := semTable.Dependencies(extract(sel2, 0))
 
 	// if scoping works as expected, we should be able to see the inner table being used by the inner expression
 	assert.Equal(t, []string{"z as t"}, sortDeps(s1))
@@ -61,7 +61,7 @@ func TestBindingSingleTable(t *testing.T) {
 			stmt, semTable := parseAndAnalyze(t, query)
 			sel, _ := stmt.(*sqlparser.Select)
 
-			d := semTable.dependencies(extract(sel, 0))
+			d := semTable.Dependencies(extract(sel, 0))
 			require.NotEmpty(t, d)
 			require.NotNil(t, d[0])
 			require.Contains(t, sqlparser.String(d[0]), "tabl")
@@ -77,8 +77,8 @@ func TestUnion(t *testing.T) {
 	sel1 := union.FirstStatement.(*sqlparser.Select)
 	sel2 := union.UnionSelects[0].Statement.(*sqlparser.Select)
 
-	d1 := semTable.dependencies(extract(sel1, 0))
-	d2 := semTable.dependencies(extract(sel2, 0))
+	d1 := semTable.Dependencies(extract(sel1, 0))
+	d2 := semTable.Dependencies(extract(sel2, 0))
 	require.Contains(t, sortDeps(d1), "tabl1")
 	require.Contains(t, sortDeps(d2), "tabl2")
 }
@@ -99,7 +99,7 @@ func TestBindingMultiTable(t *testing.T) {
 		query: "select case t.col when s.col then r.col else w.col end from t, s, r, w, u",
 		deps:  d("r", "s", "t", "w"),
 	}, {
-		// make sure that we don't let sub-query dependencies leak out by mistake
+		// make sure that we don't let sub-query Dependencies leak out by mistake
 		query: "select t.col + (select 42 from s) from t",
 		deps:  d("t"),
 	}, {
@@ -111,7 +111,7 @@ func TestBindingMultiTable(t *testing.T) {
 			stmt, semTable := parseAndAnalyze(t, query.query)
 			sel, _ := stmt.(*sqlparser.Select)
 
-			d := semTable.dependencies(extract(sel, 0))
+			d := semTable.Dependencies(extract(sel, 0))
 			assert.Equal(t, query.deps, sortDeps(d))
 		})
 	}
@@ -131,7 +131,7 @@ func TestBindingSingleDepPerTable(t *testing.T) {
 	stmt, semTable := parseAndAnalyze(t, query)
 	sel, _ := stmt.(*sqlparser.Select)
 
-	d := semTable.dependencies(extract(sel, 0))
+	d := semTable.Dependencies(extract(sel, 0))
 	assert.Equal(t, 1, len(d), "size wrong")
 	assert.Equal(t, "t", sqlparser.String(d[0]))
 }

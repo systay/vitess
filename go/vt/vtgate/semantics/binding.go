@@ -29,29 +29,27 @@ func (a *analyzer) bindUp(n sqlparser.SQLNode, childrenState []interface{}) (int
 
 	deps := collectChildrenDeps(childrenState)
 
-	switch expr := n.(type) {
-	case *sqlparser.ColName:
-		var err error
-		var t table
-		if expr.Qualifier.IsEmpty() {
-			t, err = a.resolveUnQualifiedColumn(current, expr)
-		} else {
-			t, err = a.resolveQualifiedColumn(current, expr)
-		}
-		if err != nil {
-			return nil, err
-		}
-		deps = append(deps, t)
-		a.exprDeps[expr] = deps
-	case sqlparser.Expr:
-		a.exprDeps[expr] = deps
+	colName, ok := n.(*sqlparser.ColName)
+	if !ok {
+		return deps, nil
 	}
-
+	var err error
+	var t table
+	if colName.Qualifier.IsEmpty() {
+		t, err = a.resolveUnQualifiedColumn(current, colName)
+	} else {
+		t, err = a.resolveQualifiedColumn(current, colName)
+	}
+	if err != nil {
+		return nil, err
+	}
+	deps = append(deps, t)
+	a.exprDeps[colName] = deps
 	return deps, nil
 }
 
 func collectChildrenDeps(childrenState []interface{}) []table {
-	// if we have a single child, it's dependencies is all we need. we can cut short here
+	// if we have a single child, it's Dependencies is all we need. we can cut short here
 	if len(childrenState) == 1 {
 		return childrenState[0].([]table)
 	}
@@ -59,7 +57,7 @@ func collectChildrenDeps(childrenState []interface{}) []table {
 	type Void struct{}
 	var void Void
 	resultMap := map[table]Void{}
-	// adding dependencies through a map to make them unique
+	// adding Dependencies through a map to make them unique
 	for _, d := range childrenState {
 		dependencies := d.([]table)
 		for _, table := range dependencies {

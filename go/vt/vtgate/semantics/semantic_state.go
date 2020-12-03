@@ -31,14 +31,14 @@ type (
 	table = *sqlparser.AliasedTableExpr
 	// SemTable contains semantic analysis information about the query.
 	SemTable struct {
-		exprScope        map[sqlparser.Expr]*scope
-		exprDependencies map[sqlparser.Expr][]table
+		exprScope        map[*sqlparser.ColName]*scope
+		exprDependencies map[*sqlparser.ColName][]table
 	}
 	// analyzer is a struct to work with analyzing the query.
 	analyzer struct {
 		scopes    []*scope
-		exprScope map[sqlparser.Expr]*scope
-		exprDeps  map[sqlparser.Expr][]table
+		exprScope map[*sqlparser.ColName]*scope
+		exprDeps  map[*sqlparser.ColName][]table
 		si        schemaInformation
 	}
 	schemaInformation interface {
@@ -46,15 +46,33 @@ type (
 	}
 )
 
-func (t *SemTable) dependencies(expr sqlparser.Expr) []table {
-	return t.exprDependencies[expr]
+var void struct{}
+
+// Dependencies return the table dependencies of the expression.
+func (t *SemTable) Dependencies(expr sqlparser.Expr) []table {
+	depTable := map[table]struct{}{}
+	sqlparser.Walk(func(node sqlparser.SQLNode) (kontinue bool, err error) {
+		colName, ok := node.(*sqlparser.ColName)
+		if ok {
+			for _, tab := range t.exprDependencies[colName] {
+				depTable[tab] = void
+			}
+		}
+		return true, nil
+	}, expr)
+
+	var uniqTable []table
+	for tab := range depTable {
+		uniqTable = append(uniqTable, tab)
+	}
+	return uniqTable
 }
 
 // newAnalyzer create the semantic analyzer
 func newAnalyzer(si schemaInformation) *analyzer {
 	return &analyzer{
-		exprScope: map[sqlparser.Expr]*scope{},
-		exprDeps:  map[sqlparser.Expr][]table{},
+		exprScope: map[*sqlparser.ColName]*scope{},
+		exprDeps:  map[*sqlparser.ColName][]table{},
 		si:        si,
 	}
 }
@@ -86,7 +104,7 @@ func log(node sqlparser.SQLNode, format string, args ...interface{}) {
 
 func (a *analyzer) analyze(statement sqlparser.Statement) ([]table, error) {
 	log(statement, "analyse %T", statement)
-	deps, err := sqlparser.VisitWithState(statement, a.scopeDown, a.analyzeUp)
+	deps, err := sqlparser.VisitWithState(statement, a.analyzeDown, a.analyzeUp)
 	if err != nil {
 		return nil, err
 	}
