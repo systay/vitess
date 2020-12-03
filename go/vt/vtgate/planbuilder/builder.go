@@ -61,6 +61,7 @@ func Build(query string, vschema ContextVSchema) (*engine.Plan, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	result, err := sqlparser.RewriteAST(stmt)
 	if err != nil {
 		return nil, err
