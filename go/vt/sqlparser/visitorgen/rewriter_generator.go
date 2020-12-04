@@ -40,7 +40,6 @@ func GenerateRewriter(astFile, outfile string, compareOnly bool) error {
 
 	replacementMethods := EmitReplacementMethods(vd)
 	applyTypeSwitch := EmitApplyTypeSwitches(vd)
-	visitWithStateSwitch := EmitVisitWithStateTypeSwitches(vd)
 
 	b := &bytes.Buffer{}
 	fmt.Fprint(b, fileHeader)
@@ -48,8 +47,6 @@ func GenerateRewriter(astFile, outfile string, compareOnly bool) error {
 	fmt.Fprintln(b, replacementMethods)
 	fmt.Fprint(b, applyHeader)
 	fmt.Fprintln(b, applyTypeSwitch)
-	fmt.Fprint(b, visitWithStateHeader)
-	fmt.Fprintln(b, visitWithStateSwitch)
 	fmt.Fprintln(b, fileFooter)
 
 	if compareOnly {
@@ -112,7 +109,7 @@ func (a *application) apply(parent, node SQLNode, replacer replacerFunc) {
 	switch n := node.(type) {
 	`
 
-const visitWithStateHeader = `
+const fileFooter = `
 	default:
 		panic("unknown ast type " + reflect.TypeOf(node).String())
 	}
@@ -122,86 +119,6 @@ const visitWithStateHeader = `
 	}
 
 	a.cursor = saved
-}
-
-type (
-	action interface {
-		act()
-	}
-	pre struct {
-		n SQLNode
-	}
-	post struct {
-		n      SQLNode
-		states []interface{}
-	}
-)
-
-func (*pre) act()  {}
-func (*post) act() {}
-
-// VisitWithState does a visit of the tree, and allows
-// for the accumulation of state when coming up from the leaves
-// preF is the visitor that will visit nodes on the way down the tree.
-//      if it returns false, postF will not be called on this node, and it's children will not be visited
-//      if it returns an error, the visitation is aborted and the error is returned
-// postF is the visitor that will be called after all the children have been visited.
-//      As inputs, it accepts the visited node, and the state from the postF calls of the children
-//      It returns a state, and an error. If the error is non nil, visitation is aborted and the error is returned
-//      the state is added to the parents postF call
-func VisitWithState(
-	root SQLNode,
-	preF func(SQLNode) (bool, error),
-	postF func(sqlNode SQLNode, childrenStates []interface{}) (interface{}, error)) (interface{}, error) {
-
-	todo := []action{&pre{root}}
-
-	for len(todo) > 0 {
-		newSize := len(todo) - 1
-		popped := todo[newSize]
-		todo = todo[:newSize]
-		switch next := popped.(type) {
-		case *pre:
-			if next.n == nil || isNilValue(next.n) {
-				continue
-			}
-
-			visitChildren, err := preF(next.n)
-			if err != nil {
-				return nil, err
-			}
-			todo = append(todo, &post{n: next.n})
-			if visitChildren {
-				switch n := next.n.(type) {
-				`
-
-const fileFooter = `
-				default:
-					panic("unknown ast type " + reflect.TypeOf(n).String())
-				}
-			}
-		case *post:
-			state, err := postF(next.n, next.states)
-			if err != nil {
-				return nil, err
-			}
-			// now we'll go up the stack looking for the next post, which is our parent,
-			// and add the output state from this post visit to the parents post-input
-			last := true
-			for i := len(todo) - 1; i >= 0; i-- {
-				p, ok := todo[i].(*post)
-				if ok {
-					last = false
-					p.states = append(p.states, state)
-					break
-				}
-			}
-			if last {
-				return state, nil
-			}
-		}
-	}
-	return nil, nil // this should never happen
 }
 
 func isNilValue(i interface{}) bool {

@@ -50,20 +50,6 @@ func EmitApplyTypeSwitches(vd *VisitorPlan) string {
 	return sb.String()
 }
 
-// EmitVisitWithStateTypeSwitches will produce the type switch cases for the VisitWithState method
-func EmitVisitWithStateTypeSwitches(vd *VisitorPlan) string {
-	var sb builder
-	for _, s := range vd.Switches {
-		sb.newLine()
-		sb.appendF("\t\t\t\tcase %s:", s.Type.toTypString())
-		for _, k := range s.Fields {
-			sb.appendF(k.asVisitWithStateSwitchCase())
-		}
-	}
-
-	return sb.String()
-}
-
 func (b *builder) String() string {
 	return strings.TrimSpace(b.sb.String())
 }

@@ -19,8 +19,7 @@ package semantics
 import (
 	"fmt"
 
-	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
-	"vitess.io/vitess/go/vt/vterrors"
+	"vitess.io/vitess/go/mysql"
 
 	"vitess.io/vitess/go/vt/vtgate/vindexes"
 
@@ -31,32 +30,26 @@ type (
 	table = *sqlparser.AliasedTableExpr
 	// SemTable contains semantic analysis information about the query.
 	SemTable struct {
-		exprScope        map[*sqlparser.ColName]*scope
-		exprDependencies map[*sqlparser.ColName][]table
-	}
-	// analyzer is a struct to work with analyzing the query.
-	analyzer struct {
-		scopes    []*scope
-		exprScope map[*sqlparser.ColName]*scope
-		exprDeps  map[*sqlparser.ColName][]table
-		si        schemaInformation
+		exprDependencies map[*sqlparser.ColName]table
 	}
 	schemaInformation interface {
 		FindTable(tablename sqlparser.TableName) (*vindexes.Table, error)
 	}
+	scope struct {
+		parent *scope
+		tables map[string]*sqlparser.AliasedTableExpr
+	}
 )
-
-var void struct{}
 
 // Dependencies return the table dependencies of the expression.
 func (t *SemTable) Dependencies(expr sqlparser.Expr) []table {
-	depTable := map[table]struct{}{}
-	sqlparser.Walk(func(node sqlparser.SQLNode) (kontinue bool, err error) {
+	type Void struct{}
+	var void Void
+	depTable := map[table]Void{}
+	_ = sqlparser.Walk(func(node sqlparser.SQLNode) (kontinue bool, err error) {
 		colName, ok := node.(*sqlparser.ColName)
 		if ok {
-			for _, tab := range t.exprDependencies[colName] {
-				depTable[tab] = void
-			}
+			depTable[t.exprDependencies[colName]] = void
 		}
 		return true, nil
 	}, expr)
@@ -68,28 +61,29 @@ func (t *SemTable) Dependencies(expr sqlparser.Expr) []table {
 	return uniqTable
 }
 
-// newAnalyzer create the semantic analyzer
-func newAnalyzer(si schemaInformation) *analyzer {
-	return &analyzer{
-		exprScope: map[*sqlparser.ColName]*scope{},
-		exprDeps:  map[*sqlparser.ColName][]table{},
-		si:        si,
+func newScope(parent *scope) *scope {
+	return &scope{tables: map[string]*sqlparser.AliasedTableExpr{}, parent: parent}
+}
+
+func (s *scope) addTable(name string, table *sqlparser.AliasedTableExpr) error {
+	_, found := s.tables[name]
+	if found {
+		return mysql.NewSQLError(mysql.ERNonUniqTable, mysql.SSSyntaxErrorOrAccessViolation, "Not unique table/alias: '%s'", name)
 	}
+	s.tables[name] = table
+	return nil
 }
 
 // Analyse analyzes the parsed query.
 func Analyse(statement sqlparser.Statement, si schemaInformation) (*SemTable, error) {
 	analyzer := newAnalyzer(si)
 	// Initial scope
-	//analyzer.push(newScope(nil))
-	_, err := analyzer.analyze(statement)
+	err := analyzer.analyze(statement)
 	if err != nil {
 		return nil, err
 	}
-	return &SemTable{exprScope: analyzer.exprScope, exprDependencies: analyzer.exprDeps}, nil
+	return &SemTable{exprDependencies: analyzer.exprDeps}, nil
 }
-
-var debug = false
 
 func log(node sqlparser.SQLNode, format string, args ...interface{}) {
 	if debug {
@@ -100,42 +94,4 @@ func log(node sqlparser.SQLNode, format string, args ...interface{}) {
 			fmt.Println(" - " + sqlparser.String(node))
 		}
 	}
-}
-
-func (a *analyzer) analyze(statement sqlparser.Statement) ([]table, error) {
-	log(statement, "analyse %T", statement)
-	deps, err := sqlparser.VisitWithState(statement, a.analyzeDown, a.analyzeUp)
-	if err != nil {
-		return nil, err
-	}
-	tables, ok := deps.([]table)
-	if !ok {
-		return nil, vterrors.Errorf(vtrpcpb.Code_INTERNAL, "bug: got unknown content from AST traversal: %T", deps)
-	}
-
-	return tables, nil
-}
-
-func (a *analyzer) analyzeUp(n sqlparser.SQLNode, childrenState []interface{}) (interface{}, error) {
-	a.scopeUp(n)
-	return a.bindUp(n, childrenState)
-}
-
-func (a *analyzer) push(s *scope) {
-	log(nil, "enter new scope")
-	a.scopes = append(a.scopes, s)
-}
-
-func (a *analyzer) popScope() {
-	log(nil, "exit scope")
-	l := len(a.scopes) - 1
-	a.scopes = a.scopes[:l]
-}
-
-func (a *analyzer) currentScope() *scope {
-	size := len(a.scopes)
-	if size == 0 {
-		return nil
-	}
-	return a.scopes[size-1]
 }
