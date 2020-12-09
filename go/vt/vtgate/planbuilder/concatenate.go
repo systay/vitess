@@ -48,6 +48,14 @@ func (c *concatenate) Reorder(order int) {
 	c.order = c.rhs.Order() + 1
 }
 
+func (c *concatenate) Wireup2() error {
+	err := c.lhs.Wireup2()
+	if err != nil {
+		return err
+	}
+	return c.rhs.Wireup2()
+}
+
 func (c *concatenate) Wireup(plan logicalPlan, jt *jointab) error {
 	// TODO systay should we do something different here?
 	err := c.lhs.Wireup(plan, jt)

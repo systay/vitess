@@ -48,6 +48,8 @@ type logicalPlan interface {
 	// the lhs nodes.
 	Wireup(lp logicalPlan, jt *jointab) error
 
+	Wireup2() error
+
 	// SupplyVar finds the common root between from and to. If it's
 	// the common root, it supplies the requested var to the rhs tree.
 	// If the primitive already has the column in its list, it should
@@ -148,6 +150,9 @@ func (bc *logicalPlanCommon) ResultColumns() []*resultColumn {
 
 func (bc *logicalPlanCommon) Wireup(plan logicalPlan, jt *jointab) error {
 	return bc.input.Wireup(plan, jt)
+}
+func (bc *logicalPlanCommon) Wireup2() error {
+	return bc.input.Wireup2()
 }
 
 func (bc *logicalPlanCommon) SupplyVar(from, to int, col *sqlparser.ColName, varname string) {

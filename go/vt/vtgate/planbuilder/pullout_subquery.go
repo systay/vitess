@@ -90,6 +90,14 @@ func (ps *pulloutSubquery) Wireup(plan logicalPlan, jt *jointab) error {
 	return ps.subquery.Wireup(plan, jt)
 }
 
+// Wireup2 implements the logicalPlan interface
+func (ps *pulloutSubquery) Wireup2() error {
+	if err := ps.underlying.Wireup2(); err != nil {
+		return err
+	}
+	return ps.subquery.Wireup2()
+}
+
 // SupplyVar implements the logicalPlan interface
 func (ps *pulloutSubquery) SupplyVar(from, to int, col *sqlparser.ColName, varname string) {
 	if from <= ps.subquery.Order() {

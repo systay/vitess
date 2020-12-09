@@ -100,6 +100,11 @@ func (vf *vindexFunc) Wireup(plan logicalPlan, jt *jointab) error {
 	return nil
 }
 
+// Wireup2 implements the logicalPlan interface
+func (vf *vindexFunc) Wireup2() error {
+	return nil
+}
+
 // SupplyVar implements the logicalPlan interface
 func (vf *vindexFunc) SupplyVar(from, to int, col *sqlparser.ColName, varname string) {
 	// vindexFunc is an atomic primitive. So, SupplyVar cannot be

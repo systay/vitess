@@ -155,6 +155,14 @@ func (jb *join) Wireup(plan logicalPlan, jt *jointab) error {
 	return jb.Left.Wireup(plan, jt)
 }
 
+func (jb *join) Wireup2() error {
+	err := jb.Left.Wireup2()
+	if err != nil {
+		return err
+	}
+	return jb.Right.Wireup2()
+}
+
 // SupplyVar implements the logicalPlan interface
 func (jb *join) SupplyVar(from, to int, col *sqlparser.ColName, varname string) {
 	if !jb.isOnLeft(from) {

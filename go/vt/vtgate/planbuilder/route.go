@@ -212,6 +212,16 @@ func (rb *route) Wireup(plan logicalPlan, jt *jointab) error {
 	rb.eroute.FieldQuery = rb.generateFieldQuery(rb.Select, jt)
 	return nil
 }
+func (rb *route) Wireup2() error {
+	buf := sqlparser.NewTrackedBuffer(nil)
+	rb.Select.Format(buf)
+	rb.eroute.Query = buf.ParsedQuery().Query
+
+	buf2 := sqlparser.NewTrackedBuffer(nil)
+	sqlparser.FormatImpossibleQuery(buf2, rb.Select)
+	rb.eroute.FieldQuery = buf2.ParsedQuery().Query
+	return nil
+}
 
 func systemTable(qualifier string) bool {
 	return strings.EqualFold(qualifier, "information_schema") ||

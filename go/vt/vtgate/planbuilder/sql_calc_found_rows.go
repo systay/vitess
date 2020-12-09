@@ -43,6 +43,15 @@ func (s *sqlCalcFoundRows) Wireup(logicalPlan, *jointab) error {
 	return s.CountQuery.Wireup(s.CountQuery, s.cjt)
 }
 
+//Wireup implements the logicalPlan interface
+func (s *sqlCalcFoundRows) Wireup2() error {
+	err := s.LimitQuery.Wireup2()
+	if err != nil {
+		return err
+	}
+	return s.CountQuery.Wireup2()
+}
+
 //Primitive implements the logicalPlan interface
 func (s *sqlCalcFoundRows) Primitive() engine.Primitive {
 	return engine.SQLCalcFoundRows{
