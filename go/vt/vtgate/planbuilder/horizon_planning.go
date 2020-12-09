@@ -29,15 +29,10 @@ type (
 		projektioner     []AnalysedAliasedExpr
 		hasStar, hasAggr bool
 	}
-	AnalysedExpr struct {
-		pullouts []*pulloutSubquery
-		origin   logicalPlan
-		expr     sqlparser.Expr
-	}
 	AnalysedAliasedExpr struct {
-		pullouts []*pulloutSubquery
-		expr     *sqlparser.AliasedExpr
-		aggr     bool
+		//pullouts []*pulloutSubquery
+		expr *sqlparser.AliasedExpr
+		//aggr     bool
 	}
 )
 
