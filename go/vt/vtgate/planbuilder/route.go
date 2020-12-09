@@ -166,11 +166,11 @@ func (rb *route) Wireup(plan logicalPlan, jt *jointab) error {
 		switch node := node.(type) {
 		case *sqlparser.Select:
 			if len(node.SelectExprs) == 0 {
-				node.SelectExprs = sqlparser.SelectExprs([]sqlparser.SelectExpr{
+				node.SelectExprs = []sqlparser.SelectExpr{
 					&sqlparser.AliasedExpr{
 						Expr: sqlparser.NewIntLiteral([]byte{'1'}),
 					},
-				})
+				}
 			}
 		case *sqlparser.ComparisonExpr:
 			if node.Operator == sqlparser.EqualOp {
@@ -243,7 +243,7 @@ func (rb *route) procureValues(plan logicalPlan, jt *jointab, val sqlparser.Expr
 }
 
 func (rb *route) isLocal(col *sqlparser.ColName) bool {
-	return col.Metadata.(*column).Origin() == rb
+	return true
 }
 
 // generateFieldQuery generates a query with an impossible where.

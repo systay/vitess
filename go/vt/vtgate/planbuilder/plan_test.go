@@ -401,11 +401,11 @@ func testFile(t *testing.T, filename, tempDir string, vschema *vschemaWrapper) {
 				expected.WriteString(fmt.Sprintf("%s\"%s\"\n%s\n\n", tcase.comments, tcase.input, out))
 			})
 			t.Run(tcase.comments+" - new planner", func(t *testing.T) {
-				defer func() {
-					if r := recover(); r != nil {
-						t.Fatalf(fmt.Sprintf("panicked: %v", r))
-					}
-				}()
+				//defer func() {
+				//	if r := recover(); r != nil {
+				//		t.Fatalf(fmt.Sprintf("panicked: %v", r))
+				//	}
+				//}()
 				vschema.newPlanner = true
 				plan2, err := Build(tcase.input, vschema)
 

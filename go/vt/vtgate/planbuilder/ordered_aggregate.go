@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+
 	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
 	"vitess.io/vitess/go/vt/vterrors"
 
@@ -249,7 +250,7 @@ func (oa *orderedAggregate) pushAggr2(pb *primitiveBuilder, expr *sqlparser.Alia
 	if handleDistinct {
 		// TODO
 	} else {
-		_, innerCol, err := pb.pushProjection(oa.input, expr, origin)
+		_, innerCol, err := pb.pushProjection(oa.input, expr)
 		if err != nil {
 			return nil, 0, err
 		}

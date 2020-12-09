@@ -250,3 +250,22 @@ func (jb *join) Inputs() []logicalPlan {
 func (jb *join) isOnLeft(nodeNum int) bool {
 	return nodeNum <= jb.leftOrder
 }
+
+func (jb *join) isOnLHS(deps []*sqlparser.AliasedTableExpr) bool {
+	for _, d := range deps {
+		if !contains(d, jb.Left.Tables()) {
+			return false
+		}
+	}
+	return true
+}
+
+// contains returns true if the second slice is contained in the first
+func contains(t *sqlparser.AliasedTableExpr, container []*sqlparser.AliasedTableExpr) bool {
+	for _, c1 := range container {
+		if c1 == t {
+			return true
+		}
+	}
+	return false
+}

@@ -36,7 +36,6 @@ type (
 	}
 	AnalysedAliasedExpr struct {
 		pullouts []*pulloutSubquery
-		origin   logicalPlan
 		expr     *sqlparser.AliasedExpr
 		aggr     bool
 	}
@@ -54,9 +53,9 @@ func (h *Horizon) AddProjection(e AnalysedAliasedExpr) {
 }
 
 // createColumnsFor creates column expressions to replace `*` expressions. If a single table is provided,
-// the expansion will create columns without any column qualifiers, but if multiple tables are listed in 
-// the FROM clause, the column expressions will be of the type `tabl.col as col`, so the query doesn't 
-// accidentally become ambiguous 
+// the expansion will create columns without any column qualifiers, but if multiple tables are listed in
+// the FROM clause, the column expressions will be of the type `tabl.col as col`, so the query doesn't
+// accidentally become ambiguous
 func createColumnsFor(tables []*table) sqlparser.SelectExprs {
 	result := sqlparser.SelectExprs{}
 	singleTable := false
@@ -163,15 +162,14 @@ func (pb *primitiveBuilder) analyseSelectExpr(sel *sqlparser.Select) (*Horizon, 
 	for _, node := range selectExprs {
 		switch node := node.(type) {
 		case *sqlparser.AliasedExpr:
-			pullouts, origin, expr, err := pb.findOrigin(node.Expr)
-			if err != nil {
-				return nil, err
-			}
-			node.Expr = expr
+			//pullouts, _, expr, err := pb.findOrigin(node.Expr)
+			//if err != nil {
+			//	return nil, err
+			//}
+			//node.Expr = expr
 			analysedExpr := AnalysedAliasedExpr{
-				pullouts: pullouts,
-				origin:   origin,
-				expr:     node,
+				//pullouts: pullouts,
+				expr: node,
 			}
 			result.AddProjection(analysedExpr)
 		default:
@@ -213,7 +211,7 @@ func (pb *primitiveBuilder) planHorizon(sel *sqlparser.Select, horizon *Horizon)
 	for _, projection := range horizon.projektioner {
 		expr := projection.expr.Expr
 		if isAggregateExpression(expr) {
-			rc, _, err := aggrPlan.pushAggr2(pb, projection.expr, projection.origin)
+			rc, _, err := aggrPlan.pushAggr2(pb, projection.expr, nil)
 			if err != nil {
 				return err
 			}
@@ -224,7 +222,7 @@ func (pb *primitiveBuilder) planHorizon(sel *sqlparser.Select, horizon *Horizon)
 				return vterrors.New(vtrpcpb.Code_UNIMPLEMENTED, "unsupported: in scatter query: complex aggregate expression")
 			}
 
-			rc, _, err := pb.pushProjection(pb.plan, projection.expr, projection.origin)
+			rc, _, err := pb.pushProjection(pb.plan, projection.expr)
 			if err != nil {
 				return err
 			}
@@ -235,12 +233,22 @@ func (pb *primitiveBuilder) planHorizon(sel *sqlparser.Select, horizon *Horizon)
 	return nil
 }
 
-func (pb *primitiveBuilder) pushProjection(in logicalPlan, expr *sqlparser.AliasedExpr, origin logicalPlan) (*resultColumn, int, error) {
+func (pb *primitiveBuilder) pushProjection(in logicalPlan, expr *sqlparser.AliasedExpr) (*resultColumn, int, error) {
+	deps := pb.vschema.GetSemTable().Dependencies(expr.Expr)
+
 	switch node := in.(type) {
+	case *route:
+		sel := node.Select.(*sqlparser.Select)
+		sel.SelectExprs = append(sel.SelectExprs, expr)
+
+		rc := newResultColumn(expr, node)
+		node.resultColumns = append(node.resultColumns, rc)
+		return rc, len(node.resultColumns) - 1, nil
+
 	case *join:
 		var rc *resultColumn
-		if node.isOnLeft(origin.Order()) {
-			col, colNumber, err := pb.pushProjection(node.Left, expr, origin)
+		if node.isOnLHS(deps) {
+			col, colNumber, err := pb.pushProjection(node.Left, expr)
 			if err != nil {
 				return nil, 0, err
 			}
@@ -251,21 +259,13 @@ func (pb *primitiveBuilder) pushProjection(in logicalPlan, expr *sqlparser.Alias
 			if _, ok := expr.Expr.(*sqlparser.ColName); !ok && node.ejoin.Opcode == engine.LeftJoin {
 				return nil, 0, vterrors.New(vtrpcpb.Code_UNIMPLEMENTED, "unsupported: cross-shard left join and column expressions")
 			}
-			col, colNumber, err := pb.pushProjection(node.Right, expr, origin)
+			col, colNumber, err := pb.pushProjection(node.Right, expr)
 			if err != nil {
 				return nil, 0, err
 			}
 			node.ejoin.Cols = append(node.ejoin.Cols, colNumber+1)
 			rc = col
 		}
-		node.resultColumns = append(node.resultColumns, rc)
-		return rc, len(node.resultColumns) - 1, nil
-
-	case *route:
-		sel := node.Select.(*sqlparser.Select)
-		sel.SelectExprs = append(sel.SelectExprs, expr)
-
-		rc := newResultColumn(expr, node)
 		node.resultColumns = append(node.resultColumns, rc)
 		return rc, len(node.resultColumns) - 1, nil
 
