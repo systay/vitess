@@ -67,8 +67,10 @@ func buildSelectPlan(query string) func(sqlparser.Statement, ContextVSchema) (en
 			return nil, err
 		}
 
-		if err := pb.plan.Wireup(pb.plan, pb.jt); err != nil {
-			return nil, err
+		if !vschema.NewPlanner() {
+			if err := pb.plan.Wireup(pb.plan, pb.jt); err != nil {
+				return nil, err
+			}
 		}
 		return pb.plan.Primitive(), nil
 	}

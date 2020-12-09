@@ -202,69 +202,53 @@ func (pb *primitiveBuilder) planHorizon(sel *sqlparser.Select, horizon *Horizon)
 		pb.plan = aggrPlan
 	}
 
-	resultColumns := make([]*resultColumn, 0, len(horizon.projektioner))
 	for _, projection := range horizon.projektioner {
 		expr := projection.expr.Expr
 		if isAggregateExpression(expr) {
-			rc, _, err := aggrPlan.pushAggr2(pb, projection.expr, nil)
+			err := aggrPlan.pushAggr2(pb, projection.expr, nil)
 			if err != nil {
 				return err
 			}
-			resultColumns = append(resultColumns, rc)
 		} else {
 			// Ensure that there are no aggregates in the expression.
 			if nodeHasAggregates(expr) {
 				return vterrors.New(vtrpcpb.Code_UNIMPLEMENTED, "unsupported: in scatter query: complex aggregate expression")
 			}
 
-			rc, _, err := pb.pushProjection(pb.plan, projection.expr)
+			err := pb.pushProjection(pb.plan, projection.expr)
 			if err != nil {
 				return err
 			}
-			resultColumns = append(resultColumns, rc)
 		}
 	}
-	pb.st.SetResultColumns(resultColumns)
 	return nil
 }
 
-func (pb *primitiveBuilder) pushProjection(in logicalPlan, expr *sqlparser.AliasedExpr) (*resultColumn, int, error) {
+func (pb *primitiveBuilder) pushProjection(in logicalPlan, expr *sqlparser.AliasedExpr) error {
 	deps := pb.vschema.GetSemTable().Dependencies(expr.Expr)
 
 	switch node := in.(type) {
 	case *route:
 		sel := node.Select.(*sqlparser.Select)
 		sel.SelectExprs = append(sel.SelectExprs, expr)
-
-		rc := newResultColumn(expr, node)
-		node.resultColumns = append(node.resultColumns, rc)
-		return rc, len(node.resultColumns) - 1, nil
-
 	case *join:
-		var rc *resultColumn
 		if node.isOnLHS(deps) {
-			col, colNumber, err := pb.pushProjection(node.Left, expr)
+			err := pb.pushProjection(node.Left, expr)
 			if err != nil {
-				return nil, 0, err
+				return err
 			}
-			node.ejoin.Cols = append(node.ejoin.Cols, -colNumber-1)
-			rc = col
 		} else {
 			// Pushing of non-trivial expressions not allowed for RHS of left joins.
 			if _, ok := expr.Expr.(*sqlparser.ColName); !ok && node.ejoin.Opcode == engine.LeftJoin {
-				return nil, 0, vterrors.New(vtrpcpb.Code_UNIMPLEMENTED, "unsupported: cross-shard left join and column expressions")
+				return vterrors.New(vtrpcpb.Code_UNIMPLEMENTED, "unsupported: cross-shard left join and column expressions")
 			}
-			col, colNumber, err := pb.pushProjection(node.Right, expr)
+			err := pb.pushProjection(node.Right, expr)
 			if err != nil {
-				return nil, 0, err
+				return err
 			}
-			node.ejoin.Cols = append(node.ejoin.Cols, colNumber+1)
-			rc = col
 		}
-		node.resultColumns = append(node.resultColumns, rc)
-		return rc, len(node.resultColumns) - 1, nil
-
 	default:
-		return nil, 0, vterrors.Errorf(vtrpcpb.Code_UNIMPLEMENTED, "%T.pushProjection: unreachable", in)
+		return vterrors.Errorf(vtrpcpb.Code_UNIMPLEMENTED, "%T.pushProjection: unreachable", in)
 	}
+	return nil
 }
