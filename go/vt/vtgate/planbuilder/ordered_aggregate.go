@@ -237,7 +237,7 @@ func (oa *orderedAggregate) Primitive() engine.Primitive {
 	return oa.eaggr
 }
 
-func (oa *orderedAggregate) pushAggr2(pb *primitiveBuilder, expr *sqlparser.AliasedExpr, origin logicalPlan) error {
+func (oa *orderedAggregate) addAggrFunc(pb *primitiveBuilder, expr *sqlparser.AliasedExpr) error {
 	funcExpr := expr.Expr.(*sqlparser.FuncExpr)
 	opcode := engine.SupportedAggregates[funcExpr.Name.Lowered()]
 	if len(funcExpr.Exprs) != 1 {

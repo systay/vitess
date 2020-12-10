@@ -117,7 +117,7 @@ func buildSelectPlan(query string) func(sqlparser.Statement, ContextVSchema) (en
 // of the above trees to make it discard unwanted rows.
 func (pb *primitiveBuilder) processSelect(sel *sqlparser.Select, outer *symtab, query string) error {
 	if pb.newPlanner {
-		return pb.processSelect2(sel, outer)
+		return pb.processSelect2(sel)
 	}
 	// Check and error if there is any locking function present in select expression.
 	for _, expr := range sel.SelectExprs {
@@ -145,7 +145,7 @@ func (pb *primitiveBuilder) processSelect(sel *sqlparser.Select, outer *symtab, 
 		return mysql.NewSQLError(mysql.ERCantUseOptionHere, mysql.SSSyntaxErrorOrAccessViolation, "Incorrect usage/placement of 'INTO'")
 	}
 
-	err := pb.planJoinTree(sel, outer)
+	err := pb.planRoutes(sel, outer)
 	if err != nil {
 		return err
 	}
@@ -171,7 +171,7 @@ func (pb *primitiveBuilder) processSelect(sel *sqlparser.Select, outer *symtab, 
 	return setMiscFunc(pb.plan, sel)
 }
 
-func (pb *primitiveBuilder) planJoinTree(sel *sqlparser.Select, outer *symtab) error {
+func (pb *primitiveBuilder) planRoutes(sel *sqlparser.Select, outer *symtab) error {
 
 	if err := pb.processTableExprs(sel.From); err != nil {
 		return err

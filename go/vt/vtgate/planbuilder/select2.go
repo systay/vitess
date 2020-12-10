@@ -18,8 +18,11 @@ package planbuilder
 
 import (
 	"fmt"
-
+	"vitess.io/vitess/go/vt/key"
+	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
 	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
+	"vitess.io/vitess/go/vt/vtgate/semantics"
+	"vitess.io/vitess/go/vt/vtgate/vindexes"
 
 	"vitess.io/vitess/go/vt/vterrors"
 
@@ -27,8 +30,160 @@ import (
 	"vitess.io/vitess/go/vt/vtgate/engine"
 )
 
-func (pb *primitiveBuilder) processSelect2(sel *sqlparser.Select, outer *symtab) error {
-	err := pb.planJoinTree(sel, outer)
+type (
+	// queryGraph represents the FROM and WHERE parts of a query. 
+	// the predicates included all have their dependencies met by the tables in the QG  
+	queryGraph struct {
+		tables []*queryTable
+
+		// crossTable contains the predicates that need multiple tables
+		crossTable []sqlparser.Expr
+
+		// noDeps contains the predicates that can be evaluated anywhere
+		noDeps sqlparser.Expr
+	}
+
+	// queryTable is a single FROM table, including all predicates particular to this table 
+	queryTable struct {
+		alias      *sqlparser.AliasedTableExpr
+		table      sqlparser.TableName
+		predicates []sqlparser.Expr
+
+		vtable       *vindexes.Table
+		vindex       vindexes.Vindex
+		keyspaceName string
+		tabType      topodatapb.TabletType
+		dest         key.Destination
+		routeOpCode  engine.RouteOpcode
+	}
+)
+
+func (qg *queryGraph) collectTable(t sqlparser.TableExpr) {
+	switch table := t.(type) {
+	case *sqlparser.AliasedTableExpr:
+		tableName := table.Expr.(sqlparser.TableName)
+		qt := &queryTable{alias: table, table: tableName}
+		qg.tables = append(qg.tables, qt)
+	case *sqlparser.JoinTableExpr:
+		qg.collectTable(table.LeftExpr)
+		qg.collectTable(table.RightExpr)
+		qg.crossTable = append(qg.crossTable, table.Condition.On)
+	case *sqlparser.ParenTableExpr:
+		qg.collectTables(table.Exprs)
+	}
+}
+func (qg *queryGraph) collectTables(t sqlparser.TableExprs) {
+	for _, expr := range t {
+		qg.collectTable(expr)
+	}
+}
+func (pb *primitiveBuilder) planJoinTree(sel *sqlparser.Select) error {
+	qg, err := createQGFromSelect(sel, pb)
+	if err != nil {
+		return err
+	}
+	err = annotateQGWithSchemaInfo(qg, pb.vschema)
+	if err != nil {
+		return err
+	}
+
+	return vterrors.Errorf(vtrpcpb.Code_INTERNAL, "implement me!")
+}
+
+func annotateQGWithSchemaInfo(qg queryGraph, vschema ContextVSchema) error {
+	for _, t := range qg.tables {
+		vschemaTable, vindex, keyspace, destTableType, destTarget, err := vschema.FindTableOrVindex(t.table)
+		if err != nil {
+			return vterrors.Wrapf(err, "failed to find information about %v", t.table)
+		}
+		t.dest = destTarget
+		t.keyspaceName = keyspace
+		t.vtable = vschemaTable
+		t.vindex = vindex
+		t.tabType = destTableType
+		switch {
+		case vschemaTable.Type == vindexes.TypeSequence:
+			t.routeOpCode = engine.SelectNext
+		case vschemaTable.Type == vindexes.TypeReference:
+			t.routeOpCode = engine.SelectReference
+		case !vschemaTable.Keyspace.Sharded:
+			t.routeOpCode = engine.SelectUnsharded
+		case vschemaTable.Pinned == nil:
+			t.routeOpCode = engine.SelectScatter
+			//eroute.TargetDestination = destTarget
+			//eroute.TargetTabletType = destTableType
+		default:
+			// Pinned tables have their keyspace ids already assigned.
+			// Use the Binary vindex, which is the identity function
+			// for keyspace id.
+			t.routeOpCode = engine.SelectEqualUnique
+			//vindex, _ = vindexes.NewBinary("binary", nil)
+			//eroute.Vindex, _ = vindex.(vindexes.SingleColumn)
+			//eroute.Values = []sqltypes.PlanValue{{Value: sqltypes.MakeTrusted(sqltypes.VarBinary, vschemaTable.Pinned)}}
+		}
+
+	}
+	return nil
+}
+
+func createQGFromSelect(sel *sqlparser.Select, pb *primitiveBuilder) (queryGraph, error) {
+	qg := queryGraph{
+		tables:     nil,
+		crossTable: nil,
+	}
+	qg.collectTables(sel.From)
+	if sel.Where != nil {
+		err := qg.collectPredicates(sel, pb.vschema.GetSemTable())
+		if err != nil {
+			return queryGraph{}, err
+		}
+	}
+	return qg, nil
+}
+
+func (qg *queryGraph) collectPredicates(sel *sqlparser.Select, semTable *semantics.SemTable) error {
+	predicates := splitAndExpression(nil, sel.Where.Expr)
+
+	for _, predicate := range predicates {
+		deps := semTable.Dependencies(predicate)
+		switch len(deps) {
+		case 0:
+			qg.addNoDepsPredicate(predicate)
+		case 1:
+			found := qg.addToSingleTable(deps[0], predicate)
+			if !found {
+				return vterrors.Errorf(vtrpcpb.Code_INTERNAL, "table %s for predicate %s not found", sqlparser.String(deps[0]), sqlparser.String(predicate))
+			}
+		default:
+			qg.crossTable = append(qg.crossTable, predicate)
+		}
+	}
+	return nil
+}
+
+func (qg *queryGraph) addToSingleTable(depencency *sqlparser.AliasedTableExpr, predicate sqlparser.Expr) bool {
+	for _, t := range qg.tables {
+		if depencency == t.alias {
+			t.predicates = append(t.predicates, predicate)
+			return true
+		}
+	}
+	return false
+}
+
+func (qg *queryGraph) addNoDepsPredicate(predicate sqlparser.Expr) {
+	if qg.noDeps == nil {
+		qg.noDeps = predicate
+	} else {
+		qg.noDeps = &sqlparser.AndExpr{
+			Left:  qg.noDeps,
+			Right: predicate,
+		}
+	}
+}
+
+func (pb *primitiveBuilder) processSelect2(sel *sqlparser.Select) error {
+	err := pb.planJoinTree(sel)
 	if err != nil {
 		return vterrors.Wrapf(err, "failed to plan the query horizon")
 	}
@@ -78,7 +233,7 @@ func (pb *primitiveBuilder) planSubQueries(subqueries []subq) error {
 		p2 := &pulloutSubquery{
 			subquery: spb.plan,
 			primitive: &engine.PulloutSubquery{
-				Opcode:         engine.PulloutValue,
+				Opcode:         sq.opCode,
 				SubqueryResult: sqName(sq.idx),
 				HasValues:      hasValues(sq.idx),
 			},
@@ -159,4 +314,58 @@ func extractSubqueries(stmt sqlparser.Statement) []subq {
 		return true
 	})
 	return subqueries
+}
+
+type (
+	tableIndex uint8 // we can only join 8 tables with this limit
+
+	joinTree interface {
+		iPlan()
+	}
+	routePlan struct {
+		routeOpCode     engine.RouteOpcode
+		solves          tableIndex
+		tables          []*queryTable
+		extraPredicates []sqlparser.Expr
+	}
+	joinPlan struct {
+		solves tableIndex
+		a, b   joinTree
+	}
+)
+
+func (*routePlan) iPlan() {}
+func (*joinPlan) iPlan()  {}
+
+/*
+	we use dynamic programming to find the cheapest route/join tree possible,
+	where the cost of a plan is the number of joins
+*/
+func (qg *queryGraph) solve() {
+	size := len(qg.tables)
+	dpTable := make(map[tableIndex]joinTree)
+	// we start by seeding the table with the single routes
+	for i, table := range qg.tables {
+		solves := tableIndex(1 << i)
+		dpTable[solves] = &routePlan{
+			routeOpCode:     table.routeOpCode,
+			solves:          solves,
+			tables:          []*queryTable{table},
+			extraPredicates: nil,
+		}
+	}
+
+	for currentSize := 2; currentSize < size; currentSize++ {
+		for lhsTable := 1; lhsTable < currentSize; lhsTable++ {
+			lhs := dpTable[1<<lhsTable]
+			for rhsTable := 1; lhsTable < currentSize; lhsTable++ {
+				if lhs&rhsTable!=0{
+					
+				}
+				lhs := dpTable[1<<lhsTable]
+
+			}
+
+		}
+	}
 }

@@ -30,9 +30,9 @@ type (
 		hasStar, hasAggr bool
 	}
 	AnalysedAliasedExpr struct {
-		//pullouts []*pulloutSubquery
-		expr *sqlparser.AliasedExpr
-		//aggr     bool
+		expr     *sqlparser.AliasedExpr
+		aggrFunc *sqlparser.FuncExpr
+		aggrOp   engine.AggregateOpcode
 	}
 )
 
@@ -40,8 +40,12 @@ func (h *Horizon) HasAggregation() bool {
 	return h.hasAggr
 }
 func (h *Horizon) AddProjection(e AnalysedAliasedExpr) {
-	if isAggregateExpression(e.expr.Expr) {
-		h.hasAggr = true
+	if inner, ok := e.expr.Expr.(*sqlparser.FuncExpr); ok {
+		if aggrOp, ok := engine.SupportedAggregates[inner.Name.Lowered()]; ok {
+			h.hasAggr = true
+			e.aggrFunc = inner
+			e.aggrOp = aggrOp
+		}
 	}
 
 	h.projektioner = append(h.projektioner, e)
@@ -157,13 +161,7 @@ func (pb *primitiveBuilder) analyseSelectExpr(sel *sqlparser.Select) (*Horizon, 
 	for _, node := range selectExprs {
 		switch node := node.(type) {
 		case *sqlparser.AliasedExpr:
-			//pullouts, _, expr, err := pb.findOrigin(node.Expr)
-			//if err != nil {
-			//	return nil, err
-			//}
-			//node.Expr = expr
 			analysedExpr := AnalysedAliasedExpr{
-				//pullouts: pullouts,
 				expr: node,
 			}
 			result.AddProjection(analysedExpr)
@@ -205,7 +203,7 @@ func (pb *primitiveBuilder) planHorizon(sel *sqlparser.Select, horizon *Horizon)
 	for _, projection := range horizon.projektioner {
 		expr := projection.expr.Expr
 		if isAggregateExpression(expr) {
-			err := aggrPlan.pushAggr2(pb, projection.expr, nil)
+			err := aggrPlan.addAggrFunc(pb, projection.expr)
 			if err != nil {
 				return err
 			}
@@ -228,6 +226,8 @@ func (pb *primitiveBuilder) pushProjection(in logicalPlan, expr *sqlparser.Alias
 	deps := pb.vschema.GetSemTable().Dependencies(expr.Expr)
 
 	switch node := in.(type) {
+	case *orderedAggregate:
+		return pb.pushProjection(node.input, expr)
 	case *route:
 		sel := node.Select.(*sqlparser.Select)
 		sel.SelectExprs = append(sel.SelectExprs, expr)
@@ -248,7 +248,11 @@ func (pb *primitiveBuilder) pushProjection(in logicalPlan, expr *sqlparser.Alias
 			}
 		}
 	default:
-		return vterrors.Errorf(vtrpcpb.Code_UNIMPLEMENTED, "%T.pushProjection: unreachable", in)
+		return unreachableErr("pushProjection", in)
 	}
 	return nil
+}
+
+func unreachableErr(method string, obj interface{}) error {
+	return vterrors.Errorf(vtrpcpb.Code_INTERNAL, "%T.%s: should be unreachable. this is a bug", obj, method)
 }
