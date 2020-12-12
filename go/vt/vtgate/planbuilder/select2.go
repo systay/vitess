@@ -18,6 +18,7 @@ package planbuilder
 
 import (
 	"fmt"
+
 	"vitess.io/vitess/go/vt/key"
 	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
 	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
@@ -31,8 +32,8 @@ import (
 )
 
 type (
-	// queryGraph represents the FROM and WHERE parts of a query. 
-	// the predicates included all have their dependencies met by the tables in the QG  
+	// queryGraph represents the FROM and WHERE parts of a query.
+	// the predicates included all have their dependencies met by the tables in the QG
 	queryGraph struct {
 		tables []*queryTable
 
@@ -43,7 +44,7 @@ type (
 		noDeps sqlparser.Expr
 	}
 
-	// queryTable is a single FROM table, including all predicates particular to this table 
+	// queryTable is a single FROM table, including all predicates particular to this table
 	queryTable struct {
 		alias      *sqlparser.AliasedTableExpr
 		table      sqlparser.TableName
@@ -86,6 +87,8 @@ func (pb *primitiveBuilder) planJoinTree(sel *sqlparser.Select) error {
 	if err != nil {
 		return err
 	}
+
+	qg.solve()
 
 	return vterrors.Errorf(vtrpcpb.Code_INTERNAL, "implement me!")
 }
@@ -317,55 +320,155 @@ func extractSubqueries(stmt sqlparser.Statement) []subq {
 }
 
 type (
-	tableIndex uint8 // we can only join 8 tables with this limit
+	bitSet uint8 // we can only join 8 tables with this limit
 
 	joinTree interface {
-		iPlan()
+		solves() bitSet
+		cost() int
 	}
 	routePlan struct {
 		routeOpCode     engine.RouteOpcode
-		solves          tableIndex
+		solved          bitSet
 		tables          []*queryTable
 		extraPredicates []sqlparser.Expr
+		keyspace        string
 	}
 	joinPlan struct {
-		solves tableIndex
-		a, b   joinTree
+		lhs, rhs joinTree
 	}
+	dpTableT map[bitSet]joinTree
 )
 
-func (*routePlan) iPlan() {}
-func (*joinPlan) iPlan()  {}
+func (rp *routePlan) solves() bitSet {
+	return rp.solved
+}
+func (*routePlan) cost() int {
+	return 1
+}
+func (jp *joinPlan) solves() bitSet {
+	return jp.lhs.solves() | jp.rhs.solves()
+}
+func (jp *joinPlan) cost() int {
+	return jp.lhs.cost() + jp.rhs.cost()
+}
+
+func (bs bitSet) overlaps(flag bitSet) bool { return bs&flag != 0 }
+
+func (dpt dpTableT) bitSetsOfSize(wanted int) []joinTree {
+	var result []joinTree
+	for bs, jt := range dpt {
+		size := countSetBits(bs)
+		if size == wanted {
+			result = append(result, jt)
+		}
+	}
+	return result
+}
+func countSetBits(n bitSet) int {
+	// Brian Kernighan’s Algorithm
+	count := 0
+	for n > 0 {
+		n &= n - 1
+		count++
+	}
+	return count
+}
 
 /*
 	we use dynamic programming to find the cheapest route/join tree possible,
 	where the cost of a plan is the number of joins
 */
-func (qg *queryGraph) solve() {
+func (qg *queryGraph) solve() joinTree {
 	size := len(qg.tables)
-	dpTable := make(map[tableIndex]joinTree)
+	dpTable := make(dpTableT)
+
+	var allTables bitSet
+
 	// we start by seeding the table with the single routes
 	for i, table := range qg.tables {
-		solves := tableIndex(1 << i)
+		solves := bitSet(1 << i)
+		allTables |= solves
 		dpTable[solves] = &routePlan{
 			routeOpCode:     table.routeOpCode,
-			solves:          solves,
+			solved:          solves,
 			tables:          []*queryTable{table},
+			keyspace:        table.keyspaceName,
 			extraPredicates: nil,
 		}
 	}
 
-	for currentSize := 2; currentSize < size; currentSize++ {
-		for lhsTable := 1; lhsTable < currentSize; lhsTable++ {
-			lhs := dpTable[1<<lhsTable]
-			for rhsTable := 1; lhsTable < currentSize; lhsTable++ {
-				if lhs&rhsTable!=0{
-					
+	for currentSize := 2; currentSize <= size; currentSize++ {
+		lefts := dpTable.bitSetsOfSize(1)
+		rights := dpTable.bitSetsOfSize(currentSize - 1)
+		for _, lhs := range lefts {
+			for _, rhs := range rights {
+				overlaps := lhs.solves().overlaps(rhs.solves())
+				if overlaps {
+					continue
 				}
-				lhs := dpTable[1<<lhsTable]
-
+				solves := lhs.solves() | rhs.solves()
+				oldPlan := dpTable[solves]
+				if oldPlan != nil && oldPlan.cost() == 1 {
+					// we already have the perfect plan. keep it
+					continue
+				}
+				newPlan := tryMerge(lhs, rhs)
+				if newPlan == nil {
+					newPlan = &joinPlan{
+						lhs: lhs,
+						rhs: rhs,
+					}
+				}
+				if oldPlan == nil || newPlan.cost() < oldPlan.cost() {
+					dpTable[solves] = newPlan
+				}
 			}
-
 		}
+	}
+
+	return dpTable[allTables]
+}
+
+func tryMerge(a, b joinTree) joinTree {
+	aRoute, ok := a.(*routePlan)
+	if !ok {
+		return nil
+	}
+	bRoute, ok := b.(*routePlan)
+	if !ok {
+		return nil
+	}
+	if aRoute.keyspace != bRoute.keyspace {
+		return nil
+	}
+
+	switch aRoute.routeOpCode {
+	case engine.SelectUnsharded, engine.SelectDBA:
+		if aRoute.routeOpCode != bRoute.routeOpCode {
+			return nil
+		}
+	case engine.SelectScatter:
+
+		return nil
+
+		//	Check if they target the same shard.
+		//if bRoute.routeOpCode == engine.SelectEqualUnique &&
+		//	bRoute.Vindex == bRoute.routeOpCode && valEqual(rb.condition, rrb.condition) {
+		//	return true
+		//}
+		//case engine.SelectReference:
+		//	return true
+		//case engine.SelectNext:
+		//	return false
+	}
+	//aRoute.tables = append(aRoute.tables, bRoute.tables...)
+	//aRoute.solved |= bRoute.solved
+	//aRoute.extraPredicates = append(aRoute.extraPredicates, bRoute.extraPredicates...)
+	return &routePlan{
+		routeOpCode:     aRoute.routeOpCode,
+		solved:          aRoute.solved | bRoute.solved,
+		tables:          append(aRoute.tables, bRoute.tables...),
+		extraPredicates: append(aRoute.extraPredicates, bRoute.extraPredicates...),
+		keyspace:        aRoute.keyspace,
 	}
 }
