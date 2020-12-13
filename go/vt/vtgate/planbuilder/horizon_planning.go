@@ -146,19 +146,20 @@ func columnForQualifiedStar(col sqlparser.ColIdent, tableName sqlparser.TableNam
 }
 
 func (pb *primitiveBuilder) analyseSelectExpr(sel *sqlparser.Select) (*Horizon, error) {
-	stillHasStars, selectExprs, err := expandStars(pb.st.AllTables(), sel.SelectExprs, pb.st.FindTable)
-	if err != nil {
-		return nil, err
-	}
-	sel.SelectExprs = selectExprs
+	//stillHasStars, selectExprs, err := expandStars(pb.st.AllTables(), sel.SelectExprs, pb.st.FindTable)
+	//if err != nil {
+	//	return nil, err
+	//}
+	//sel.SelectExprs = selectExprs
 
+	stillHasStars := false
 	result := &Horizon{hasStar: stillHasStars}
 	if stillHasStars {
 		// There is no point to continue to plan here.
 		// we might still allow this query, if it is a single sharded route
 		return result, nil
 	}
-	for _, node := range selectExprs {
+	for _, node := range sel.SelectExprs {
 		switch node := node.(type) {
 		case *sqlparser.AliasedExpr:
 			analysedExpr := AnalysedAliasedExpr{

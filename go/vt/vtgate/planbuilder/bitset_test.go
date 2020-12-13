@@ -41,9 +41,9 @@ func equal(t *testing.T, bss []bitSet, jt []joinTree) {
 }
 
 func TestHas(t *testing.T) {
-	assert.True(t, (F1 | F2).overlaps(F1|F2))
-	assert.True(t, (F1 | F2).overlaps(F1))
-	assert.True(t, (F1).overlaps(F1|F2))
-	assert.False(t, (F1 | F2).overlaps(F3))
-	assert.False(t, (F3).overlaps(F1|F2))
+	assert.True(t, isOverlapping(F1|F2, F1|F2))
+	assert.True(t, isOverlapping(F1|F2, F1))
+	assert.True(t, isOverlapping(F1, F1|F2))
+	assert.False(t, isOverlapping(F1|F2, F3))
+	assert.False(t, isOverlapping(F3, F1|F2))
 }

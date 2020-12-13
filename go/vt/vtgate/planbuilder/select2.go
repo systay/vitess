@@ -18,6 +18,7 @@ package planbuilder
 
 import (
 	"fmt"
+	"strings"
 
 	"vitess.io/vitess/go/vt/key"
 	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
@@ -50,12 +51,12 @@ type (
 		table      sqlparser.TableName
 		predicates []sqlparser.Expr
 
-		vtable       *vindexes.Table
-		vindex       vindexes.Vindex
-		keyspaceName string
-		tabType      topodatapb.TabletType
-		dest         key.Destination
-		routeOpCode  engine.RouteOpcode
+		vtable      *vindexes.Table
+		vindex      vindexes.Vindex
+		Keyspace    *vindexes.Keyspace
+		tabType     topodatapb.TabletType
+		dest        key.Destination
+		routeOpCode engine.RouteOpcode
 	}
 )
 
@@ -88,19 +89,19 @@ func (pb *primitiveBuilder) planJoinTree(sel *sqlparser.Select) error {
 		return err
 	}
 
-	qg.solve()
-
-	return vterrors.Errorf(vtrpcpb.Code_INTERNAL, "implement me!")
+	tree := qg.solve()
+	pb.plan = transformToPlan(tree)
+	return nil
 }
 
 func annotateQGWithSchemaInfo(qg queryGraph, vschema ContextVSchema) error {
 	for _, t := range qg.tables {
-		vschemaTable, vindex, keyspace, destTableType, destTarget, err := vschema.FindTableOrVindex(t.table)
+		vschemaTable, vindex, _, destTableType, destTarget, err := vschema.FindTableOrVindex(t.table)
 		if err != nil {
 			return vterrors.Wrapf(err, "failed to find information about %v", t.table)
 		}
 		t.dest = destTarget
-		t.keyspaceName = keyspace
+		t.Keyspace = vschemaTable.Keyspace
 		t.vtable = vschemaTable
 		t.vindex = vindex
 		t.tabType = destTableType
@@ -153,9 +154,10 @@ func (qg *queryGraph) collectPredicates(sel *sqlparser.Select, semTable *semanti
 		case 0:
 			qg.addNoDepsPredicate(predicate)
 		case 1:
-			found := qg.addToSingleTable(deps[0], predicate)
+			var node *sqlparser.AliasedTableExpr = deps[0]
+			found := qg.addToSingleTable(node, predicate)
 			if !found {
-				return vterrors.Errorf(vtrpcpb.Code_INTERNAL, "table %s for predicate %s not found", sqlparser.String(deps[0]), sqlparser.String(predicate))
+				return vterrors.Errorf(vtrpcpb.Code_INTERNAL, "table %s for predicate %s not found", sqlparser.String(node), sqlparser.String(predicate))
 			}
 		default:
 			qg.crossTable = append(qg.crossTable, predicate)
@@ -331,7 +333,7 @@ type (
 		solved          bitSet
 		tables          []*queryTable
 		extraPredicates []sqlparser.Expr
-		keyspace        string
+		keyspace        *vindexes.Keyspace
 	}
 	joinPlan struct {
 		lhs, rhs joinTree
@@ -352,7 +354,7 @@ func (jp *joinPlan) cost() int {
 	return jp.lhs.cost() + jp.rhs.cost()
 }
 
-func (bs bitSet) overlaps(flag bitSet) bool { return bs&flag != 0 }
+func isOverlapping(a, b bitSet) bool { return a&b != 0 }
 
 func (dpt dpTableT) bitSetsOfSize(wanted int) []joinTree {
 	var result []joinTree
@@ -392,7 +394,7 @@ func (qg *queryGraph) solve() joinTree {
 			routeOpCode:     table.routeOpCode,
 			solved:          solves,
 			tables:          []*queryTable{table},
-			keyspace:        table.keyspaceName,
+			keyspace:        table.Keyspace,
 			extraPredicates: nil,
 		}
 	}
@@ -402,8 +404,8 @@ func (qg *queryGraph) solve() joinTree {
 		rights := dpTable.bitSetsOfSize(currentSize - 1)
 		for _, lhs := range lefts {
 			for _, rhs := range rights {
-				overlaps := lhs.solves().overlaps(rhs.solves())
-				if overlaps {
+				if isOverlapping(lhs.solves(), rhs.solves()) {
+					// at least one of the tables is solved on both sides
 					continue
 				}
 				solves := lhs.solves() | rhs.solves()
@@ -471,4 +473,40 @@ func tryMerge(a, b joinTree) joinTree {
 		extraPredicates: append(aRoute.extraPredicates, bRoute.extraPredicates...),
 		keyspace:        aRoute.keyspace,
 	}
+}
+
+func transformToPlan(tree joinTree) logicalPlan {
+	switch n := tree.(type) {
+	case *routePlan:
+		var tablesForSelect sqlparser.TableExprs
+		var tablesForRoute []*sqlparser.AliasedTableExpr
+		var tableNames []string
+
+		for _, t := range n.tables {
+			tablesForSelect = append(tablesForSelect, t.alias)
+			tablesForRoute = append(tablesForRoute, t.alias)
+			tableNames = append(tableNames, sqlparser.String(t.alias))
+		}
+		return &route{
+			eroute: &engine.Route{
+				Opcode:    n.routeOpCode,
+				TableName: strings.Join(tableNames, ", "),
+				Keyspace:  n.keyspace,
+			},
+			Select: &sqlparser.Select{
+				From: tablesForSelect,
+			},
+			tables: tablesForRoute,
+		}
+
+	case *joinPlan:
+		return &join{
+			ejoin: &engine.Join{
+				Opcode: engine.NormalJoin,
+			},
+			Left:  transformToPlan(n.lhs),
+			Right: transformToPlan(n.rhs),
+		}
+	}
+	panic(42)
 }
