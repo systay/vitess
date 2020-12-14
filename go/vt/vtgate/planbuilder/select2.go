@@ -90,8 +90,8 @@ func (pb *primitiveBuilder) planJoinTree(sel *sqlparser.Select) error {
 	}
 
 	tree := qg.solve()
-	pb.plan = transformToLogicalPlan(tree)
-	return nil
+	pb.plan, err = transformToLogicalPlan(tree)
+	return err
 }
 
 func annotateQGWithSchemaInfo(qg *queryGraph, vschema ContextVSchema) error {
@@ -330,6 +330,10 @@ type (
 		// vindex and conditions is set if an vindex will be used for this route.
 		vindex     vindexes.Vindex
 		conditions []sqlparser.Expr
+
+		// this state keeps track of which vindexes are available and
+		// whether we have seen enough predicates to satisfy the vindex
+		vindexPlusPredicates []*vindexPlusPredicates
 	}
 	joinPlan struct {
 		lhs, rhs joinTree
@@ -344,23 +348,24 @@ func (*routePlan) cost() int {
 	return 1
 }
 
-func (rp *routePlan) addPredicate(predicates []sqlparser.Expr) error {
-	// VindexPlusPredicates is a struct used to store all the predicates that the vindex can be used to query
-	type VindexPlusPredicates struct {
-		vindex     *vindexes.ColumnVindex
-		covered    bool
-		predicates []sqlparser.Expr
-	}
+// vindexPlusPredicates is a struct used to store all the predicates that the vindex can be used to query
+type vindexPlusPredicates struct {
+	vindex     *vindexes.ColumnVindex
+	covered    bool
+	predicates []sqlparser.Expr
+}
 
-	var vindexPlusPredicates []*VindexPlusPredicates
+func (rp *routePlan) addPredicate(predicates []sqlparser.Expr) error {
 
 	if len(rp.tables) != 1 {
 		return vterrors.Errorf(vtrpcpb.Code_INTERNAL, "addPredicate should only be called when the route has a single table")
 	}
 
-	// Add all the column vindexes to the list of vindexPlusPredicates
-	for _, columnVindex := range rp.tables[0].vtable.ColumnVindexes {
-		vindexPlusPredicates = append(vindexPlusPredicates, &VindexPlusPredicates{vindex: columnVindex})
+	if rp.vindexPlusPredicates == nil {
+		// Add all the column vindexes to the list of vindexPlusPredicates
+		for _, columnVindex := range rp.tables[0].vtable.ColumnVindexes {
+			rp.vindexPlusPredicates = append(rp.vindexPlusPredicates, &vindexPlusPredicates{vindex: columnVindex})
+		}
 	}
 
 	for _, filter := range predicates {
@@ -369,7 +374,7 @@ func (rp *routePlan) addPredicate(predicates []sqlparser.Expr) error {
 			switch node.Operator {
 			case sqlparser.EqualOp:
 				// TODO(Manan,Andres): Remove the predicates that are repeated eg. Id=1 AND Id=1
-				for _, v := range vindexPlusPredicates {
+				for _, v := range rp.vindexPlusPredicates {
 					column := node.Left.(*sqlparser.ColName)
 					for _, col := range v.vindex.Columns {
 						// If the column for the predicate matches any column in the vindex add it to the list
@@ -385,7 +390,7 @@ func (rp *routePlan) addPredicate(predicates []sqlparser.Expr) error {
 	}
 
 	//TODO (Manan,Andres): Improve cost metric for vindexes
-	for _, v := range vindexPlusPredicates {
+	for _, v := range rp.vindexPlusPredicates {
 		if !v.covered {
 			continue
 		}
@@ -589,7 +594,7 @@ func tryMerge(a, b joinTree) joinTree {
 	}
 }
 
-func transformToLogicalPlan(tree joinTree) logicalPlan {
+func transformToLogicalPlan(tree joinTree) (logicalPlan, error) {
 	switch n := tree.(type) {
 	case *routePlan:
 		var tablesForSelect sqlparser.TableExprs
@@ -618,16 +623,24 @@ func transformToLogicalPlan(tree joinTree) logicalPlan {
 				Where: where,
 			},
 			tables: tablesForRoute,
-		}
+		}, nil
 
 	case *joinPlan:
+		lhs, err := transformToLogicalPlan(n.lhs)
+		if err != nil {
+			return nil, err
+		}
+		rhs, err := transformToLogicalPlan(n.rhs)
+		if err != nil {
+			return nil, err
+		}
 		return &join{
 			ejoin: &engine.Join{
 				Opcode: engine.NormalJoin,
 			},
-			Left:  transformToLogicalPlan(n.lhs),
-			Right: transformToLogicalPlan(n.rhs),
-		}
+			Left:  lhs,
+			Right: rhs,
+		}, nil
 	}
 	panic(42)
 }
