@@ -187,7 +187,12 @@ func (pb *primitiveBuilder) planHorizon(sel *sqlparser.Select, horizon *Horizon)
 	if isRoute &&
 		(!horizon.HasAggregation() || rb.isSingleShard()) {
 		// we don't need to do anything else here
-		rb.Select = sel
+		s := rb.Select.(*sqlparser.Select)
+		s.SelectExprs = sel.SelectExprs
+		s.Distinct = sel.Distinct
+		s.GroupBy = sel.GroupBy
+		s.OrderBy = sel.OrderBy
+		rb.Select = s
 		return nil
 	}
 

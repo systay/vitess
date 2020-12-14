@@ -1,17 +1,21 @@
 # Add your test case here for debugging and run go test -run=One.
-"select 1 from user"
+"select col from user where id = 45"
 {
   "QueryType": "SELECT",
-  "Original": "select 1 from user",
+  "Original": "select col from user where id = 45",
   "Instructions": {
     "OperatorType": "Route",
-    "Variant": "SelectScatter",
+    "Variant": "SelectEqualUnique",
     "Keyspace": {
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select 1 from user where 1 != 1",
-    "Query": "select 1 from user",
-    "Table": "user"
+    "FieldQuery": "select col from user where 1 != 1",
+    "Query": "select col from user where id = 45",
+    "Table": "user",
+    "Values": [
+      45
+    ],
+    "Vindex": "user_index"
   }
 }

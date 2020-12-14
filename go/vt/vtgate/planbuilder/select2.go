@@ -90,48 +90,135 @@ func (pb *primitiveBuilder) planJoinTree(sel *sqlparser.Select) error {
 	}
 
 	tree := qg.solve()
-	pb.plan = transformToPlan(tree)
+	pb.plan = transformToLogicalPlan(tree)
 	return nil
 }
 
-func annotateQGWithSchemaInfo(qg queryGraph, vschema ContextVSchema) error {
+func annotateQGWithSchemaInfo(qg *queryGraph, vschema ContextVSchema) error {
 	for _, t := range qg.tables {
-		vschemaTable, vindex, _, destTableType, destTarget, err := vschema.FindTableOrVindex(t.table)
+		err := addVSchemaInfoToQueryTable(vschema, t)
 		if err != nil {
-			return vterrors.Wrapf(err, "failed to find information about %v", t.table)
+			return err
 		}
-		t.dest = destTarget
-		t.Keyspace = vschemaTable.Keyspace
-		t.vtable = vschemaTable
-		t.vindex = vindex
-		t.tabType = destTableType
-		switch {
-		case vschemaTable.Type == vindexes.TypeSequence:
-			t.routeOpCode = engine.SelectNext
-		case vschemaTable.Type == vindexes.TypeReference:
-			t.routeOpCode = engine.SelectReference
-		case !vschemaTable.Keyspace.Sharded:
-			t.routeOpCode = engine.SelectUnsharded
-		case vschemaTable.Pinned == nil:
-			t.routeOpCode = engine.SelectScatter
-			//eroute.TargetDestination = destTarget
-			//eroute.TargetTabletType = destTableType
-		default:
-			// Pinned tables have their keyspace ids already assigned.
-			// Use the Binary vindex, which is the identity function
-			// for keyspace id.
-			t.routeOpCode = engine.SelectEqualUnique
-			//vindex, _ = vindexes.NewBinary("binary", nil)
-			//eroute.Vindex, _ = vindex.(vindexes.SingleColumn)
-			//eroute.Values = []sqltypes.PlanValue{{Value: sqltypes.MakeTrusted(sqltypes.VarBinary, vschemaTable.Pinned)}}
+
+		switch t.routeOpCode {
+		// For these opcodes, a new filter will not make any difference, so we can just exit early
+		case engine.SelectUnsharded, engine.SelectNext, engine.SelectDBA, engine.SelectReference, engine.SelectNone:
+			continue
 		}
 
 	}
 	return nil
 }
 
-func createQGFromSelect(sel *sqlparser.Select, pb *primitiveBuilder) (queryGraph, error) {
-	qg := queryGraph{
+// computePlan computes the plan for the specified filter.
+func (qt *queryTable) addPredicate(predicates []sqlparser.Expr) (opcode engine.RouteOpcode, vindex vindexes.Vindex, conditions []sqlparser.Expr) {
+
+	// VindexPlusPredicates is a struct used to store all the predicates that the vindex can be used to query
+	type VindexPlusPredicates struct {
+		vindex     *vindexes.ColumnVindex
+		covered    bool
+		predicates []sqlparser.Expr
+	}
+
+	var vindexPlusPredicates []*VindexPlusPredicates
+
+	// Add all the column vindexes to the list of vindexPlusPredicates
+	for _, columnVindex := range qt.vtable.ColumnVindexes {
+		vindexPlusPredicates = append(vindexPlusPredicates, &VindexPlusPredicates{vindex: columnVindex})
+	}
+
+	for _, filter := range predicates {
+		switch node := filter.(type) {
+		case *sqlparser.ComparisonExpr:
+			switch node.Operator {
+			case sqlparser.EqualOp:
+				// TODO(Manan,Andres): Remove the predicates that are repeated eg. Id=1 AND Id=1
+				for _, v := range vindexPlusPredicates {
+					column := node.Left.(*sqlparser.ColName)
+					for _, col := range v.vindex.Columns {
+						// If the column for the predicate matches any column in the vindex add it to the list
+						if column.Name.Equal(col) {
+							v.predicates = append(v.predicates, node)
+							// Vindex is covered if all the columns in the vindex have a associated predicate
+							v.covered = len(v.predicates) == len(v.vindex.Columns)
+						}
+					}
+				}
+				//return qt.computeEqualPlan(node)
+				//case sqlparser.InOp:
+				//	return rb.computeINPlan(pb, node)
+				//case sqlparser.NotInOp:
+				//	return rb.computeNotInPlan(node.Right), nil, nil
+			}
+			//case *sqlparser.IsExpr:
+			//	return rb.computeISPlan(pb, node)
+		}
+	}
+	vindex = nil
+	conditions = nil
+	//TODO (Manan,Andres): Improve cost metric for vindexes
+	for _, v := range vindexPlusPredicates {
+		if !v.covered {
+			continue
+		}
+		// Choose the minimum cost vindex from the ones which are covered
+		if vindex == nil || v.vindex.Vindex.Cost() < vindex.Cost() {
+			vindex = v.vindex.Vindex
+			conditions = v.predicates
+		}
+	}
+
+	opcode = engine.SelectScatter
+	if vindex != nil {
+		opcode = engine.SelectEqual
+		if vindex.IsUnique() {
+			opcode = engine.SelectEqualUnique
+		}
+	}
+	return
+}
+
+func addVSchemaInfoToQueryTable(vschema ContextVSchema, t *queryTable) error {
+	vschemaTable, vindex, _, destTableType, destTarget, err := vschema.FindTableOrVindex(t.table)
+	if err != nil {
+		return vterrors.Wrapf(err, "failed to find information about %v", t.table)
+	}
+	t.dest = destTarget
+	t.Keyspace = vschemaTable.Keyspace
+	t.vtable = vschemaTable
+	t.vindex = vindex
+	t.tabType = destTableType
+	switch {
+	case vschemaTable.Type == vindexes.TypeSequence:
+		t.routeOpCode = engine.SelectNext
+	case vschemaTable.Type == vindexes.TypeReference:
+		t.routeOpCode = engine.SelectReference
+	case !vschemaTable.Keyspace.Sharded:
+		t.routeOpCode = engine.SelectUnsharded
+	case vschemaTable.Pinned != nil:
+		// Pinned tables have their keyspace ids already assigned.
+		// Use the Binary vindex, which is the identity function
+		// for keyspace id.
+		t.routeOpCode = engine.SelectEqualUnique
+		//eroute.TargetDestination = destTarget
+		//eroute.TargetTabletType = destTableType
+		//vindex, _ = vindexes.NewBinary("binary", nil)
+		//eroute.Vindex, _ = vindex.(vindexes.SingleColumn)
+		//eroute.Values = []sqltypes.PlanValue{{Value: sqltypes.MakeTrusted(sqltypes.VarBinary, vschemaTable.Pinned)}}
+	default:
+		var vindexUsed vindexes.Vindex
+		var predicatesUsed []sqlparser.Expr
+		t.routeOpCode, vindexUsed, predicatesUsed = t.addPredicate(t.predicates)
+		fmt.Printf("%v", vindexUsed)
+		fmt.Printf("%v", predicatesUsed)
+
+	}
+	return nil
+}
+
+func createQGFromSelect(sel *sqlparser.Select, pb *primitiveBuilder) (*queryGraph, error) {
+	qg := &queryGraph{
 		tables:     nil,
 		crossTable: nil,
 	}
@@ -139,7 +226,7 @@ func createQGFromSelect(sel *sqlparser.Select, pb *primitiveBuilder) (queryGraph
 	if sel.Where != nil {
 		err := qg.collectPredicates(sel, pb.vschema.GetSemTable())
 		if err != nil {
-			return queryGraph{}, err
+			return nil, err
 		}
 	}
 	return qg, nil
@@ -154,10 +241,9 @@ func (qg *queryGraph) collectPredicates(sel *sqlparser.Select, semTable *semanti
 		case 0:
 			qg.addNoDepsPredicate(predicate)
 		case 1:
-			var node *sqlparser.AliasedTableExpr = deps[0]
-			found := qg.addToSingleTable(node, predicate)
+			found := qg.addToSingleTable(deps[0], predicate)
 			if !found {
-				return vterrors.Errorf(vtrpcpb.Code_INTERNAL, "table %s for predicate %s not found", sqlparser.String(node), sqlparser.String(predicate))
+				return vterrors.Errorf(vtrpcpb.Code_INTERNAL, "table %s for predicate %s not found", sqlparser.String(deps[0]), sqlparser.String(predicate))
 			}
 		default:
 			qg.crossTable = append(qg.crossTable, predicate)
@@ -390,13 +476,7 @@ func (qg *queryGraph) solve() joinTree {
 	for i, table := range qg.tables {
 		solves := bitSet(1 << i)
 		allTables |= solves
-		dpTable[solves] = &routePlan{
-			routeOpCode:     table.routeOpCode,
-			solved:          solves,
-			tables:          []*queryTable{table},
-			keyspace:        table.Keyspace,
-			extraPredicates: nil,
-		}
+		dpTable[solves] = createRoutePlan(table, solves)
 	}
 
 	for currentSize := 2; currentSize <= size; currentSize++ {
@@ -429,6 +509,15 @@ func (qg *queryGraph) solve() joinTree {
 	}
 
 	return dpTable[allTables]
+}
+
+func createRoutePlan(table *queryTable, solves bitSet) *routePlan {
+	return &routePlan{
+		routeOpCode: table.routeOpCode,
+		solved:      solves,
+		tables:      []*queryTable{table},
+		keyspace:    table.Keyspace,
+	}
 }
 
 func tryMerge(a, b joinTree) joinTree {
@@ -475,7 +564,7 @@ func tryMerge(a, b joinTree) joinTree {
 	}
 }
 
-func transformToPlan(tree joinTree) logicalPlan {
+func transformToLogicalPlan(tree joinTree) logicalPlan {
 	switch n := tree.(type) {
 	case *routePlan:
 		var tablesForSelect sqlparser.TableExprs
@@ -504,8 +593,8 @@ func transformToPlan(tree joinTree) logicalPlan {
 			ejoin: &engine.Join{
 				Opcode: engine.NormalJoin,
 			},
-			Left:  transformToPlan(n.lhs),
-			Right: transformToPlan(n.rhs),
+			Left:  transformToLogicalPlan(n.lhs),
+			Right: transformToLogicalPlan(n.rhs),
 		}
 	}
 	panic(42)
