@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"strings"
 
+	"vitess.io/vitess/go/sqltypes"
+
 	"vitess.io/vitess/go/vt/key"
 	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
 	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
@@ -611,12 +613,21 @@ func transformToLogicalPlan(tree joinTree) (logicalPlan, error) {
 		if predicates != nil {
 			where = &sqlparser.Where{Expr: predicates, Type: sqlparser.WhereClause}
 		}
+		var values []sqltypes.PlanValue
+		if len(n.conditions) == 1 {
+			value, err := sqlparser.NewPlanValue(n.conditions[0].(*sqlparser.ComparisonExpr).Right)
+			if err != nil {
+				return nil, err
+			}
+			values = []sqltypes.PlanValue{value}
+		}
 		return &route{
 			eroute: &engine.Route{
 				Opcode:    n.routeOpCode,
 				TableName: strings.Join(tableNames, ", "),
 				Keyspace:  n.keyspace,
 				Vindex:    n.vindex.(vindexes.SingleColumn),
+				Values:    values,
 			},
 			Select: &sqlparser.Select{
 				From:  tablesForSelect,
