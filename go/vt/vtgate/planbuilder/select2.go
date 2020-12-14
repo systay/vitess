@@ -45,6 +45,8 @@ type (
 
 		// noDeps contains the predicates that can be evaluated anywhere
 		noDeps sqlparser.Expr
+
+		semTable *semantics.SemTable
 	}
 
 	// queryTable is a single FROM table, including all predicates particular to this table
@@ -129,6 +131,7 @@ func createQGFromSelect(sel *sqlparser.Select, pb *primitiveBuilder) (*queryGrap
 	qg := &queryGraph{
 		tables:     nil,
 		crossTable: nil,
+		semTable:   pb.vschema.GetSemTable(),
 	}
 	qg.collectTables(sel.From)
 	if sel.Where != nil {
@@ -357,7 +360,7 @@ type vindexPlusPredicates struct {
 	predicates []sqlparser.Expr
 }
 
-func (rp *routePlan) addPredicate(predicates []sqlparser.Expr) error {
+func (rp *routePlan) addPredicate(predicates ...sqlparser.Expr) error {
 
 	if len(rp.tables) != 1 {
 		return vterrors.Errorf(vtrpcpb.Code_INTERNAL, "addPredicate should only be called when the route has a single table")
@@ -497,7 +500,7 @@ func (qg *queryGraph) solve() joinTree {
 					// we already have the perfect plan. keep it
 					continue
 				}
-				newPlan := tryMerge(lhs, rhs)
+				newPlan := qg.tryMerge(lhs, rhs)
 				if newPlan == nil {
 					newPlan = &joinPlan{
 						lhs: lhs,
@@ -543,7 +546,7 @@ func createRoutePlan(table *queryTable, solves bitSet) (*routePlan, error) {
 		//eroute.Values = []sqltypes.PlanValue{{Value: sqltypes.MakeTrusted(sqltypes.VarBinary, vschemaTable.Pinned)}}
 	default:
 		plan.routeOpCode = engine.SelectScatter
-		err := plan.addPredicate(table.predicates)
+		err := plan.addPredicate(table.predicates...)
 		if err != nil {
 			return nil, err
 		}
@@ -552,7 +555,7 @@ func createRoutePlan(table *queryTable, solves bitSet) (*routePlan, error) {
 	return plan, nil
 }
 
-func tryMerge(a, b joinTree) joinTree {
+func (qg *queryGraph) tryMerge(a, b joinTree) joinTree {
 	aRoute, ok := a.(*routePlan)
 	if !ok {
 		return nil
@@ -570,7 +573,7 @@ func tryMerge(a, b joinTree) joinTree {
 		if aRoute.routeOpCode != bRoute.routeOpCode {
 			return nil
 		}
-	case engine.SelectScatter:
+	case engine.SelectEqualUnique:
 
 		return nil
 
@@ -587,13 +590,16 @@ func tryMerge(a, b joinTree) joinTree {
 	//aRoute.tables = append(aRoute.tables, bRoute.tables...)
 	//aRoute.solved |= bRoute.solved
 	//aRoute.extraPredicates = append(aRoute.extraPredicates, bRoute.extraPredicates...)
-	return &routePlan{
-		routeOpCode:     aRoute.routeOpCode,
-		solved:          aRoute.solved | bRoute.solved,
-		tables:          append(aRoute.tables, bRoute.tables...),
-		extraPredicates: append(aRoute.extraPredicates, bRoute.extraPredicates...),
-		keyspace:        aRoute.keyspace,
+	r := &routePlan{
+		routeOpCode:          aRoute.routeOpCode,
+		solved:               aRoute.solved | bRoute.solved,
+		tables:               append(aRoute.tables, bRoute.tables...),
+		extraPredicates:      append(aRoute.extraPredicates, bRoute.extraPredicates...),
+		keyspace:             aRoute.keyspace,
+		vindexPlusPredicates: append(aRoute.vindexPlusPredicates, bRoute.vindexPlusPredicates...),
 	}
+
+	return r
 }
 
 func transformToLogicalPlan(tree joinTree) (logicalPlan, error) {
@@ -621,12 +627,16 @@ func transformToLogicalPlan(tree joinTree) (logicalPlan, error) {
 			}
 			values = []sqltypes.PlanValue{value}
 		}
+		var singleColumn vindexes.SingleColumn
+		if n.vindex != nil {
+			singleColumn = n.vindex.(vindexes.SingleColumn)
+		}
 		return &route{
 			eroute: &engine.Route{
 				Opcode:    n.routeOpCode,
 				TableName: strings.Join(tableNames, ", "),
 				Keyspace:  n.keyspace,
-				Vindex:    n.vindex.(vindexes.SingleColumn),
+				Vindex:    singleColumn,
 				Values:    values,
 			},
 			Select: &sqlparser.Select{
