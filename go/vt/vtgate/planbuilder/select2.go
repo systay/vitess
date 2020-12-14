@@ -51,12 +51,12 @@ type (
 		table      sqlparser.TableName
 		predicates []sqlparser.Expr
 
-		vtable      *vindexes.Table
-		vindex      vindexes.Vindex
-		Keyspace    *vindexes.Keyspace
-		tabType     topodatapb.TabletType
-		dest        key.Destination
-		routeOpCode engine.RouteOpcode
+		vtable   *vindexes.Table
+		vindex   vindexes.Vindex
+		Keyspace *vindexes.Keyspace
+		tabType  topodatapb.TabletType
+		dest     key.Destination
+		//routeOpCode engine.RouteOpcode
 	}
 )
 
@@ -101,84 +101,15 @@ func annotateQGWithSchemaInfo(qg *queryGraph, vschema ContextVSchema) error {
 			return err
 		}
 
-		switch t.routeOpCode {
-		// For these opcodes, a new filter will not make any difference, so we can just exit early
-		case engine.SelectUnsharded, engine.SelectNext, engine.SelectDBA, engine.SelectReference, engine.SelectNone:
-			continue
-		}
+		//switch t.routeOpCode {
+		//For these opcodes, a new filter will not make any difference, so we can just exit early
+		//case engine.SelectUnsharded, engine.SelectNext, engine.SelectDBA, engine.SelectReference, engine.SelectNone:
+		//	continue
+		//}
 
 	}
 	return nil
 }
-
-// computePlan computes the plan for the specified filter.
-func (qt *queryTable) addPredicate(predicates []sqlparser.Expr) (opcode engine.RouteOpcode, vindex vindexes.Vindex, conditions []sqlparser.Expr) {
-
-	// VindexPlusPredicates is a struct used to store all the predicates that the vindex can be used to query
-	type VindexPlusPredicates struct {
-		vindex     *vindexes.ColumnVindex
-		covered    bool
-		predicates []sqlparser.Expr
-	}
-
-	var vindexPlusPredicates []*VindexPlusPredicates
-
-	// Add all the column vindexes to the list of vindexPlusPredicates
-	for _, columnVindex := range qt.vtable.ColumnVindexes {
-		vindexPlusPredicates = append(vindexPlusPredicates, &VindexPlusPredicates{vindex: columnVindex})
-	}
-
-	for _, filter := range predicates {
-		switch node := filter.(type) {
-		case *sqlparser.ComparisonExpr:
-			switch node.Operator {
-			case sqlparser.EqualOp:
-				// TODO(Manan,Andres): Remove the predicates that are repeated eg. Id=1 AND Id=1
-				for _, v := range vindexPlusPredicates {
-					column := node.Left.(*sqlparser.ColName)
-					for _, col := range v.vindex.Columns {
-						// If the column for the predicate matches any column in the vindex add it to the list
-						if column.Name.Equal(col) {
-							v.predicates = append(v.predicates, node)
-							// Vindex is covered if all the columns in the vindex have a associated predicate
-							v.covered = len(v.predicates) == len(v.vindex.Columns)
-						}
-					}
-				}
-				//return qt.computeEqualPlan(node)
-				//case sqlparser.InOp:
-				//	return rb.computeINPlan(pb, node)
-				//case sqlparser.NotInOp:
-				//	return rb.computeNotInPlan(node.Right), nil, nil
-			}
-			//case *sqlparser.IsExpr:
-			//	return rb.computeISPlan(pb, node)
-		}
-	}
-	vindex = nil
-	conditions = nil
-	//TODO (Manan,Andres): Improve cost metric for vindexes
-	for _, v := range vindexPlusPredicates {
-		if !v.covered {
-			continue
-		}
-		// Choose the minimum cost vindex from the ones which are covered
-		if vindex == nil || v.vindex.Vindex.Cost() < vindex.Cost() {
-			vindex = v.vindex.Vindex
-			conditions = v.predicates
-		}
-	}
-
-	opcode = engine.SelectScatter
-	if vindex != nil {
-		opcode = engine.SelectEqual
-		if vindex.IsUnique() {
-			opcode = engine.SelectEqualUnique
-		}
-	}
-	return
-}
-
 func addVSchemaInfoToQueryTable(vschema ContextVSchema, t *queryTable) error {
 	vschemaTable, vindex, _, destTableType, destTarget, err := vschema.FindTableOrVindex(t.table)
 	if err != nil {
@@ -189,31 +120,6 @@ func addVSchemaInfoToQueryTable(vschema ContextVSchema, t *queryTable) error {
 	t.vtable = vschemaTable
 	t.vindex = vindex
 	t.tabType = destTableType
-	switch {
-	case vschemaTable.Type == vindexes.TypeSequence:
-		t.routeOpCode = engine.SelectNext
-	case vschemaTable.Type == vindexes.TypeReference:
-		t.routeOpCode = engine.SelectReference
-	case !vschemaTable.Keyspace.Sharded:
-		t.routeOpCode = engine.SelectUnsharded
-	case vschemaTable.Pinned != nil:
-		// Pinned tables have their keyspace ids already assigned.
-		// Use the Binary vindex, which is the identity function
-		// for keyspace id.
-		t.routeOpCode = engine.SelectEqualUnique
-		//eroute.TargetDestination = destTarget
-		//eroute.TargetTabletType = destTableType
-		//vindex, _ = vindexes.NewBinary("binary", nil)
-		//eroute.Vindex, _ = vindex.(vindexes.SingleColumn)
-		//eroute.Values = []sqltypes.PlanValue{{Value: sqltypes.MakeTrusted(sqltypes.VarBinary, vschemaTable.Pinned)}}
-	default:
-		var vindexUsed vindexes.Vindex
-		var predicatesUsed []sqlparser.Expr
-		t.routeOpCode, vindexUsed, predicatesUsed = t.addPredicate(t.predicates)
-		fmt.Printf("%v", vindexUsed)
-		fmt.Printf("%v", predicatesUsed)
-
-	}
 	return nil
 }
 
@@ -420,6 +326,10 @@ type (
 		tables          []*queryTable
 		extraPredicates []sqlparser.Expr
 		keyspace        *vindexes.Keyspace
+
+		// vindex and conditions is set if an vindex will be used for this route.
+		vindex     vindexes.Vindex
+		conditions []sqlparser.Expr
 	}
 	joinPlan struct {
 		lhs, rhs joinTree
@@ -433,6 +343,92 @@ func (rp *routePlan) solves() bitSet {
 func (*routePlan) cost() int {
 	return 1
 }
+
+func (rp *routePlan) addPredicate(predicates []sqlparser.Expr) error {
+	// VindexPlusPredicates is a struct used to store all the predicates that the vindex can be used to query
+	type VindexPlusPredicates struct {
+		vindex     *vindexes.ColumnVindex
+		covered    bool
+		predicates []sqlparser.Expr
+	}
+
+	var vindexPlusPredicates []*VindexPlusPredicates
+
+	if len(rp.tables) != 1 {
+		return vterrors.Errorf(vtrpcpb.Code_INTERNAL, "addPredicate should only be called when the route has a single table")
+	}
+
+	// Add all the column vindexes to the list of vindexPlusPredicates
+	for _, columnVindex := range rp.tables[0].vtable.ColumnVindexes {
+		vindexPlusPredicates = append(vindexPlusPredicates, &VindexPlusPredicates{vindex: columnVindex})
+	}
+
+	for _, filter := range predicates {
+		switch node := filter.(type) {
+		case *sqlparser.ComparisonExpr:
+			switch node.Operator {
+			case sqlparser.EqualOp:
+				// TODO(Manan,Andres): Remove the predicates that are repeated eg. Id=1 AND Id=1
+				for _, v := range vindexPlusPredicates {
+					column := node.Left.(*sqlparser.ColName)
+					for _, col := range v.vindex.Columns {
+						// If the column for the predicate matches any column in the vindex add it to the list
+						if column.Name.Equal(col) {
+							v.predicates = append(v.predicates, node)
+							// Vindex is covered if all the columns in the vindex have a associated predicate
+							v.covered = len(v.predicates) == len(v.vindex.Columns)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	//TODO (Manan,Andres): Improve cost metric for vindexes
+	for _, v := range vindexPlusPredicates {
+		if !v.covered {
+			continue
+		}
+		// Choose the minimum cost vindex from the ones which are covered
+		if rp.vindex == nil || v.vindex.Vindex.Cost() < rp.vindex.Cost() {
+			rp.vindex = v.vindex.Vindex
+			rp.conditions = v.predicates
+		}
+	}
+
+	if rp.vindex != nil {
+		rp.routeOpCode = engine.SelectEqual
+		if rp.vindex.IsUnique() {
+			rp.routeOpCode = engine.SelectEqualUnique
+		}
+	}
+	return nil
+}
+
+// Predicates takes all known predicates for this route and ANDs them together
+func (rp *routePlan) Predicates() sqlparser.Expr {
+	var result sqlparser.Expr
+	add := func(e sqlparser.Expr) {
+		if result == nil {
+			result = e
+			return
+		}
+		result = &sqlparser.AndExpr{
+			Left:  result,
+			Right: e,
+		}
+	}
+	for _, t := range rp.tables {
+		for _, predicate := range t.predicates {
+			add(predicate)
+		}
+	}
+	for _, p := range rp.extraPredicates {
+		add(p)
+	}
+	return result
+}
+
 func (jp *joinPlan) solves() bitSet {
 	return jp.lhs.solves() | jp.rhs.solves()
 }
@@ -476,7 +472,7 @@ func (qg *queryGraph) solve() joinTree {
 	for i, table := range qg.tables {
 		solves := bitSet(1 << i)
 		allTables |= solves
-		dpTable[solves] = createRoutePlan(table, solves)
+		dpTable[solves], _ = createRoutePlan(table, solves)
 	}
 
 	for currentSize := 2; currentSize <= size; currentSize++ {
@@ -511,13 +507,42 @@ func (qg *queryGraph) solve() joinTree {
 	return dpTable[allTables]
 }
 
-func createRoutePlan(table *queryTable, solves bitSet) *routePlan {
-	return &routePlan{
-		routeOpCode: table.routeOpCode,
-		solved:      solves,
-		tables:      []*queryTable{table},
-		keyspace:    table.Keyspace,
+func createRoutePlan(table *queryTable, solves bitSet) (*routePlan, error) {
+	vschemaTable := table.vtable
+
+	plan := &routePlan{
+		solved:   solves,
+		tables:   []*queryTable{table},
+		keyspace: table.Keyspace,
 	}
+
+	switch {
+	case vschemaTable.Type == vindexes.TypeSequence:
+		plan.routeOpCode = engine.SelectNext
+	case vschemaTable.Type == vindexes.TypeReference:
+		plan.routeOpCode = engine.SelectReference
+	case !vschemaTable.Keyspace.Sharded:
+		plan.routeOpCode = engine.SelectUnsharded
+	case vschemaTable.Pinned != nil:
+
+		// Pinned tables have their keyspace ids already assigned.
+		// Use the Binary vindex, which is the identity function
+		// for keyspace id.
+		plan.routeOpCode = engine.SelectEqualUnique
+		//eroute.TargetDestination = destTarget
+		//eroute.TargetTabletType = destTableType
+		//vindex, _ = vindexes.NewBinary("binary", nil)
+		//eroute.Vindex, _ = vindex.(vindexes.SingleColumn)
+		//eroute.Values = []sqltypes.PlanValue{{Value: sqltypes.MakeTrusted(sqltypes.VarBinary, vschemaTable.Pinned)}}
+	default:
+		plan.routeOpCode = engine.SelectScatter
+		err := plan.addPredicate(table.predicates)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return plan, nil
 }
 
 func tryMerge(a, b joinTree) joinTree {
@@ -576,14 +601,21 @@ func transformToLogicalPlan(tree joinTree) logicalPlan {
 			tablesForRoute = append(tablesForRoute, t.alias)
 			tableNames = append(tableNames, sqlparser.String(t.alias))
 		}
+		predicates := n.Predicates()
+		var where *sqlparser.Where
+		if predicates != nil {
+			where = &sqlparser.Where{Expr: predicates, Type: sqlparser.WhereClause}
+		}
 		return &route{
 			eroute: &engine.Route{
 				Opcode:    n.routeOpCode,
 				TableName: strings.Join(tableNames, ", "),
 				Keyspace:  n.keyspace,
+				Vindex:    n.vindex.(vindexes.SingleColumn),
 			},
 			Select: &sqlparser.Select{
-				From: tablesForSelect,
+				From:  tablesForSelect,
+				Where: where,
 			},
 			tables: tablesForRoute,
 		}
