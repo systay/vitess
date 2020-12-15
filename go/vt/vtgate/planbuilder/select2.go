@@ -41,7 +41,7 @@ type (
 		tables []*queryTable
 
 		// crossTable contains the predicates that need multiple tables
-		crossTable []sqlparser.Expr
+		crossTable map[semantics.TableSet][]sqlparser.Expr
 
 		// noDeps contains the predicates that can be evaluated anywhere
 		noDeps sqlparser.Expr
@@ -65,6 +65,13 @@ type (
 	}
 )
 
+func newQueryGraph(semTable *semantics.SemTable) *queryGraph {
+	return &queryGraph{
+		crossTable: map[semantics.TableSet][]sqlparser.Expr{},
+		semTable:   semTable,
+	}
+}
+
 func (qg *queryGraph) collectTable(t sqlparser.TableExpr) {
 	switch table := t.(type) {
 	case *sqlparser.AliasedTableExpr:
@@ -74,7 +81,7 @@ func (qg *queryGraph) collectTable(t sqlparser.TableExpr) {
 	case *sqlparser.JoinTableExpr:
 		qg.collectTable(table.LeftExpr)
 		qg.collectTable(table.RightExpr)
-		qg.crossTable = append(qg.crossTable, table.Condition.On)
+		qg.collectPredicate(table.Condition.On)
 	case *sqlparser.ParenTableExpr:
 		qg.collectTables(table.Exprs)
 	}
@@ -122,14 +129,11 @@ func addVSchemaInfoToQueryTable(vschema ContextVSchema, t *queryTable) error {
 }
 
 func createQGFromSelect(sel *sqlparser.Select, pb *primitiveBuilder) (*queryGraph, error) {
-	qg := &queryGraph{
-		tables:     nil,
-		crossTable: nil,
-		semTable:   pb.vschema.GetSemTable(),
-	}
+	semTable := pb.vschema.GetSemTable()
+	qg := newQueryGraph(semTable)
 	qg.collectTables(sel.From)
 	if sel.Where != nil {
-		err := qg.collectPredicates(sel, pb.vschema.GetSemTable())
+		err := qg.collectPredicates(sel)
 		if err != nil {
 			return nil, err
 		}
@@ -137,22 +141,36 @@ func createQGFromSelect(sel *sqlparser.Select, pb *primitiveBuilder) (*queryGrap
 	return qg, nil
 }
 
-func (qg *queryGraph) collectPredicates(sel *sqlparser.Select, semTable *semantics.SemTable) error {
+func (qg *queryGraph) collectPredicates(sel *sqlparser.Select) error {
 	predicates := splitAndExpression(nil, sel.Where.Expr)
 
 	for _, predicate := range predicates {
-		deps := semTable.Dependencies(predicate)
-		switch deps.NumberOfTables() {
-		case 0:
-			qg.addNoDepsPredicate(predicate)
-		case 1:
-			found := qg.addToSingleTable(deps, predicate)
-			if !found {
-				return vterrors.Errorf(vtrpcpb.Code_INTERNAL, "table %v for predicate %v not found", deps, sqlparser.String(predicate))
-			}
-		default:
-			qg.crossTable = append(qg.crossTable, predicate)
+		err := qg.collectPredicate(predicate)
+		if err != nil {
+			return err
 		}
+	}
+	return nil
+}
+
+func (qg *queryGraph) collectPredicate(predicate sqlparser.Expr) error {
+	deps := qg.semTable.Dependencies(predicate)
+	switch deps.NumberOfTables() {
+	case 0:
+		qg.addNoDepsPredicate(predicate)
+	case 1:
+		found := qg.addToSingleTable(deps, predicate)
+		if !found {
+			return vterrors.Errorf(vtrpcpb.Code_INTERNAL, "table %v for predicate %v not found", deps, sqlparser.String(predicate))
+		}
+	default:
+		allPredicates, found := qg.crossTable[deps]
+		if found {
+			allPredicates = append(allPredicates, predicate)
+		} else {
+			allPredicates = []sqlparser.Expr{predicate}
+		}
+		qg.crossTable[deps] = allPredicates
 	}
 	return nil
 }
@@ -571,14 +589,18 @@ func (qg *queryGraph) tryMerge(a, b joinTree) joinTree {
 	//aRoute.tables = append(aRoute.tables, bRoute.tables...)
 	//aRoute.solved |= bRoute.solved
 	//aRoute.extraPredicates = append(aRoute.extraPredicates, bRoute.extraPredicates...)
+	newTabletSet := aRoute.solved | bRoute.solved
 	r := &routePlan{
 		routeOpCode:          aRoute.routeOpCode,
-		solved:               aRoute.solved | bRoute.solved,
+		solved:               newTabletSet,
 		tables:               append(aRoute.tables, bRoute.tables...),
 		extraPredicates:      append(aRoute.extraPredicates, bRoute.extraPredicates...),
 		keyspace:             aRoute.keyspace,
 		vindexPlusPredicates: append(aRoute.vindexPlusPredicates, bRoute.vindexPlusPredicates...),
 	}
+
+	joinPredicates := qg.crossTable[newTabletSet]
+	r.extraPredicates = append(r.extraPredicates, joinPredicates...)
 
 	return r
 }

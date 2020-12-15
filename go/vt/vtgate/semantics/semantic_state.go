@@ -105,7 +105,7 @@ func Analyse(statement sqlparser.Statement, si schemaInformation) (*SemTable, er
 	if err != nil {
 		return nil, err
 	}
-	return &SemTable{exprDependencies: analyzer.exprDeps}, nil
+	return &SemTable{exprDependencies: analyzer.exprDeps, Tables: analyzer.Tables}, nil
 }
 
 func log(node sqlparser.SQLNode, format string, args ...interface{}) {
