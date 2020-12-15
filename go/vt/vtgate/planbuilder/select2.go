@@ -51,6 +51,7 @@ type (
 
 	// queryTable is a single FROM table, including all predicates particular to this table
 	queryTable struct {
+		tableSet   semantics.TableSet
 		alias      *sqlparser.AliasedTableExpr
 		table      sqlparser.TableName
 		predicates []sqlparser.Expr
@@ -68,7 +69,7 @@ func (qg *queryGraph) collectTable(t sqlparser.TableExpr) {
 	switch table := t.(type) {
 	case *sqlparser.AliasedTableExpr:
 		tableName := table.Expr.(sqlparser.TableName)
-		qt := &queryTable{alias: table, table: tableName}
+		qt := &queryTable{alias: table, table: tableName, tableSet: qg.semTable.TableSetFor(table)}
 		qg.tables = append(qg.tables, qt)
 	case *sqlparser.JoinTableExpr:
 		qg.collectTable(table.LeftExpr)
@@ -104,13 +105,6 @@ func annotateQGWithSchemaInfo(qg *queryGraph, vschema ContextVSchema) error {
 		if err != nil {
 			return err
 		}
-
-		//switch t.routeOpCode {
-		//For these opcodes, a new filter will not make any difference, so we can just exit early
-		//case engine.SelectUnsharded, engine.SelectNext, engine.SelectDBA, engine.SelectReference, engine.SelectNone:
-		//	continue
-		//}
-
 	}
 	return nil
 }
@@ -148,13 +142,13 @@ func (qg *queryGraph) collectPredicates(sel *sqlparser.Select, semTable *semanti
 
 	for _, predicate := range predicates {
 		deps := semTable.Dependencies(predicate)
-		switch len(deps) {
+		switch deps.NumberOfTables() {
 		case 0:
 			qg.addNoDepsPredicate(predicate)
 		case 1:
-			found := qg.addToSingleTable(deps[0], predicate)
+			found := qg.addToSingleTable(deps, predicate)
 			if !found {
-				return vterrors.Errorf(vtrpcpb.Code_INTERNAL, "table %s for predicate %s not found", sqlparser.String(deps[0]), sqlparser.String(predicate))
+				return vterrors.Errorf(vtrpcpb.Code_INTERNAL, "table %v for predicate %v not found", deps, sqlparser.String(predicate))
 			}
 		default:
 			qg.crossTable = append(qg.crossTable, predicate)
@@ -163,9 +157,9 @@ func (qg *queryGraph) collectPredicates(sel *sqlparser.Select, semTable *semanti
 	return nil
 }
 
-func (qg *queryGraph) addToSingleTable(depencency *sqlparser.AliasedTableExpr, predicate sqlparser.Expr) bool {
+func (qg *queryGraph) addToSingleTable(table semantics.TableSet, predicate sqlparser.Expr) bool {
 	for _, t := range qg.tables {
-		if depencency == t.alias {
+		if table == t.tableSet {
 			t.predicates = append(t.predicates, predicate)
 			return true
 		}
@@ -319,15 +313,13 @@ func extractSubqueries(stmt sqlparser.Statement) []subq {
 }
 
 type (
-	bitSet uint8 // we can only join 8 tables with this limit
-
 	joinTree interface {
-		solves() bitSet
+		solves() semantics.TableSet
 		cost() int
 	}
 	routePlan struct {
 		routeOpCode     engine.RouteOpcode
-		solved          bitSet
+		solved          semantics.TableSet
 		tables          []*queryTable
 		extraPredicates []sqlparser.Expr
 		keyspace        *vindexes.Keyspace
@@ -343,10 +335,10 @@ type (
 	joinPlan struct {
 		lhs, rhs joinTree
 	}
-	dpTableT map[bitSet]joinTree
+	dpTableT map[semantics.TableSet]joinTree
 )
 
-func (rp *routePlan) solves() bitSet {
+func (rp *routePlan) solves() semantics.TableSet {
 	return rp.solved
 }
 func (*routePlan) cost() int {
@@ -439,33 +431,22 @@ func (rp *routePlan) Predicates() sqlparser.Expr {
 	return result
 }
 
-func (jp *joinPlan) solves() bitSet {
+func (jp *joinPlan) solves() semantics.TableSet {
 	return jp.lhs.solves() | jp.rhs.solves()
 }
 func (jp *joinPlan) cost() int {
 	return jp.lhs.cost() + jp.rhs.cost()
 }
 
-func isOverlapping(a, b bitSet) bool { return a&b != 0 }
-
 func (dpt dpTableT) bitSetsOfSize(wanted int) []joinTree {
 	var result []joinTree
 	for bs, jt := range dpt {
-		size := countSetBits(bs)
+		size := bs.NumberOfTables()
 		if size == wanted {
 			result = append(result, jt)
 		}
 	}
 	return result
-}
-func countSetBits(n bitSet) int {
-	// Brian Kernighan’s Algorithm
-	count := 0
-	for n > 0 {
-		n &= n - 1
-		count++
-	}
-	return count
 }
 
 /*
@@ -476,11 +457,11 @@ func (qg *queryGraph) solve() joinTree {
 	size := len(qg.tables)
 	dpTable := make(dpTableT)
 
-	var allTables bitSet
+	var allTables semantics.TableSet
 
 	// we start by seeding the table with the single routes
-	for i, table := range qg.tables {
-		solves := bitSet(1 << i)
+	for _, table := range qg.tables {
+		solves := qg.semTable.TableSetFor(table.alias)
 		allTables |= solves
 		dpTable[solves], _ = createRoutePlan(table, solves)
 	}
@@ -490,7 +471,7 @@ func (qg *queryGraph) solve() joinTree {
 		rights := dpTable.bitSetsOfSize(currentSize - 1)
 		for _, lhs := range lefts {
 			for _, rhs := range rights {
-				if isOverlapping(lhs.solves(), rhs.solves()) {
+				if semantics.IsOverlapping(lhs.solves(), rhs.solves()) {
 					// at least one of the tables is solved on both sides
 					continue
 				}
@@ -517,7 +498,7 @@ func (qg *queryGraph) solve() joinTree {
 	return dpTable[allTables]
 }
 
-func createRoutePlan(table *queryTable, solves bitSet) (*routePlan, error) {
+func createRoutePlan(table *queryTable, solves semantics.TableSet) (*routePlan, error) {
 	vschemaTable := table.vtable
 
 	plan := &routePlan{

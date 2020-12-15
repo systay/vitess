@@ -21,6 +21,7 @@ import (
 	"vitess.io/vitess/go/vt/sqlparser"
 	"vitess.io/vitess/go/vt/vterrors"
 	"vitess.io/vitess/go/vt/vtgate/engine"
+	"vitess.io/vitess/go/vt/vtgate/semantics"
 )
 
 type concatenate struct {
@@ -30,6 +31,10 @@ type concatenate struct {
 
 func (c *concatenate) Tables() []*sqlparser.AliasedTableExpr {
 	return append(c.lhs.Tables(), c.rhs.Tables()...)
+}
+
+func (c *concatenate) Tables2() semantics.TableSet {
+	return c.lhs.Tables2() | c.rhs.Tables2()
 }
 
 var _ logicalPlan = (*concatenate)(nil)

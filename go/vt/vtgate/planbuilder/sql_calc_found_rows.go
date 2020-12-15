@@ -21,6 +21,7 @@ import (
 	"vitess.io/vitess/go/vt/sqlparser"
 	"vitess.io/vitess/go/vt/vterrors"
 	"vitess.io/vitess/go/vt/vtgate/engine"
+	"vitess.io/vitess/go/vt/vtgate/semantics"
 )
 
 var _ logicalPlan = (*sqlCalcFoundRows)(nil)
@@ -32,6 +33,10 @@ type sqlCalcFoundRows struct {
 
 func (s *sqlCalcFoundRows) Tables() []*sqlparser.AliasedTableExpr {
 	return s.LimitQuery.Tables()
+}
+
+func (s *sqlCalcFoundRows) Tables2() semantics.TableSet {
+	return s.LimitQuery.Tables2()
 }
 
 //Wireup implements the logicalPlan interface

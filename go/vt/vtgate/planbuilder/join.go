@@ -19,6 +19,8 @@ package planbuilder
 import (
 	"errors"
 
+	"vitess.io/vitess/go/vt/vtgate/semantics"
+
 	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
 	"vitess.io/vitess/go/vt/vterrors"
 
@@ -71,6 +73,10 @@ type join struct {
 
 func (jb *join) Tables() []*sqlparser.AliasedTableExpr {
 	return append(jb.Left.Tables(), jb.Right.Tables()...)
+}
+
+func (jb *join) Tables2() semantics.TableSet {
+	return jb.Left.Tables2() | jb.Right.Tables2()
 }
 
 // newJoin makes a new join using the two planBuilder. ajoin can be nil
@@ -259,21 +265,6 @@ func (jb *join) isOnLeft(nodeNum int) bool {
 	return nodeNum <= jb.leftOrder
 }
 
-func (jb *join) isOnLHS(deps []*sqlparser.AliasedTableExpr) bool {
-	for _, d := range deps {
-		if !contains(d, jb.Left.Tables()) {
-			return false
-		}
-	}
-	return true
-}
-
-// contains returns true if the second slice is contained in the first
-func contains(t *sqlparser.AliasedTableExpr, container []*sqlparser.AliasedTableExpr) bool {
-	for _, c1 := range container {
-		if c1 == t {
-			return true
-		}
-	}
-	return false
+func (jb *join) isOnLHS(deps semantics.TableSet) bool {
+	return semantics.IsContainedBy(deps, jb.Left.Tables2())
 }

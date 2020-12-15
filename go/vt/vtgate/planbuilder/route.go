@@ -19,6 +19,8 @@ package planbuilder
 import (
 	"strings"
 
+	"vitess.io/vitess/go/vt/vtgate/semantics"
+
 	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
 	"vitess.io/vitess/go/vt/vterrors"
 
@@ -66,11 +68,16 @@ type route struct {
 	// eroute is the primitive being built.
 	eroute *engine.Route
 
-	tables []*sqlparser.AliasedTableExpr
+	tables  []*sqlparser.AliasedTableExpr
+	tables2 semantics.TableSet
 }
 
 func (rb *route) Tables() []*sqlparser.AliasedTableExpr {
 	return rb.tables
+}
+
+func (rb *route) Tables2() semantics.TableSet {
+	return rb.tables2
 }
 
 type tableSubstitution struct {

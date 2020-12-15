@@ -17,13 +17,21 @@ limitations under the License.
 package semantics
 
 import (
-	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 
 	"github.com/stretchr/testify/require"
 	"vitess.io/vitess/go/vt/sqlparser"
+)
+
+const (
+	// Just here to make outputs more readable
+	T0 TableSet = 1 << iota
+	T1
+	T2
+	_ // T3 is not used in the tests
+	T4
 )
 
 func extract(in *sqlparser.Select, idx int) sqlparser.Expr {
@@ -44,7 +52,7 @@ from x as t`
 	s1 := semTable.Dependencies(extract(sel2, 0))
 
 	// if scoping works as expected, we should be able to see the inner table being used by the inner expression
-	assert.Equal(t, []string{"z as t"}, sortDeps(s1))
+	assert.Equal(t, T1, s1)
 }
 
 func TestBindingSingleTable(t *testing.T) {
@@ -62,9 +70,7 @@ func TestBindingSingleTable(t *testing.T) {
 			sel, _ := stmt.(*sqlparser.Select)
 
 			d := semTable.Dependencies(extract(sel, 0))
-			require.NotEmpty(t, d)
-			require.NotNil(t, d[0])
-			require.Contains(t, sqlparser.String(d[0]), "tabl")
+			require.Equal(t, T0, d, query)
 		})
 	}
 }
@@ -79,51 +85,39 @@ func TestUnion(t *testing.T) {
 
 	d1 := semTable.Dependencies(extract(sel1, 0))
 	d2 := semTable.Dependencies(extract(sel2, 0))
-	require.Contains(t, sortDeps(d1), "tabl1")
-	require.Contains(t, sortDeps(d2), "tabl2")
+	assert.Equal(t, T0, d1)
+	assert.Equal(t, T1, d2)
 }
 
 func TestBindingMultiTable(t *testing.T) {
 	type testCase struct {
 		query string
-		deps  []string
+		deps  TableSet
 	}
-	d := func(i ...string) []string { return i }
 	queries := []testCase{{
 		query: "select t.col from t, s",
-		deps:  d("t"),
+		deps:  T0,
 	}, {
 		query: "select max(t.col+s.col) from t, s",
-		deps:  d("s", "t"),
+		deps:  T0 | T1,
 	}, {
-		query: "select case t.col when s.col then r.col else w.col end from t, s, r, w, u",
-		deps:  d("r", "s", "t", "w"),
+		query: "select case t.col when s.col then r.col else u.col end from t, s, r, w, u",
+		deps:  T0 | T1 | T2 | T4,
 	}, {
 		// make sure that we don't let sub-query Dependencies leak out by mistake
 		query: "select t.col + (select 42 from s) from t",
-		deps:  d("t"),
+		deps:  T0,
 	}, {
 		query: "select (select 42 from s where r.id = s.id) from r",
-		deps:  d("r", "s"),
+		deps:  T0 | T1,
 	}}
 	for _, query := range queries {
 		t.Run(query.query, func(t *testing.T) {
 			stmt, semTable := parseAndAnalyze(t, query.query)
 			sel, _ := stmt.(*sqlparser.Select)
-
-			d := semTable.Dependencies(extract(sel, 0))
-			assert.Equal(t, query.deps, sortDeps(d))
+			assert.Equal(t, query.deps, semTable.Dependencies(extract(sel, 0)), query.query)
 		})
 	}
-}
-
-func sortDeps(d []table) []string {
-	var deps []string
-	for _, t2 := range d {
-		deps = append(deps, sqlparser.String(t2))
-	}
-	sort.Strings(deps)
-	return deps
 }
 
 func TestBindingSingleDepPerTable(t *testing.T) {
@@ -132,8 +126,8 @@ func TestBindingSingleDepPerTable(t *testing.T) {
 	sel, _ := stmt.(*sqlparser.Select)
 
 	d := semTable.Dependencies(extract(sel, 0))
-	assert.Equal(t, 1, len(d), "size wrong")
-	assert.Equal(t, "t", sqlparser.String(d[0]))
+	assert.Equal(t, 1, d.NumberOfTables(), "size wrong")
+	assert.Equal(t, T0, d)
 }
 
 func TestNotUniqueTableName(t *testing.T) {

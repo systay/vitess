@@ -21,6 +21,7 @@ import (
 	"vitess.io/vitess/go/vt/sqlparser"
 	"vitess.io/vitess/go/vt/vterrors"
 	"vitess.io/vitess/go/vt/vtgate/engine"
+	"vitess.io/vitess/go/vt/vtgate/semantics"
 )
 
 var _ logicalPlan = (*pulloutSubquery)(nil)
@@ -37,6 +38,10 @@ type pulloutSubquery struct {
 
 func (ps *pulloutSubquery) Tables() []*sqlparser.AliasedTableExpr {
 	return ps.underlying.Tables()
+}
+
+func (ps *pulloutSubquery) Tables2() semantics.TableSet {
+	return ps.underlying.Tables2()
 }
 
 // newPulloutSubquery builds a new pulloutSubquery.

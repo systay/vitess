@@ -28,9 +28,15 @@ import (
 
 type (
 	table = *sqlparser.AliasedTableExpr
+
+	// TableSet is how a set of tables is expressed.
+	// Tables get unique bits assigned in the order that they are encountered during semantic analysis
+	TableSet uint64 // we can only join 64 tables with this underlying data type
+
 	// SemTable contains semantic analysis information about the query.
 	SemTable struct {
-		exprDependencies map[*sqlparser.ColName]table
+		Tables           []table
+		exprDependencies map[sqlparser.Expr]TableSet
 	}
 	schemaInformation interface {
 		FindTable(tablename sqlparser.TableName) (*vindexes.Table, error)
@@ -41,24 +47,41 @@ type (
 	}
 )
 
+// NumberOfTables returns the number of bits set
+func (ts TableSet) NumberOfTables() int {
+	// Brian Kernighan’s Algorithm
+	count := 0
+	for ts > 0 {
+		ts &= ts - 1
+		count++
+	}
+	return count
+}
+
+// TableSetFor returns the bitmask for this particular tableshoe
+func (st *SemTable) TableSetFor(t table) TableSet {
+	for idx, t2 := range st.Tables {
+		if t == t2 {
+			return 1 << idx
+		}
+	}
+	return 0
+}
+
 // Dependencies return the table dependencies of the expression.
-func (t *SemTable) Dependencies(expr sqlparser.Expr) []table {
-	type Void struct{}
-	var void Void
-	depTable := map[table]Void{}
+func (st *SemTable) Dependencies(expr sqlparser.Expr) TableSet {
+	var deps TableSet
+
 	_ = sqlparser.Walk(func(node sqlparser.SQLNode) (kontinue bool, err error) {
 		colName, ok := node.(*sqlparser.ColName)
 		if ok {
-			depTable[t.exprDependencies[colName]] = void
+			set := st.exprDependencies[colName]
+			deps |= set
 		}
 		return true, nil
 	}, expr)
 
-	var uniqTable []table
-	for tab := range depTable {
-		uniqTable = append(uniqTable, tab)
-	}
-	return uniqTable
+	return deps
 }
 
 func newScope(parent *scope) *scope {
@@ -95,3 +118,9 @@ func log(node sqlparser.SQLNode, format string, args ...interface{}) {
 		}
 	}
 }
+
+// IsOverlapping returns true if at least one table exists in both sets
+func IsOverlapping(a, b TableSet) bool { return a&b != 0 }
+
+// IsContainedBy returns true if all of `b` is contained in `a`
+func IsContainedBy(a, b TableSet) bool { return a&b == a }

@@ -21,6 +21,7 @@ import (
 	"vitess.io/vitess/go/vt/sqlparser"
 	"vitess.io/vitess/go/vt/vterrors"
 	"vitess.io/vitess/go/vt/vtgate/engine"
+	"vitess.io/vitess/go/vt/vtgate/semantics"
 )
 
 // logicalPlan defines the interface that a primitive must
@@ -79,6 +80,7 @@ type logicalPlan interface {
 	Rewrite(inputs ...logicalPlan) error
 
 	Tables() []*sqlparser.AliasedTableExpr
+	Tables2() semantics.TableSet
 }
 
 //-------------------------------------------------------------------------
@@ -184,6 +186,11 @@ func (bc *logicalPlanCommon) Inputs() []logicalPlan {
 // Tables implements the logicalPlan interface
 func (bc *logicalPlanCommon) Tables() []*sqlparser.AliasedTableExpr {
 	return bc.input.Tables()
+}
+
+// Tables2 implements the logicalPlan interface
+func (bc *logicalPlanCommon) Tables2() semantics.TableSet {
+	return bc.input.Tables2()
 }
 
 //-------------------------------------------------------------------------

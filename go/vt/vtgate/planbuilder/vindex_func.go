@@ -19,6 +19,8 @@ package planbuilder
 import (
 	"errors"
 
+	"vitess.io/vitess/go/vt/vtgate/semantics"
+
 	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
 	"vitess.io/vitess/go/vt/vterrors"
 
@@ -44,6 +46,9 @@ type vindexFunc struct {
 
 func (vf *vindexFunc) Tables() []*sqlparser.AliasedTableExpr {
 	return []*sqlparser.AliasedTableExpr{}
+}
+func (vf *vindexFunc) Tables2() semantics.TableSet {
+	return semantics.TableSet(0)
 }
 
 func newVindexFunc(alias sqlparser.TableName, vindex vindexes.SingleColumn) (*vindexFunc, *symtab) {

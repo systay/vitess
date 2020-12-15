@@ -28,8 +28,10 @@ var debug = false
 type (
 	// analyzer is a struct to work with analyzing the query.
 	analyzer struct {
+		Tables []table
+
 		scopes   []*scope
-		exprDeps map[*sqlparser.ColName]table
+		exprDeps map[sqlparser.Expr]TableSet
 		si       schemaInformation
 		err      error
 	}
@@ -38,7 +40,7 @@ type (
 // newAnalyzer create the semantic analyzer
 func newAnalyzer(si schemaInformation) *analyzer {
 	return &analyzer{
-		exprDeps: map[*sqlparser.ColName]table{},
+		exprDeps: map[sqlparser.Expr]TableSet{},
 		si:       si,
 	}
 }
@@ -76,7 +78,7 @@ func (a *analyzer) analyzeDown(cursor *sqlparser.Cursor) bool {
 	return a.shouldContinue()
 }
 
-func (a *analyzer) resolveColumn(colName *sqlparser.ColName, current *scope) (table, error) {
+func (a *analyzer) resolveColumn(colName *sqlparser.ColName, current *scope) (TableSet, error) {
 	var t table
 	var err error
 	if colName.Qualifier.IsEmpty() {
@@ -84,7 +86,7 @@ func (a *analyzer) resolveColumn(colName *sqlparser.ColName, current *scope) (ta
 	} else {
 		t, err = a.resolveQualifiedColumn(current, colName)
 	}
-	return t, err
+	return a.tableSetFor(t), err
 }
 
 func (a *analyzer) analyzeTableExprs(tablExprs sqlparser.TableExprs) error {
@@ -139,6 +141,15 @@ func (a *analyzer) resolveUnQualifiedColumn(current *scope, expr *sqlparser.ColN
 	return nil, vterrors.Errorf(vtrpcpb.Code_UNIMPLEMENTED, "todo - figure out which table this column belongs to")
 }
 
+func (a *analyzer) tableSetFor(t table) TableSet {
+	for i, t2 := range a.Tables {
+		if t == t2 {
+			return TableSet(1 << i)
+		}
+	}
+	panic("unknown table")
+}
+
 func (a *analyzer) bindTable(alias *sqlparser.AliasedTableExpr, expr sqlparser.SimpleTableExpr) error {
 	switch t := expr.(type) {
 	case *sqlparser.DerivedTable:
@@ -151,10 +162,10 @@ func (a *analyzer) bindTable(alias *sqlparser.AliasedTableExpr, expr sqlparser.S
 		return scope.addTable(alias.As.String(), alias)
 	case sqlparser.TableName:
 		scope := a.currentScope()
+		a.Tables = append(a.Tables, alias)
 		if alias.As.IsEmpty() {
 			return scope.addTable(t.Name.String(), alias)
 		}
-
 		return scope.addTable(alias.As.String(), alias)
 	}
 	return nil
