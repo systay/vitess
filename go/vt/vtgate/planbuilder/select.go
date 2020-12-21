@@ -145,9 +145,32 @@ func (pb *primitiveBuilder) processSelect(sel *sqlparser.Select, outer *symtab, 
 		return mysql.NewSQLError(mysql.ERCantUseOptionHere, mysql.SSSyntaxErrorOrAccessViolation, "Incorrect usage/placement of 'INTO'")
 	}
 
-	err := pb.planRoutes(sel, outer)
-	if err != nil {
+	var where sqlparser.Expr
+	if sel.Where != nil {
+		where = sel.Where.Expr
+	}
+	if err := pb.processTableExprs(sel.From, where); err != nil {
 		return err
+	}
+	if rb, ok := pb.plan.(*route); ok {
+		directives := sqlparser.ExtractCommentDirectives(sel.Comments)
+
+		rb.eroute.QueryTimeout = queryTimeout(directives)
+		if rb.eroute.TargetDestination != nil {
+			return vterrors.Errorf(vtrpcpb.Code_INVALID_ARGUMENT, "unsupported: SELECT with a target destination")
+		}
+
+		if directives.IsSet(sqlparser.DirectiveScatterErrorsAsWarnings) {
+			rb.eroute.ScatterErrorsAsWarnings = true
+		}
+	}
+	// Set the outer symtab after processing of FROM clause.
+	// This is because correlation is not allowed there.
+	pb.st.Outer = outer
+	if sel.Where != nil {
+		if err := pb.pushFilter(sel.Where.Expr, sqlparser.WhereStr); err != nil {
+			return err
+		}
 	}
 
 	if err := pb.checkAggregates(sel); err != nil {
@@ -169,29 +192,6 @@ func (pb *primitiveBuilder) processSelect(sel *sqlparser.Select, outer *symtab, 
 	}
 
 	return setMiscFunc(pb.plan, sel)
-}
-
-func (pb *primitiveBuilder) planRoutes(sel *sqlparser.Select, outer *symtab) error {
-
-	if err := pb.processTableExprs(sel.From); err != nil {
-		return err
-	}
-
-	directives := sqlparser.ExtractCommentDirectives(sel.Comments)
-	err := pb.applyDirectivesAndCheckRoutes(directives)
-	if err != nil {
-		return err
-	}
-
-	// Set the outer symtab after processing of FROM clause.
-	// This is because correlation is not allowed there.
-	pb.st.Outer = outer
-	if sel.Where != nil {
-		if err := pb.pushFilter(sel.Where.Expr, sqlparser.WhereStr); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (pb *primitiveBuilder) applyDirectivesAndCheckRoutes(directives sqlparser.CommentDirectives) error {

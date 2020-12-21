@@ -113,6 +113,7 @@ import (
 	"vitess.io/vitess/go/vt/topo"
 	"vitess.io/vitess/go/vt/topo/topoproto"
 	"vitess.io/vitess/go/vt/topotools"
+	"vitess.io/vitess/go/vt/vtctl/grpcvtctldserver"
 	"vitess.io/vitess/go/vt/vterrors"
 	"vitess.io/vitess/go/vt/wrangler"
 
@@ -175,22 +176,12 @@ var commands = []commandGroup{
 			{"SetReadWrite", commandSetReadWrite,
 				"<tablet alias>",
 				"Sets the tablet as read-write."},
-			{"StartSlave", commandStartReplication,
-				"DEPRECATED -- Use StartReplication <tablet alias>",
-				"Starts replication on the specified tablet."},
 			{"StartReplication", commandStartReplication,
 				"<table alias>",
 				"Starts replication on the specified tablet."},
-			{"StopSlave", commandStopReplication,
-				"DEPRECATED -- Use StopReplication <tablet alias>",
-				"Stops replication on the specified tablet."},
 			{"StopReplication", commandStopReplication,
 				"<tablet alias>",
 				"Stops replication on the specified tablet."},
-			{"ChangeSlaveType", commandChangeTabletType,
-				"DEPRECATED -- Use ChangeTabletType [-dry-run] <tablet alias> <tablet type>",
-				"Changes the db type for the specified tablet, if possible. This command is used primarily to arrange replicas, and it will not convert a master.\n" +
-					"NOTE: This command automatically updates the serving graph.\n"},
 			{"ChangeTabletType", commandChangeTabletType,
 				"[-dry-run] <tablet alias> <tablet type>",
 				"Changes the db type for the specified tablet, if possible. This command is used primarily to arrange replicas, and it will not convert a master.\n" +
@@ -1775,20 +1766,32 @@ func commandGetKeyspace(ctx context.Context, wr *wrangler.Wrangler, subFlags *fl
 	}
 
 	keyspace := subFlags.Arg(0)
-	keyspaceInfo, err := wr.TopoServer().GetKeyspace(ctx, keyspace)
+
+	// TODO: make vtctld a field of the wrangler
+	vtctld := grpcvtctldserver.NewVtctldServer(wr.TopoServer())
+	keyspaceInfo, err := vtctld.GetKeyspace(ctx, &vtctldatapb.GetKeyspaceRequest{
+		Keyspace: keyspace,
+	})
 	if err != nil {
 		return err
 	}
 	// Pass the embedded proto directly or jsonpb will panic.
-	return printJSON(wr.Logger(), keyspaceInfo.Keyspace)
+	return printJSON(wr.Logger(), keyspaceInfo.Keyspace.Keyspace)
 }
 
 func commandGetKeyspaces(ctx context.Context, wr *wrangler.Wrangler, subFlags *flag.FlagSet, args []string) error {
-	keyspaces, err := wr.TopoServer().GetKeyspaces(ctx)
+	vtctld := grpcvtctldserver.NewVtctldServer(wr.TopoServer())
+	resp, err := vtctld.GetKeyspaces(ctx, &vtctldatapb.GetKeyspacesRequest{})
 	if err != nil {
 		return err
 	}
-	wr.Logger().Printf("%v\n", strings.Join(keyspaces, "\n"))
+
+	names := make([]string, len(resp.Keyspaces))
+	for i, ks := range resp.Keyspaces {
+		names[i] = ks.Name
+	}
+
+	wr.Logger().Printf("%v\n", strings.Join(names, "\n"))
 	return nil
 }
 
@@ -2454,12 +2457,7 @@ func commandApplySchema(ctx context.Context, wr *wrangler.Wrangler, subFlags *fl
 	sql := subFlags.String("sql", "", "A list of semicolon-delimited SQL commands")
 	sqlFile := subFlags.String("sql-file", "", "Identifies the file that contains the SQL commands")
 	ddlStrategy := subFlags.String("ddl_strategy", "", "Online DDL strategy, compatible with @@ddl_strategy session variable (examples: 'gh-ost', 'pt-osc', 'gh-ost --max-load=Threads_running=100'")
-	// for backwards compatibility
-	deprecatedTimeout := subFlags.Duration("wait_slave_timeout", wrangler.DefaultWaitReplicasTimeout, "DEPRECATED -- use -wait_replicas_timeout")
 	waitReplicasTimeout := subFlags.Duration("wait_replicas_timeout", wrangler.DefaultWaitReplicasTimeout, "The amount of time to wait for replicas to receive the schema change via replication.")
-	if *deprecatedTimeout != wrangler.DefaultWaitReplicasTimeout {
-		*waitReplicasTimeout = *deprecatedTimeout
-	}
 	if err := subFlags.Parse(args); err != nil {
 		return err
 	}
@@ -2472,8 +2470,12 @@ func commandApplySchema(ctx context.Context, wr *wrangler.Wrangler, subFlags *fl
 	if err != nil {
 		return err
 	}
-
-	executor := schemamanager.NewTabletExecutor(wr, *waitReplicasTimeout)
+	executionUUID, err := schema.CreateUUID()
+	if err != nil {
+		return err
+	}
+	requestContext := fmt.Sprintf("vtctl:%s", executionUUID)
+	executor := schemamanager.NewTabletExecutor(requestContext, wr, *waitReplicasTimeout)
 	if *allowLongUnavailability {
 		executor.AllowBigSchemaChange()
 	}
@@ -2528,7 +2530,7 @@ func commandOnlineDDL(ctx context.Context, wr *wrangler.Wrangler, subFlags *flag
 				condition = fmt.Sprintf("migration_uuid='%s'", uuid)
 			}
 			query = fmt.Sprintf(`select
-				shard, mysql_schema, mysql_table, migration_uuid, strategy, started_timestamp, completed_timestamp, migration_status 
+				shard, mysql_schema, mysql_table, ddl_action, migration_uuid, strategy, started_timestamp, completed_timestamp, migration_status
 				from _vt.schema_migrations where %s`, condition)
 		}
 	case "retry":
@@ -2546,6 +2548,13 @@ func commandOnlineDDL(ctx context.Context, wr *wrangler.Wrangler, subFlags *flag
 			}
 			uuid = arg
 			query = fmt.Sprintf(`update _vt.schema_migrations set migration_status='cancel' where migration_uuid='%s'`, uuid)
+		}
+	case "cancel-all":
+		{
+			if arg != "" {
+				return fmt.Errorf("UUID not allowed in %s", command)
+			}
+			query = `update _vt.schema_migrations set migration_status='cancel-all'`
 		}
 	default:
 		return fmt.Errorf("Unknown OnlineDDL command: %s", command)
@@ -2565,11 +2574,7 @@ func commandCopySchemaShard(ctx context.Context, wr *wrangler.Wrangler, subFlags
 	includeViews := subFlags.Bool("include-views", true, "Includes views in the output")
 	skipVerify := subFlags.Bool("skip-verify", false, "Skip verification of source and target schema after copy")
 	// for backwards compatibility
-	deprecatedTimeout := subFlags.Duration("wait_slave_timeout", wrangler.DefaultWaitReplicasTimeout, "DEPRECATED -- use -wait_replicas_timeout")
 	waitReplicasTimeout := subFlags.Duration("wait_replicas_timeout", wrangler.DefaultWaitReplicasTimeout, "The amount of time to wait for replicas to receive the schema change via replication.")
-	if *deprecatedTimeout != wrangler.DefaultWaitReplicasTimeout {
-		*waitReplicasTimeout = *deprecatedTimeout
-	}
 	if err := subFlags.Parse(args); err != nil {
 		return err
 	}
@@ -2767,7 +2772,7 @@ func commandApplyVSchema(ctx context.Context, wr *wrangler.Wrangler, subFlags *f
 		if err != nil {
 			return fmt.Errorf("error parsing vschema statement `%s`: %v", *sql, err)
 		}
-		ddl, ok := stmt.(sqlparser.DDLStatement)
+		ddl, ok := stmt.(*sqlparser.AlterVschema)
 		if !ok {
 			return fmt.Errorf("error parsing vschema statement `%s`: not a ddl statement", *sql)
 		}

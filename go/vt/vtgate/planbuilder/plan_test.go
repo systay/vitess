@@ -19,6 +19,7 @@ package planbuilder
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -236,6 +237,7 @@ func TestWithDefaultKeyspaceFromFile(t *testing.T) {
 		tabletType: topodatapb.TabletType_MASTER,
 	}
 
+	testFile(t, "alterVschema_cases.txt", testOutputTempDir, vschema)
 	testFile(t, "ddl_cases.txt", testOutputTempDir, vschema)
 	testFile(t, "show_cases.txt", testOutputTempDir, vschema)
 }
@@ -293,6 +295,13 @@ func (vw *vschemaWrapper) SetSemTable(semTable *semantics.SemTable) {
 
 func (vw *vschemaWrapper) GetSemTable() *semantics.SemTable {
 	return vw.semTable
+}
+
+func (vw *vschemaWrapper) AllKeyspace() ([]*vindexes.Keyspace, error) {
+	if vw.keyspace == nil {
+		return nil, errors.New("keyspace not available")
+	}
+	return []*vindexes.Keyspace{vw.keyspace}, nil
 }
 
 func (vw *vschemaWrapper) KeyspaceExists(keyspace string) bool {
@@ -386,7 +395,7 @@ func testFile(t *testing.T, filename, tempDir string, vschema *vschemaWrapper) {
 				vschema.newPlanner = false
 				err, out := getPlanOutput(tcase, vschema)
 
-				vschema.newPlanner = true
+				/*vschema.newPlanner = true
 				_, out2 := getPlanOutput(tcase, vschema)
 
 				if out != out2 {
@@ -397,7 +406,7 @@ V3 Planner:
 
 V3++ Planner:
 %s}`, indent(out, "  "), indent(out2, "  "))
-				}
+				}*/
 
 				if out != tcase.output {
 					fail = true
@@ -426,7 +435,7 @@ func getPlanOutput(tcase testCase, vschema *vschemaWrapper) (err error, result s
 			result = fmt.Sprintf("panicked! %v\n%s", r, string(debug.Stack()))
 		}
 	}()
-	plan, err := Build(tcase.input, vschema)
+	plan, err := TestBuilder(tcase.input, vschema)
 	return err, getPlanOrErrorOutput(err, plan)
 }
 

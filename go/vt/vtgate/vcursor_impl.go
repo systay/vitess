@@ -115,7 +115,7 @@ func (vc *vcursorImpl) GetKeyspace() string {
 	return vc.keyspace
 }
 
-func (vc *vcursorImpl) ExecuteVSchema(keyspace string, vschemaDDL sqlparser.DDLStatement) error {
+func (vc *vcursorImpl) ExecuteVSchema(keyspace string, vschemaDDL *sqlparser.AlterVschema) error {
 	srvVschema := vc.vm.GetCurrentSrvVschema()
 	if srvVschema == nil {
 		return vterrors.Errorf(vtrpcpb.Code_INTERNAL, "vschema not loaded")
@@ -129,8 +129,8 @@ func (vc *vcursorImpl) ExecuteVSchema(keyspace string, vschemaDDL sqlparser.DDLS
 
 	// Resolve the keyspace either from the table qualifier or the target keyspace
 	var ksName string
-	if !vschemaDDL.GetTable().IsEmpty() {
-		ksName = vschemaDDL.GetTable().Qualifier.String()
+	if !vschemaDDL.Table.IsEmpty() {
+		ksName = vschemaDDL.Table.Qualifier.String()
 	}
 	if ksName == "" {
 		ksName = keyspace
@@ -287,7 +287,7 @@ func (vc *vcursorImpl) FindTableOrVindex(name sqlparser.TableName) (*vindexes.Ta
 // if there is one. If the keyspace specified in the target cannot be
 // identified, it returns an error.
 func (vc *vcursorImpl) DefaultKeyspace() (*vindexes.Keyspace, error) {
-	if vc.keyspace == "" {
+	if ignoreKeyspace(vc.keyspace) {
 		return nil, errNoKeyspace
 	}
 	ks, ok := vc.vschema.Keyspaces[vc.keyspace]
@@ -342,6 +342,17 @@ func (vc *vcursorImpl) SysVarSetEnabled() bool {
 // KeyspaceExists provides whether the keyspace exists or not.
 func (vc *vcursorImpl) KeyspaceExists(ks string) bool {
 	return vc.vschema.Keyspaces[ks] != nil
+}
+
+func (vc *vcursorImpl) AllKeyspace() ([]*vindexes.Keyspace, error) {
+	if len(vc.vschema.Keyspaces) == 0 {
+		return nil, vterrors.New(vtrpcpb.Code_FAILED_PRECONDITION, "no keyspaces available")
+	}
+	var kss []*vindexes.Keyspace
+	for _, ks := range vc.vschema.Keyspaces {
+		kss = append(kss, ks.Keyspace)
+	}
+	return kss, nil
 }
 
 // TargetString returns the current TargetString of the session.
@@ -463,7 +474,7 @@ func (vc *vcursorImpl) SetTarget(target string) error {
 	if err != nil {
 		return err
 	}
-	if _, ok := vc.vschema.Keyspaces[keyspace]; keyspace != "" && !ok {
+	if _, ok := vc.vschema.Keyspaces[keyspace]; !ignoreKeyspace(keyspace) && !ok {
 		return mysql.NewSQLError(mysql.ERBadDb, mysql.SSSyntaxErrorOrAccessViolation, "Unknown database '%s'", keyspace)
 	}
 
@@ -472,6 +483,10 @@ func (vc *vcursorImpl) SetTarget(target string) error {
 	}
 	vc.safeSession.SetTargetString(target)
 	return nil
+}
+
+func ignoreKeyspace(keyspace string) bool {
+	return keyspace == "" || sqlparser.SystemSchema(keyspace)
 }
 
 func (vc *vcursorImpl) SetUDV(key string, value interface{}) error {
