@@ -219,7 +219,29 @@ func (rb *route) Wireup(plan logicalPlan, jt *jointab) error {
 	rb.eroute.FieldQuery = rb.generateFieldQuery(rb.Select, jt)
 	return nil
 }
-func (rb *route) Wireup2() error {
+func (rb *route) Wireup2(_ *semantics.SemTable) error {
+
+	// Fix up the AST.
+	_ = sqlparser.Walk(func(node sqlparser.SQLNode) (bool, error) {
+		switch node := node.(type) {
+		case *sqlparser.Select:
+			if len(node.SelectExprs) == 0 {
+				node.SelectExprs = []sqlparser.SelectExpr{
+					&sqlparser.AliasedExpr{
+						Expr: sqlparser.NewIntLiteral([]byte{'1'}),
+					},
+				}
+			}
+			//case *sqlparser.ComparisonExpr:
+			//	if node.Operator == sqlparser.EqualOp {
+			//		if rb.exprIsValue(node.Left) && !rb.exprIsValue(node.Right) {
+			//			node.Left, node.Right = node.Right, node.Left
+			//		}
+			//	}
+		}
+		return true, nil
+	}, rb.Select)
+
 	buf := sqlparser.NewTrackedBuffer(nil)
 	rb.Select.Format(buf)
 	rb.eroute.Query = buf.ParsedQuery().Query

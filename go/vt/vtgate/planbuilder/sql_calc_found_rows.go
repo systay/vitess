@@ -49,12 +49,12 @@ func (s *sqlCalcFoundRows) Wireup(logicalPlan, *jointab) error {
 }
 
 //Wireup implements the logicalPlan interface
-func (s *sqlCalcFoundRows) Wireup2() error {
-	err := s.LimitQuery.Wireup2()
+func (s *sqlCalcFoundRows) Wireup2(st *semantics.SemTable) error {
+	err := s.LimitQuery.Wireup2(st)
 	if err != nil {
 		return err
 	}
-	return s.CountQuery.Wireup2()
+	return s.CountQuery.Wireup2(st)
 }
 
 //Primitive implements the logicalPlan interface

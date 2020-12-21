@@ -23,12 +23,11 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"runtime/debug"
 	"strings"
 	"testing"
 
 	"vitess.io/vitess/go/vt/vtgate/semantics"
-
-	"vitess.io/vitess/go/test/utils"
 
 	"github.com/google/go-cmp/cmp"
 
@@ -383,12 +382,22 @@ func testFile(t *testing.T, filename, tempDir string, vschema *vschemaWrapper) {
 		expected := &strings.Builder{}
 		fail := false
 		for tcase := range iterateExecFile(filename) {
-			var out string
 			t.Run(tcase.comments, func(t *testing.T) {
 				vschema.newPlanner = false
-				plan, err := Build(tcase.input, vschema)
+				err, out := getPlanOutput(tcase, vschema)
 
-				out = getPlanOrErrorOutput(err, plan)
+				vschema.newPlanner = true
+				_, out2 := getPlanOutput(tcase, vschema)
+
+				if out != out2 {
+					out = fmt.Sprintf(
+						`{
+V3 Planner:
+%s
+
+V3++ Planner:
+%s}`, indent(out, "  "), indent(out2, "  "))
+				}
 
 				if out != tcase.output {
 					fail = true
@@ -400,17 +409,6 @@ func testFile(t *testing.T, filename, tempDir string, vschema *vschemaWrapper) {
 				}
 				expected.WriteString(fmt.Sprintf("%s\"%s\"\n%s\n\n", tcase.comments, tcase.input, out))
 			})
-			t.Run(tcase.comments+" - new planner", func(t *testing.T) {
-				vschema.newPlanner = true
-				plan2, err := Build(tcase.input, vschema)
-
-				out2 := getPlanOrErrorOutput(err, plan2)
-				if out != out2 {
-					t.Errorf("File: %s, Line: %d\nDiff:\n%s\nWant: [%s] \nGot: [%s]", filename, tcase.lineno, cmp.Diff(out, out2), out, out2)
-				}
-				utils.MustMatch(t, out, out2, "new planner and old planner disagree")
-			})
-
 		}
 		if fail && tempDir != "" {
 			gotFile := fmt.Sprintf("%s/%s", tempDir, filename)
@@ -420,12 +418,32 @@ func testFile(t *testing.T, filename, tempDir string, vschema *vschemaWrapper) {
 	})
 }
 
+func getPlanOutput(tcase testCase, vschema *vschemaWrapper) (err error, result string) {
+	defer func() {
+		r := recover()
+		if r != nil {
+			err = nil
+			result = fmt.Sprintf("panicked! %v\n%s", r, string(debug.Stack()))
+		}
+	}()
+	plan, err := Build(tcase.input, vschema)
+	return err, getPlanOrErrorOutput(err, plan)
+}
+
+func indent(s, indent string) string {
+	result := ""
+	for _, line := range strings.Split(s, "\n") {
+		result += indent + line + "\n"
+	}
+	return result
+}
+
 func getPlanOrErrorOutput(err error, plan *engine.Plan) string {
 	if err != nil {
 		return err.Error()
 	}
 	bout, _ := json.MarshalIndent(plan, "", "  ")
-	return string(bout)
+	return strings.TrimSpace(string(bout))
 }
 
 type testCase struct {
@@ -475,16 +493,33 @@ func iterateExecFile(name string) (testCaseIterator chan testCase) {
 			for {
 				l, err := r.ReadBytes('\n')
 				lineno++
+				if l != nil {
+					output = append(output, l...)
+					if l[0] == '}' || l[0] == ']' {
+						output = output[:len(output)-1]
+					}
+					if l[0] == '"' {
+						output = output[1 : len(output)-2]
+					}
+				}
+
 				if err != nil {
+					if err == io.EOF {
+						if len(output) > 0 {
+							testCaseIterator <- testCase{
+								file:     name,
+								lineno:   lineno,
+								input:    input,
+								output:   string(output),
+								comments: comments,
+							}
+						}
+						return
+					}
+
 					panic(fmt.Sprintf("error reading file %s line# %d: %s", name, lineno, err.Error()))
 				}
-				output = append(output, l...)
-				if l[0] == '}' {
-					output = output[:len(output)-1]
-					break
-				}
-				if l[0] == '"' {
-					output = output[1 : len(output)-2]
+				if l != nil && (l[0] == '}' || l[0] == ']' || l[0] == '"') {
 					break
 				}
 			}

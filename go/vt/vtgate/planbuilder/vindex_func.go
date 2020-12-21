@@ -106,7 +106,7 @@ func (vf *vindexFunc) Wireup(plan logicalPlan, jt *jointab) error {
 }
 
 // Wireup2 implements the logicalPlan interface
-func (vf *vindexFunc) Wireup2() error {
+func (vf *vindexFunc) Wireup2(*semantics.SemTable) error {
 	return nil
 }
 

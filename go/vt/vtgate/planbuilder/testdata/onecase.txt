@@ -1,17 +1,1 @@
-# mergeable sharded join on unique vindex
-"select user.col from user, user_extra where user.id = user_extra.user_id"
-{
-  "QueryType": "SELECT",
-  "Original": "select user.col from user user_extra on user.id = user_extra.user_id",
-  "Instructions": {
-    "OperatorType": "Route",
-    "Variant": "SelectScatter",
-    "Keyspace": {
-      "Name": "user",
-      "Sharded": true
-    },
-    "FieldQuery": "select user.col from user join user_extra on user.id = user_extra.user_id where 1 != 1",
-    "Query": "select user.col from user join user_extra on user.id = user_extra.user_id",
-    "Table": "user"
-  }
-}
+# Add your test case here for debugging and run go test -run=One.

@@ -72,7 +72,7 @@ func buildSelectPlan(query string) func(sqlparser.Statement, ContextVSchema) (en
 				return nil, err
 			}
 		} else {
-			if err := pb.plan.Wireup2(); err != nil {
+			if err := pb.plan.Wireup2(nil); err != nil {
 				return nil, err
 			}
 		}

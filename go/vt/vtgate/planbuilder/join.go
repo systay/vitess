@@ -161,12 +161,8 @@ func (jb *join) Wireup(plan logicalPlan, jt *jointab) error {
 	return jb.Left.Wireup(plan, jt)
 }
 
-func (jb *join) Wireup2() error {
-	err := jb.Left.Wireup2()
-	if err != nil {
-		return err
-	}
-	return jb.Right.Wireup2()
+func (jb *join) Wireup2(*semantics.SemTable) error {
+	return vterrors.Errorf(vtrpcpb.Code_INTERNAL, "not supported on old joins")
 }
 
 // SupplyVar implements the logicalPlan interface

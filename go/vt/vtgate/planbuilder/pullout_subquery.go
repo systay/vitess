@@ -96,11 +96,11 @@ func (ps *pulloutSubquery) Wireup(plan logicalPlan, jt *jointab) error {
 }
 
 // Wireup2 implements the logicalPlan interface
-func (ps *pulloutSubquery) Wireup2() error {
-	if err := ps.underlying.Wireup2(); err != nil {
+func (ps *pulloutSubquery) Wireup2(st *semantics.SemTable) error {
+	if err := ps.underlying.Wireup2(st); err != nil {
 		return err
 	}
-	return ps.subquery.Wireup2()
+	return ps.subquery.Wireup2(st)
 }
 
 // SupplyVar implements the logicalPlan interface
