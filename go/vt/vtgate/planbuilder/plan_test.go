@@ -28,6 +28,8 @@ import (
 	"strings"
 	"testing"
 
+	querypb "vitess.io/vitess/go/vt/proto/query"
+
 	"vitess.io/vitess/go/vt/vtgate/semantics"
 
 	"github.com/google/go-cmp/cmp"
@@ -285,7 +287,7 @@ type vschemaWrapper struct {
 	tabletType    topodatapb.TabletType
 	dest          key.Destination
 	sysVarEnabled bool
-	version       PlannerVersion
+	version       querypb.ExecuteOptions_PlannerVersion
 }
 
 func (vw *vschemaWrapper) AllKeyspace() ([]*vindexes.Keyspace, error) {
@@ -295,7 +297,7 @@ func (vw *vschemaWrapper) AllKeyspace() ([]*vindexes.Keyspace, error) {
 	return []*vindexes.Keyspace{vw.keyspace}, nil
 }
 
-func (vw *vschemaWrapper) Planner() PlannerVersion {
+func (vw *vschemaWrapper) Planner() querypb.ExecuteOptions_PlannerVersion {
 	return vw.version
 }
 func (vw *vschemaWrapper) GetSemTable() *semantics.SemTable {
@@ -391,7 +393,7 @@ func testFile(t *testing.T, filename, tempDir string, vschema *vschemaWrapper) {
 		fail := false
 		for tcase := range iterateExecFile(filename) {
 			t.Run(tcase.comments, func(t *testing.T) {
-				vschema.version = V3
+				vschema.version = querypb.ExecuteOptions_V3
 				plan, err := TestBuilder(tcase.input, vschema)
 				out := getPlanOrErrorOutput(err, plan)
 
@@ -414,7 +416,7 @@ func testFile(t *testing.T, filename, tempDir string, vschema *vschemaWrapper) {
 						empty = true
 						tcase.output2ndPlanner = tcase.output
 					}
-					vschema.version = V4
+					vschema.version = querypb.ExecuteOptions_V4
 					out, err := getPlanOutput(tcase, vschema)
 					if out != tcase.output2ndPlanner {
 						fail = true

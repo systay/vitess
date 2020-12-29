@@ -21,6 +21,7 @@ import (
 
 	"vitess.io/vitess/go/sqltypes"
 
+	querypb "vitess.io/vitess/go/vt/proto/query"
 	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
 	"vitess.io/vitess/go/vt/vtgate/semantics"
 	"vitess.io/vitess/go/vt/vtgate/vindexes"
@@ -45,9 +46,9 @@ func newBuildSelectPlan(sel *sqlparser.Select, vschema ContextVSchema) (engine.P
 	var tree joinTree
 
 	switch {
-	case vschema.Planner() == V4GreedyOnly || len(qgraph.tables) > 10:
+	case vschema.Planner() == querypb.ExecuteOptions_V4Greedy || len(qgraph.tables) > 10:
 		tree, err = greedySolve(qgraph, semTable, vschema)
-	case vschema.Planner() == V4Left2Right:
+	case vschema.Planner() == querypb.ExecuteOptions_V4Left2Right:
 		tree, err = leftToRightSolve(qgraph, semTable, vschema)
 	default:
 		tree, err = dpSolve(qgraph, semTable, vschema)

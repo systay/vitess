@@ -350,18 +350,24 @@ func (vc *vcursorImpl) AllKeyspace() ([]*vindexes.Keyspace, error) {
 }
 
 // Planner implements the ContextVSchema interface
-func (vc *vcursorImpl) Planner() planbuilder.PlannerVersion {
+func (vc *vcursorImpl) Planner() querypb.ExecuteOptions_PlannerVersion {
+	if vc.safeSession.Options != nil &&
+		vc.safeSession.Options.PlannerVersion != querypb.ExecuteOptions_DEFAULT_PLANNER {
+		return vc.safeSession.Options.PlannerVersion
+	}
 	switch strings.ToLower(*plannerVersion) {
 	case "v3":
-		return planbuilder.V3
+		return querypb.ExecuteOptions_V3
 	case "v4":
-		return planbuilder.V4
+		return querypb.ExecuteOptions_V4
 	case "v4greedy", "greedy":
-		return planbuilder.V4GreedyOnly
+		return querypb.ExecuteOptions_V4Greedy
+	case "left2right":
+		return querypb.ExecuteOptions_V4Left2Right
 	}
 
 	log.Warn("unknown planner version configured. using the default")
-	return planbuilder.V3
+	return querypb.ExecuteOptions_V3
 }
 
 // GetSemTable implements the ContextVSchema interface
@@ -627,6 +633,11 @@ func (vc *vcursorImpl) SetTransactionMode(mode vtgatepb.TransactionMode) {
 // SetWorkload implements the SessionActions interface
 func (vc *vcursorImpl) SetWorkload(workload querypb.ExecuteOptions_Workload) {
 	vc.safeSession.GetOrCreateOptions().Workload = workload
+}
+
+// SetPlannerVersion implements the SessionActions interface
+func (vc *vcursorImpl) SetPlannerVersion(v querypb.ExecuteOptions_PlannerVersion) {
+	vc.safeSession.GetOrCreateOptions().PlannerVersion = v
 }
 
 // SetFoundRows implements the SessionActions interface

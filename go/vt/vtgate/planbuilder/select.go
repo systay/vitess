@@ -20,6 +20,8 @@ import (
 	"errors"
 	"fmt"
 
+	querypb "vitess.io/vitess/go/vt/proto/query"
+
 	"vitess.io/vitess/go/vt/vtgate/semantics"
 
 	"vitess.io/vitess/go/mysql"
@@ -39,7 +41,7 @@ func buildSelectPlan(query string) func(sqlparser.Statement, ContextVSchema) (en
 	return func(stmt sqlparser.Statement, vschema ContextVSchema) (engine.Primitive, error) {
 		sel := stmt.(*sqlparser.Select)
 
-		if vschema.Planner() != V3 {
+		if vschema.Planner() != querypb.ExecuteOptions_V3 {
 			return newBuildSelectPlan(sel, vschema)
 		}
 
