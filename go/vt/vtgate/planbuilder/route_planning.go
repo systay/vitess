@@ -236,20 +236,33 @@ type vindexPlusPredicates struct {
 // addPredicate clones this routePlan and returns a new one with these predicates added to it. if the predicates can help,
 // they will improve the routeOpCode
 func (rp *routePlan) addPredicate(predicates ...sqlparser.Expr) error {
-	newVindexFound, err := rp.searchForNewVindexes(predicates)
-	if err != nil {
-		return err
-	}
+	if rp.opCodeCanBeImproved() {
+		newVindexFound, err := rp.searchForNewVindexes(predicates)
+		if err != nil {
+			return err
+		}
 
-	// if we didn't open up any new vindex options, no need to enter here
-	if newVindexFound {
-		rp.pickBestAvailableVindex()
+		// if we didn't open up any new vindex options, no need to enter here
+		if newVindexFound {
+			rp.pickBestAvailableVindex()
+		}
 	}
-
 	// any predicates that cover more than a single table need to be added here
 	rp.predicates = append(rp.predicates, predicates...)
 
 	return nil
+}
+
+func (rp *routePlan) opCodeCanBeImproved() bool {
+	switch rp.routeOpCode {
+	case engine.SelectDBA,
+		engine.SelectNext,
+		engine.SelectNone,
+		engine.SelectReference,
+		engine.SelectUnsharded:
+		return false
+	}
+	return true
 }
 
 func (rp *routePlan) searchForNewVindexes(predicates []sqlparser.Expr) (bool, error) {
@@ -308,14 +321,21 @@ func (rp *routePlan) searchForNewVindexes(predicates []sqlparser.Expr) (bool, er
 
 // pickBestAvailableVindex goes over the available vindexes for this route and picks the best one available.
 func (rp *routePlan) pickBestAvailableVindex() {
-	for _, v := range rp.vindexPreds {
-		if !v.covered {
+	var vindexOptionsToRemove []int
+	winner := 0
+	for i, v := range rp.vindexPreds {
+		if v.covered {
+			// if the vindex if available, either we pick it, or we can remove it,
+			// safely knowing that it would never win in the future either
+			vindexOptionsToRemove = append(vindexOptionsToRemove, i)
+		} else {
 			continue
 		}
 		// Choose the minimum cost vindex from the ones which are covered
 		if rp.vindex == nil || v.vindex.Vindex.Cost() < rp.vindex.Cost() {
 			rp.vindex = v.vindex.Vindex
 			rp.vindexValues = v.values
+			winner = i
 		}
 	}
 
@@ -323,6 +343,15 @@ func (rp *routePlan) pickBestAvailableVindex() {
 		rp.routeOpCode = engine.SelectEqual
 		if rp.vindex.IsUnique() {
 			rp.routeOpCode = engine.SelectEqualUnique
+		}
+	}
+
+	// after picking a winner, we remove all the vindexes that have been explored and rejected because of cost.
+	// no need to revisit these even if new predicates become available
+	for i := len(vindexOptionsToRemove) - 1; i > 0; i-- {
+		idx := vindexOptionsToRemove[i]
+		if idx != winner {
+			rp.vindexPreds = append(rp.vindexPreds[:idx], rp.vindexPreds[idx+1:]...)
 		}
 	}
 }
