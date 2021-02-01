@@ -74,3 +74,13 @@ type String1 struct {
 	field1 string
 	field2 uint64
 }
+
+type SQLNode interface {
+	i()
+}
+
+func (A) i()       {}
+func (*Bimpl) i()  {}
+func (*C) i()      {}
+func (*D) i()      {}
+func (*Padded) i() {}
