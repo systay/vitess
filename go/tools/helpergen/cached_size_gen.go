@@ -221,9 +221,9 @@ func (s *cachedSize) stmtForType(fieldName *jen.Statement, field types.Type, all
 	}
 }
 
-func (s *cachedSize) implForStruct(file *codeFile, name *types.TypeName, st *types.Struct, sizes types.Sizes, debugTypes bool) (jen.Code, codeFlag) {
+func (s *cachedSize) implForStruct(file *codeFile, name *types.TypeName, st *types.Struct, sizes types.Sizes, debugTypes bool) {
 	if sizes.Sizeof(st) == 0 {
-		return nil, 0
+		return
 	}
 
 	var stmt []jen.Code
@@ -270,7 +270,7 @@ func (s *cachedSize) implForStruct(file *codeFile, name *types.TypeName, st *typ
 	})
 	file.state = impls
 
-	return f, funcFlags
+	return
 }
 
 func (s *cachedSize) isEmpty(file *codeFile) bool {

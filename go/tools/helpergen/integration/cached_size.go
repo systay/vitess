@@ -55,7 +55,7 @@ func (cached *C) CachedSize(alloc bool) int64 {
 	if alloc {
 		size += int64(16)
 	}
-	// field field1 vitess.io/vitess/go/tools/sizegen/integration.B
+	// field field1 vitess.io/vitess/go/tools/helpergen/integration.B
 	if cc, ok := cached.field1.(cachedObject); ok {
 		size += cc.CachedSize(true)
 	}
@@ -69,7 +69,7 @@ func (cached *D) CachedSize(alloc bool) int64 {
 	if alloc {
 		size += int64(8)
 	}
-	// field field1 *vitess.io/vitess/go/tools/sizegen/integration.Bimpl
+	// field field1 *vitess.io/vitess/go/tools/helpergen/integration.Bimpl
 	if cached.field1 != nil {
 		size += int64(8)
 	}
@@ -108,7 +108,7 @@ func (cached *Map2) CachedSize(alloc bool) int64 {
 	if alloc {
 		size += int64(8)
 	}
-	// field field1 map[uint64]vitess.io/vitess/go/tools/sizegen/integration.A
+	// field field1 map[uint64]vitess.io/vitess/go/tools/helpergen/integration.A
 	if cached.field1 != nil {
 		size += int64(48)
 		hmap := reflect.ValueOf(cached.field1)
@@ -131,7 +131,7 @@ func (cached *Map3) CachedSize(alloc bool) int64 {
 	if alloc {
 		size += int64(8)
 	}
-	// field field1 map[uint64]vitess.io/vitess/go/tools/sizegen/integration.B
+	// field field1 map[uint64]vitess.io/vitess/go/tools/helpergen/integration.B
 	if cached.field1 != nil {
 		size += int64(48)
 		hmap := reflect.ValueOf(cached.field1)
@@ -167,7 +167,7 @@ func (cached *Slice1) CachedSize(alloc bool) int64 {
 	if alloc {
 		size += int64(24)
 	}
-	// field field1 []vitess.io/vitess/go/tools/sizegen/integration.A
+	// field field1 []vitess.io/vitess/go/tools/helpergen/integration.A
 	{
 		size += int64(cap(cached.field1)) * int64(16)
 	}
@@ -181,7 +181,7 @@ func (cached *Slice2) CachedSize(alloc bool) int64 {
 	if alloc {
 		size += int64(24)
 	}
-	// field field1 []vitess.io/vitess/go/tools/sizegen/integration.B
+	// field field1 []vitess.io/vitess/go/tools/helpergen/integration.B
 	{
 		size += int64(cap(cached.field1)) * int64(16)
 		for _, elem := range cached.field1 {
@@ -200,7 +200,7 @@ func (cached *Slice3) CachedSize(alloc bool) int64 {
 	if alloc {
 		size += int64(24)
 	}
-	// field field1 []*vitess.io/vitess/go/tools/sizegen/integration.Bimpl
+	// field field1 []*vitess.io/vitess/go/tools/helpergen/integration.Bimpl
 	{
 		size += int64(cap(cached.field1)) * int64(8)
 		for _, elem := range cached.field1 {

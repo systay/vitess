@@ -18,13 +18,14 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-func TestFullGeneration(t *testing.T) {
-	result, err := GenerateHelpers([]string{"./integration/..."}, []string{"vitess.io/vitess/go/tools/sizegen/integration.*"}, newCachedSize)
+func TestFullSizeGeneration(t *testing.T) {
+	result, err := GenerateHelpers([]string{"./integration/..."}, []string{"vitess.io/vitess/go/tools/helpergen/integration.*"}, newCachedSize)
 	require.NoError(t, err)
 
 	verifyErrors := VerifyFilesOnDisk(result)
@@ -35,5 +36,24 @@ func TestFullGeneration(t *testing.T) {
 		require.Contains(t, contents, "http://www.apache.org/licenses/LICENSE-2.0")
 		require.Contains(t, contents, "type cachedObject interface")
 		require.Contains(t, contents, "//go:nocheckptr")
+	}
+}
+
+func TestFullRewriterGeneration(t *testing.T) {
+	result, err := GenerateHelpers([]string{"./integration/..."}, []string{"vitess.io/vitess/go/tools/helpergen/integration.*"}, newRewriterGen)
+	require.NoError(t, err)
+	for fullPath, file := range result {
+		if err := file.Save(fullPath); err != nil {
+			log.Fatalf("filed to save file to '%s': %v", fullPath, err)
+		}
+		log.Printf("saved '%s'", fullPath)
+	}
+
+	verifyErrors := VerifyFilesOnDisk(result)
+	require.Empty(t, verifyErrors)
+
+	for _, file := range result {
+		contents := fmt.Sprintf("%#v", file)
+		require.Contains(t, contents, "http://www.apache.org/licenses/LICENSE-2.0")
 	}
 }

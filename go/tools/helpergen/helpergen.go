@@ -55,7 +55,7 @@ type helpergen struct {
 
 type output interface {
 	finalizeFile(file *codeFile, out *jen.File)
-	implForStruct(file *codeFile, name *types.TypeName, st *types.Struct, sizes types.Sizes, debugTypes bool) (jen.Code, codeFlag)
+	implForStruct(file *codeFile, name *types.TypeName, st *types.Struct, sizes types.Sizes, debugTypes bool)
 	fileName() string
 	isEmpty(file *codeFile) bool
 }
@@ -139,7 +139,6 @@ func (gen *helpergen) generateType(pkg *types.Package, file *codeFile, named *ty
 	if ts.generated {
 		return
 	}
-	log.Printf("generating for type %s", named.String())
 	ts.generated = true
 
 	switch tt := named.Underlying().(type) {
@@ -237,21 +236,42 @@ func (t *typePaths) Set(path string) error {
 	return nil
 }
 
+type genType string
+
+func (t *genType) String() string {
+	return string(*t)
+}
+
+func (t *genType) Set(path string) error {
+	*t = genType(path)
+	return nil
+}
+
 func main() {
 	var patterns typePaths
 	var generate typePaths
+	var genType genType
 	var verify bool
 
 	flag.Var(&patterns, "in", "Go packages to load the generator")
 	flag.Var(&generate, "gen", "Typename of the Go struct to generate size info for")
+	flag.Var(&genType, "type", "What type of helper to produce")
 	flag.BoolVar(&verify, "verify", false, "ensure that the generated files are correct")
 	flag.Parse()
 
-	if len(patterns) == 0 || len(generate) == 0 {
+	if len(patterns) == 0 || len(generate) == 0 || genType == "" {
 		log.Fatalf("not enough arguments")
 	}
 
-	result, err := GenerateHelpers(patterns, generate, newCachedSize)
+	var out outputCreator
+	switch genType {
+	case "cachesize":
+		out = newCachedSize
+	case "rewriter":
+		out = newRewriterGen
+	}
+
+	result, err := GenerateHelpers(patterns, generate, out)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -264,7 +284,7 @@ func main() {
 	} else {
 		for fullPath, file := range result {
 			if err := file.Save(fullPath); err != nil {
-				log.Fatalf("filed to save file to '%s': %v", fullPath, err)
+				log.Fatalf("failed to save file to '%s': %v", fullPath, err)
 			}
 			log.Printf("saved '%s'", fullPath)
 		}
@@ -333,7 +353,12 @@ func GenerateHelpers(packagePatterns []string, typePatterns []string, creator ou
 
 		if typename == "*" {
 			for _, name := range scope.Names() {
-				helpergen.generateKnownType(scope.Lookup(name).Type().(*types.Named))
+				named, ok := scope.Lookup(name).Type().(*types.Named)
+				if ok {
+					helpergen.generateKnownType(named)
+				} else {
+					fmt.Println(name)
+				}
 			}
 		} else {
 			tt := scope.Lookup(typename)

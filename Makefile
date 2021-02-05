@@ -107,6 +107,7 @@ visitor:
 
 sizegen:
 	go run ./go/tools/helpergen/ \
+		-type rewriter \
 		-in ./go/vt/... \
 	  	-gen vitess.io/vitess/go/vt/vtgate/engine.Plan \
 	  	-gen vitess.io/vitess/go/vt/vttablet/tabletserver.TabletPlan

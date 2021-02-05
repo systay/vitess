@@ -17,60 +17,80 @@ limitations under the License.
 //nolint
 package integration
 
-type A struct {
-	field1 uint64
-	field2 uint64
-}
+type (
+	A struct {
+		field1 uint64
+		field2 uint64
+	}
+	B interface {
+		iface()
+	}
 
-type B interface {
-	iface()
-}
+	Bimpl struct {
+		field1 uint64
+	}
 
-type Bimpl struct {
-	field1 uint64
-}
+	C struct {
+		field1 B
+	}
+
+	D struct {
+		field1 *Bimpl
+	}
+
+	Padded struct {
+		field1 uint64
+		field2 uint8
+		field3 uint64
+	}
+
+	Slice1 struct {
+		field1 []A
+	}
+
+	Slice2 struct {
+		field1 []B
+	}
+
+	Slice3 struct {
+		field1 []*Bimpl
+	}
+
+	Map1 struct {
+		field1 map[uint8]uint8
+	}
+
+	Map2 struct {
+		field1 map[uint64]A
+	}
+
+	Map3 struct {
+		field1 map[uint64]B
+	}
+
+	String1 struct {
+		field1 string
+		field2 uint64
+	}
+
+	AST interface {
+		i()
+	}
+
+	Plus struct {
+		Left, Right AST
+	}
+
+	Minus struct {
+		Left, Right AST
+	}
+
+	LiteralInt struct {
+		Val int
+	}
+)
 
 func (b *Bimpl) iface() {}
-
-type C struct {
-	field1 B
-}
-
-type D struct {
-	field1 *Bimpl
-}
-
-type Padded struct {
-	field1 uint64
-	field2 uint8
-	field3 uint64
-}
-
-type Slice1 struct {
-	field1 []A
-}
-
-type Slice2 struct {
-	field1 []B
-}
-
-type Slice3 struct {
-	field1 []*Bimpl
-}
-
-type Map1 struct {
-	field1 map[uint8]uint8
-}
-
-type Map2 struct {
-	field1 map[uint64]A
-}
-
-type Map3 struct {
-	field1 map[uint64]B
-}
-
-type String1 struct {
-	field1 string
-	field2 uint64
-}
+func (*Plus) i()        {}
+func (*Minus) i()       {}
+func (*LiteralInt) i()  {}
