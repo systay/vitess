@@ -26,17 +26,18 @@ import (
 
 type (
 	rewriterGen struct {
-		lookup typeLookup
+		lookup    typeLookup
+		ifaceType *types.Named
 	}
 	rewriterState struct {
 		replaceMethods []jen.Code
-		cases          []*jen.Statement
+		// cases          []*jen.Statement
 	}
 )
 
-func newRewriterGen(lookup typeLookup) output {
+func newRewriterGen(lookup typeLookup, ifaceType *types.Named) output {
 	jen.Case()
-	return &rewriterGen{lookup: lookup}
+	return &rewriterGen{lookup: lookup, ifaceType: ifaceType}
 }
 
 var _ output = (*rewriterGen)(nil)
@@ -70,7 +71,7 @@ func (r *rewriterGen) implForStruct(file *codeFile, name *types.TypeName, st *ty
 
 		apa := "replace" + typename + field.Name()
 		s := jen.Func().Id(apa).Params(
-			jen.Id("newNode"), jen.Id("parent").Id("SQLNode"),
+			jen.Id("newNode"), jen.Id("parent").Qual("", typeString(r.ifaceType)),
 		).Block(
 			jen.Id("parent").Assert(jen.Id(typeString(name.Type()))).Dot(field.Name()).
 				Op("=").
@@ -91,7 +92,7 @@ func (r *rewriterGen) isEmpty(*codeFile) bool {
 func typeString(typ types.Type) string {
 	switch tt := typ.(type) {
 	case *types.Named:
-		return stripPackage(tt.String())
+		return tt.Obj().Name()
 	case *types.Pointer:
 		return "*" + stripPackage(tt.String())
 	case *types.Slice:

@@ -109,8 +109,7 @@ sizegen:
 	go run ./go/tools/helpergen/ \
 		-type rewriter \
 		-in ./go/vt/... \
-	  	-gen vitess.io/vitess/go/vt/vtgate/engine.Plan \
-	  	-gen vitess.io/vitess/go/vt/vttablet/tabletserver.TabletPlan
+	  	-gen vitess.io/vitess/go/tools/helpergen/integration.AST
 
 # To pass extra flags, run test.go manually.
 # For example: go run test.go -docker=false -- --extra-flag

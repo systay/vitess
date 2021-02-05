@@ -81,16 +81,29 @@ type (
 		Left, Right AST
 	}
 
-	Minus struct {
-		Left, Right AST
+	Array struct {
+		Values []AST
+	}
+
+	UnaryMinus struct {
+		Val *LiteralInt
 	}
 
 	LiteralInt struct {
 		Val int
 	}
+
+	String struct {
+		Val string
+	}
+
+	ArrayDef []AST
 )
 
 func (b *Bimpl) iface() {}
 func (*Plus) i()        {}
-func (*Minus) i()       {}
+func (*Array) i()       {}
+func (*UnaryMinus) i()  {}
 func (*LiteralInt) i()  {}
+func (String) i()       {}
+func (ArrayDef) i()     {}

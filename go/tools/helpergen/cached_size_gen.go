@@ -269,15 +269,13 @@ func (s *cachedSize) implForStruct(file *codeFile, name *types.TypeName, st *typ
 		flags: funcFlags,
 	})
 	file.state = impls
-
-	return
 }
 
 func (s *cachedSize) isEmpty(file *codeFile) bool {
 	return file.state == nil || len(file.state.([]codeImpl)) == 0
 }
 
-func newCachedSize(lookup typeLookup) output {
+func newCachedSize(lookup typeLookup, _ *types.Named) output {
 	return &cachedSize{lookup: lookup}
 }
 

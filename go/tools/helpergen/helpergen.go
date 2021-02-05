@@ -315,7 +315,7 @@ func VerifyFilesOnDisk(result map[string]*jen.File) (errors []error) {
 	return errors
 }
 
-type outputCreator func(typeLookup) output
+type outputCreator func(typeLookup, *types.Named) output
 
 // GenerateHelpers generates the auxiliary code that implements helper methods
 // for all the types listed in typePatterns
@@ -330,7 +330,6 @@ func GenerateHelpers(packagePatterns []string, typePatterns []string, creator ou
 	}
 
 	helpergen := newHelperGen(loaded[0].Module, loaded[0].TypesSizes, nil)
-	helpergen.out = creator(helpergen)
 
 	scopes := make(map[string]*types.Scope)
 	for _, pkg := range loaded {
@@ -355,6 +354,7 @@ func GenerateHelpers(packagePatterns []string, typePatterns []string, creator ou
 			for _, name := range scope.Names() {
 				named, ok := scope.Lookup(name).Type().(*types.Named)
 				if ok {
+					helpergen.out = creator(helpergen, named)
 					helpergen.generateKnownType(named)
 				} else {
 					fmt.Println(name)
@@ -366,7 +366,9 @@ func GenerateHelpers(packagePatterns []string, typePatterns []string, creator ou
 				return nil, fmt.Errorf("no type called '%s' found in '%s'", typename, pkgname)
 			}
 
-			helpergen.generateKnownType(tt.Type().(*types.Named))
+			named := tt.Type().(*types.Named)
+			helpergen.out = creator(helpergen, named)
+			helpergen.generateKnownType(named)
 		}
 	}
 
