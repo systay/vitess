@@ -279,6 +279,9 @@ func (db *LocalCluster) TearDown() error {
 		}
 	}
 
+	_, i := db.mysql.Address()
+	fmt.Println(i)
+
 	if err := db.mysql.TearDown(); err != nil {
 		errors = append(errors, fmt.Sprintf("mysql: %s", err))
 
@@ -386,7 +389,9 @@ func (db *LocalCluster) createDatabases() error {
 			continue
 		}
 		for _, dbname := range db.shardNames(kpb) {
-			sql = append(sql, fmt.Sprintf("create database `%s`", dbname))
+			sprintf := fmt.Sprintf("create database `%s`", dbname)
+			sql = append(sql, sprintf)
+			log.Warningf(sprintf)
 		}
 	}
 	return db.Execute(sql, "")
