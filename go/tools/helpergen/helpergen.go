@@ -88,14 +88,13 @@ type typeState struct {
 	pod       bool // struct with only primitives
 }
 
-func newHelperGen(mod *packages.Module, sizes types.Sizes, outputs output) *helpergen {
+func newHelperGen(mod *packages.Module, sizes types.Sizes) *helpergen {
 	return &helpergen{
 		DebugTypes: true,
 		mod:        mod,
 		sizes:      sizes,
 		known:      make(map[*types.Named]*typeState),
 		codegen:    make(map[string]*codeFile),
-		out:        outputs,
 	}
 }
 
@@ -315,7 +314,7 @@ func VerifyFilesOnDisk(result map[string]*jen.File) (errors []error) {
 	return errors
 }
 
-type outputCreator func(typeLookup, *types.Named) output
+type outputCreator func(types typeLookup, startType *types.Named, mod *packages.Module, sizes types.Sizes) output
 
 // GenerateHelpers generates the auxiliary code that implements helper methods
 // for all the types listed in typePatterns
@@ -329,7 +328,7 @@ func GenerateHelpers(packagePatterns []string, typePatterns []string, creator ou
 		return nil, err
 	}
 
-	helpergen := newHelperGen(loaded[0].Module, loaded[0].TypesSizes, nil)
+	helpergen := newHelperGen(loaded[0].Module, loaded[0].TypesSizes)
 
 	scopes := make(map[string]*types.Scope)
 	for _, pkg := range loaded {

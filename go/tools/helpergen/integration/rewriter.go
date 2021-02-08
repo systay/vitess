@@ -17,21 +17,6 @@ limitations under the License.
 
 package integration
 
-// func replaceArrayValues(newNode, parent AST) {
-// 	parent.(Array).Values = newNode.([]AST)
-// }
-// func replaceLiteralIntVal(newNode, parent AST) {
-// 	parent.(LiteralInt).Val = newNode.(int)
-// }
-// func replacePlusLeft(newNode, parent AST) {
-// 	parent.(Plus).Left = newNode.(AST)
-// }
-// func replacePlusRight(newNode, parent AST) {
-// 	parent.(Plus).Right = newNode.(AST)
-// }
-// func replaceStringVal(newNode, parent AST) {
-// 	parent.(String).Val = newNode.(string)
-// }
-// func replaceUnaryMinusVal(newNode, parent AST) {
-// 	parent.(UnaryMinus).Val = newNode.(*LiteralInt)
-// }
+func replaceLiteralIntVal(newNode, parent AST) {
+	parent.(LiteralInt).Val = newNode.(int)
+}

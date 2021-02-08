@@ -62,6 +62,8 @@ func (r *rewriterGen) implForStruct(file *codeFile, name *types.TypeName, st *ty
 	for i := 0; i < st.NumFields(); i++ {
 		field := st.Field(i)
 		namn := name.Type().String()
+		t := field.Type()
+		fmt.Println(t)
 		pos := strings.LastIndexByte(namn, '.')
 		if pos < 0 {
 			panic(1)
@@ -75,7 +77,7 @@ func (r *rewriterGen) implForStruct(file *codeFile, name *types.TypeName, st *ty
 		).Block(
 			jen.Id("parent").Assert(jen.Id(typeString(name.Type()))).Dot(field.Name()).
 				Op("=").
-				Id("newNode").Assert(jen.Id(typeString(field.Type()))),
+				Id("newNode").Assert(jen.Id(typeString(t))),
 		)
 		state.replaceMethods = append(state.replaceMethods, s)
 	}
