@@ -56,6 +56,7 @@ func initialize(ctx context.Context, t *testing.T) (*vtgateconn.VTGateConn, *mys
 	}
 	return gconn, conn, mconn, close
 }
+
 func TestVStream(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -64,9 +65,7 @@ func TestVStream(t *testing.T) {
 	defer closeConnections()
 
 	mpos, err := mconn.MasterPosition()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	vgtid := &binlogdatapb.VGtid{
 		ShardGtids: []*binlogdatapb.ShardGtid{{
 			Keyspace: "ks",
@@ -80,14 +79,10 @@ func TestVStream(t *testing.T) {
 		}},
 	}
 	reader, err := gconn.VStream(ctx, topodatapb.TabletType_MASTER, vgtid, filter)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	_, err = conn.ExecuteFetch("insert into vstream_test(id,val) values(1,1), (4,4)", 1, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	// We expect two events because the insert goes to two shards (-80 and 80-),
 	// and both of them are in the same mysql server.
 	// The row that goes to 80- will have events.
@@ -98,9 +93,7 @@ func TestVStream(t *testing.T) {
 	emptyEventSkipped := false
 	for i := 0; i < 2; i++ {
 		events, err := reader.Recv()
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		fmt.Printf("events: %v\n", events)
 		// An empty transaction has three events: begin, gtid and commit.
 		if len(events) == 3 && !emptyEventSkipped {

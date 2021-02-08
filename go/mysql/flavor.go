@@ -22,6 +22,8 @@ import (
 	"strconv"
 	"strings"
 
+	"vitess.io/vitess/go/vt/log"
+
 	"context"
 
 	"vitess.io/vitess/go/sqltypes"
@@ -406,5 +408,6 @@ func (c *Conn) DisableBinlogPlaybackCommand() string {
 
 // BaseShowTables returns a query that shows tables and their sizes
 func (c *Conn) BaseShowTables() string {
+	log.Error("")
 	return c.flavor.baseShowTablesWithSizes()
 }
