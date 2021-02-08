@@ -24,8 +24,6 @@ import (
 	"path"
 	"testing"
 
-	vschemapb "vitess.io/vitess/go/vt/proto/vschema"
-
 	"github.com/gogo/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	binlogdatapb "vitess.io/vitess/go/vt/proto/binlogdata"
@@ -67,97 +65,120 @@ var (
 		) Engine=InnoDB;
 `
 
-	vschema = &vschemapb.Keyspace{
-		Sharded: true,
-		Vindexes: map[string]*vschemapb.Vindex{
-			"hash": {
-				Type: "hash",
-			},
-			"t1_id2_vdx": {
-				Type: "consistent_lookup_unique",
-				Params: map[string]string{
-					"table": "t1_id2_idx",
-					"from":  "id2",
-					"to":    "keyspace_id",
-				},
-				Owner: "t1",
-			},
-			"t2_id4_idx": {
-				Type: "lookup_hash",
-				Params: map[string]string{
-					"table":      "t2_id4_idx",
-					"from":       "id4",
-					"to":         "id3",
-					"autocommit": "true",
-				},
-				Owner: "t2",
-			},
-		},
-		Tables: map[string]*vschemapb.Table{
-			"t1": {
-				ColumnVindexes: []*vschemapb.ColumnVindex{{
-					Column: "id1",
-					Name:   "hash",
-				}, {
-					Column: "id2",
-					Name:   "t1_id2_vdx",
-				}},
-			},
-			"t1_id2_idx": {
-				ColumnVindexes: []*vschemapb.ColumnVindex{{
-					Column: "id2",
-					Name:   "hash",
-				}},
-			},
-			"t2": {
-				ColumnVindexes: []*vschemapb.ColumnVindex{{
-					Column: "id3",
-					Name:   "hash",
-				}, {
-					Column: "id4",
-					Name:   "t2_id4_idx",
-				}},
-			},
-			"t2_id4_idx": {
-				ColumnVindexes: []*vschemapb.ColumnVindex{{
-					Column: "id4",
-					Name:   "hash",
-				}},
-			},
-			"vstream_test": {
-				ColumnVindexes: []*vschemapb.ColumnVindex{{
-					Column: "id",
-					Name:   "hash",
-				}},
-			},
-			"aggr_test": {
-				ColumnVindexes: []*vschemapb.ColumnVindex{{
-					Column: "id",
-					Name:   "hash",
-				}},
-				Columns: []*vschemapb.Column{{
-					Name: "val1",
-					Type: sqltypes.VarChar,
-				}},
-			},
-			"t1_last_insert_id": {
-				ColumnVindexes: []*vschemapb.ColumnVindex{{
-					Column: "id1",
-					Name:   "hash",
-				}},
-				Columns: []*vschemapb.Column{{
-					Name: "id1",
-					Type: sqltypes.Int64,
-				}},
-			},
-			"t1_row_count": {
-				ColumnVindexes: []*vschemapb.ColumnVindex{{
-					Column: "id",
-					Name:   "hash",
-				}},
-			},
-		},
-	}
+	vschema = `
+	{
+  "sharded":true,
+  "vindexes":{
+    "hash":{
+      "type":"hash"
+    },
+    "t1_id2_vdx":{
+      "type":"consistent_lookup_unique",
+      "params":{
+        "table":"t1_id2_idx",
+        "from":"id2",
+        "to":"keyspace_id"
+      },
+      "owner":"t1"
+    },
+    "t2_id4_idx":{
+      "type":"lookup_hash",
+      "params":{
+        "table":"t2_id4_idx",
+        "from":"id4",
+        "to":"id3",
+        "autocommit":"true"
+      },
+      "owner":"t2"
+    }
+  },
+  "tables":{
+    "t1":{
+      "column_vindexes":[
+        {
+          "column":"id1",
+          "name":"hash"
+        },
+        {
+          "column":"id2",
+          "name":"t1_id2_vdx"
+        }
+      ]
+    },
+    "t1_id2_idx":{
+      "column_vindexes":[
+        {
+          "column":"id2",
+          "name":"hash"
+        }
+      ]
+    },
+    "t2":{
+      "column_vindexes":[
+        {
+          "column":"id3",
+          "name":"hash"
+        },
+        {
+          "column":"id4",
+          "name":"t2_id4_idx"
+        }
+      ]
+    },
+    "t2_id4_idx":{
+      "column_vindexes":[
+        {
+          "column":"id4",
+          "name":"hash"
+        }
+      ]
+    },
+    "vstream_test":{
+      "column_vindexes":[
+        {
+          "column":"id",
+          "name":"hash"
+        }
+      ]
+    },
+    "aggr_test":{
+      "column_vindexes":[
+        {
+          "column":"id",
+          "name":"hash"
+        }
+      ],
+      "columns":[
+        {
+          "name":"val1",
+          "type":"VARCHAR"
+        }
+      ]
+    },
+    "t1_last_insert_id":{
+      "column_vindexes":[
+        {
+          "column":"id1",
+          "name":"hash"
+        }
+      ],
+      "columns":[
+        {
+          "name":"id1",
+          "type":"INT64"
+        }
+      ]
+    },
+    "t1_row_count":{
+      "column_vindexes":[
+        {
+          "column":"id",
+          "name":"hash"
+        }
+      ]
+    }
+  }
+}`
 )
 
 func TestMain(m *testing.M) {
@@ -176,22 +197,13 @@ func TestMain(m *testing.M) {
 		// List of users authorized to execute vschema ddl operations
 		clusterInstance.VtGateExtraArgs = []string{"-vschema_ddl_authorized_users=%"}
 
-		// Start keyspace
-		keyspace := &cluster.Keyspace{
-			Name:      keyspaceName,
-			SchemaSQL: sqlSchema,
-		}
-		if err := clusterInstance.StartUnshardedKeyspace(*keyspace, 1, false); err != nil {
-			return 1, err
-		}
-
 		// Start sharded keyspace
-		keyspace = cluster.Keyspace{
+		keyspace := cluster.Keyspace{
 			Name:      "ks",
 			SchemaSQL: sqlSchema,
-			VSchema:   vschema.String(),
+			VSchema:   vschema,
 		}
-		if err := clusterInstance.StartKeyspace(keyspace, []string{"-80", "80-"}, 1, false); err != nil {
+		if err := clusterInstance.StartKeyspace(keyspace, []string{"-80", "80-"}, 0, false); err != nil {
 			return 1, err
 		}
 
@@ -244,7 +256,7 @@ func TestVStream(t *testing.T) {
 	require.NoError(t, err)
 	vgtid := &binlogdatapb.VGtid{
 		ShardGtids: []*binlogdatapb.ShardGtid{{
-			Keyspace: "ks",
+			Keyspace: keyspaceName,
 			Shard:    "-80",
 			Gtid:     fmt.Sprintf("%s/%s", mpos.GTIDSet.Flavor(), mpos),
 		}},
