@@ -173,6 +173,10 @@ func printableTypeName(t types.Type) string {
 		return t.Obj().Name()
 	case *types.Basic:
 		return t.Name()
+	case *types.Interface:
+		return t.String()
+	case *types.Struct:
+		return t.String()
 	default:
 		panic(fmt.Sprintf("unknown type %T", t))
 	}

@@ -17,11 +17,97 @@ limitations under the License.
 
 package integration
 
+func CloneAST(in AST) AST {
+	if in == nil {
+		return nil
+	}
+	switch in := in.(type) {
+	case Bytes:
+		return CloneBytes(in)
+	case *Bytes:
+		return CloneRefOfBytes(in)
+	case InterfaceSlice:
+		return CloneInterfaceSlice(in)
+	case *InterfaceSlice:
+		return CloneRefOfInterfaceSlice(in)
+	case *Leaf:
+		return CloneRefOfLeaf(in)
+	case LeafSlice:
+		return CloneLeafSlice(in)
+	case *LeafSlice:
+		return CloneRefOfLeafSlice(in)
+	case *RefContainer:
+		return CloneRefOfRefContainer(in)
+	case *RefSliceContainer:
+		return CloneRefOfRefSliceContainer(in)
+	case *SubImpl:
+		return CloneRefOfSubImpl(in)
+	case ValueContainer:
+		return CloneValueContainer(in)
+	case *ValueContainer:
+		return CloneRefOfValueContainer(in)
+	case ValueSliceContainer:
+		return CloneValueSliceContainer(in)
+	case *ValueSliceContainer:
+		return CloneRefOfValueSliceContainer(in)
+	}
+	// this should never happen
+	return nil
+}
+func CloneSubIface(in SubIface) SubIface {
+	if in == nil {
+		return nil
+	}
+	switch in := in.(type) {
+	case *SubImpl:
+		return CloneRefOfSubImpl(in)
+	}
+	// this should never happen
+	return nil
+}
+func CloneBytes(n Bytes) Bytes {
+	res := make(Bytes, len(n))
+	copy(res, n)
+	return res
+}
+func CloneRefOfBytes(n *Bytes) *Bytes {
+	res := make(*Bytes, len(n))
+	copy(res, n)
+	return res
+}
+func CloneInterfaceSlice(n InterfaceSlice) InterfaceSlice {
+	res := make(InterfaceSlice, len(n))
+	for i, x := range n {
+		res[i] = CloneAST(x)
+	}
+	return res
+}
+func CloneRefOfInterfaceSlice(n *InterfaceSlice) *InterfaceSlice {
+	res := make(*InterfaceSlice, len(n))
+	for i, x := range n {
+		res[i] = CloneAST(x)
+	}
+	return res
+}
 func CloneRefOfLeaf(n *Leaf) *Leaf {
 	if n == nil {
 		return nil
 	}
 	return &Leaf{v: n.v}
+}
+func CloneLeafSlice(n LeafSlice) LeafSlice {
+	res := make(LeafSlice, len(n))
+	for i, x := range n {
+		res[i] = CloneRefOfLeaf(x)
+	}
+	return res
+}
+func CloneRefOfLeafSlice(n *LeafSlice) *LeafSlice {
+	res := make(*LeafSlice, len(n))
+	for i, x := range n {
+		res[i] = CloneRefOfLeaf(x)
+	}
+	return res
 }
 func CloneRefOfRefContainer(n *RefContainer) *RefContainer {
 	if n == nil {
@@ -63,43 +149,6 @@ func CloneValueSliceContainer(n ValueSliceContainer) ValueSliceContainer {
 		NotASTElements:            CloneSliceOfint(n.NotASTElements),
 	}
 }
-func CloneAST(in AST) AST {
-	if in == nil {
-		return nil
-	}
-	switch in := in.(type) {
-	case Bytes:
-		return CloneBytes(in)
-	case *Bytes:
-		return CloneRefOfBytes(in)
-	case InterfaceSlice:
-		return CloneInterfaceSlice(in)
-	case *InterfaceSlice:
-		return CloneRefOfInterfaceSlice(in)
-	case *Leaf:
-		return CloneRefOfLeaf(in)
-	case LeafSlice:
-		return CloneLeafSlice(in)
-	case *LeafSlice:
-		return CloneRefOfLeafSlice(in)
-	case *RefContainer:
-		return CloneRefOfRefContainer(in)
-	case *RefSliceContainer:
-		return CloneRefOfRefSliceContainer(in)
-	case *SubImpl:
-		return CloneRefOfSubImpl(in)
-	case ValueContainer:
-		return CloneValueContainer(in)
-	case *ValueContainer:
-		return CloneRefOfValueContainer(in)
-	case ValueSliceContainer:
-		return CloneValueSliceContainer(in)
-	case *ValueSliceContainer:
-		return CloneRefOfValueSliceContainer(in)
-	}
-	// this should never happen
-	return nil
-}
 func CloneSliceOfAST(n []AST) []AST {
 	res := make([]AST, len(n))
 	for i, x := range n {
@@ -114,36 +163,6 @@ func CloneSliceOfint(n []int) []int {
 }
 func CloneSliceOfRefOfLeaf(n []*Leaf) []*Leaf {
 	res := make([]*Leaf, len(n))
-	for i, x := range n {
-		res[i] = CloneRefOfLeaf(x)
-	}
-	return res
-}
-func CloneSubIface(in SubIface) SubIface {
-	if in == nil {
-		return nil
-	}
-	switch in := in.(type) {
-	case *SubImpl:
-		return CloneRefOfSubImpl(in)
-	}
-	// this should never happen
-	return nil
-}
-func CloneBytes(n Bytes) Bytes {
-	res := make(Bytes, len(n))
-	copy(res, n)
-	return res
-}
-func CloneInterfaceSlice(n InterfaceSlice) InterfaceSlice {
-	res := make(InterfaceSlice, len(n))
-	for i, x := range n {
-		res[i] = CloneAST(x)
-	}
-	return res
-}
-func CloneLeafSlice(n LeafSlice) LeafSlice {
-	res := make(LeafSlice, len(n))
 	for i, x := range n {
 		res[i] = CloneRefOfLeaf(x)
 	}

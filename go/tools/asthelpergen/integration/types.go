@@ -108,7 +108,6 @@ func (r InterfaceSlice) String() string {
 		elements = append(elements, el.String())
 	}
 
-	var x *[]byte = nil
 	return strings.Join(elements, ", ")
 }
 
