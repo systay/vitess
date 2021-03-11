@@ -169,19 +169,14 @@ func (c *DBDDL) dropDatabase(vcursor VCursor, plugin DBDDLPlugin) (*sqltypes.Res
 	if err != nil {
 		return nil, err
 	}
-	for {
-		// loop until we do not find the keyspace to resolve.
-		_, _, err = vcursor.ResolveDestinations(c.name, nil, []key.Destination{})
-		if err != nil && strings.Contains(err.Error(), "node doesn't exist") {
-			break
-		}
-
+	for vcursor.KeyspaceAvailable(c.name) {
 		select {
 		case <-ctx.Done(): //context cancelled
 			return nil, vterrors.Errorf(vtrpc.Code_DEADLINE_EXCEEDED, "could not validate drop database")
 		case <-time.After(500 * time.Millisecond): //timeout
 		}
 	}
+
 	return &sqltypes.Result{StatusFlags: sqltypes.ServerStatusDbDropped}, nil
 }
 
