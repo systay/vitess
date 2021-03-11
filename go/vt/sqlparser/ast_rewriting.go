@@ -231,11 +231,7 @@ func (er *expressionRewriter) rewriteJoinCondition(cursor *Cursor, node JoinCond
 				Left:     lftCol,
 				Right:    rgtCol,
 			}
-			if newCondition.On == nil {
-				newCondition.On = cmp
-			} else {
-				newCondition.On = &AndExpr{Left: newCondition.On, Right: cmp}
-			}
+			newCondition.On = And(newCondition.On, cmp)
 		}
 		cursor.Replace(newCondition)
 	}
@@ -369,21 +365,30 @@ func fixedPointRewriteToCNF(expr Expr) (Expr, error) {
 	return expr, nil
 }
 
+func nots(in Exprs) Exprs {
+	res := make(Exprs, 0, len(in))
+	for _, e := range in {
+		res = append(res, &NotExpr{Expr: e})
+	}
+	return res
+}
+
 func rewriteToCNF(expr Expr) (Expr, bool) {
 	switch expr := expr.(type) {
 	case *NotExpr:
 		switch child := expr.Expr.(type) {
 		case *NotExpr:
+			// Simplify
 			// NOT NOT A => A
 			return child.Expr, false
 		case *OrExpr:
 			// DeMorgan Rewriter
 			// NOT (A OR B) => NOT A AND NOT B
-			return &AndExpr{Right: &NotExpr{Expr: child.Right}, Left: &NotExpr{Expr: child.Left}}, false
+			return &AndExpr{Exprs: nots(child.Exprs)}, false
 		case *AndExpr:
 			// DeMorgan Rewriter
 			// NOT (A AND B) => NOT A OR NOT B
-			return &OrExpr{Right: &NotExpr{Expr: child.Right}, Left: &NotExpr{Expr: child.Left}}, false
+			return &OrExpr{Exprs: nots(child.Exprs)}, false
 		}
 	case *OrExpr:
 		switch lchild := expr.Left.(type) {

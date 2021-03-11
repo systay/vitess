@@ -9105,19 +9105,19 @@ yydefault:
 		yyDollar = yyS[yypt-3 : yypt+1]
 //line sql.y:3326
 		{
-			yyVAL.expr = &AndExpr{Left: yyDollar[1].expr, Right: yyDollar[3].expr}
+			yyVAL.expr = &AndExpr{Exprs: Exprs{yyDollar[1].expr, yyDollar[3].expr}}
 		}
 	case 646:
 		yyDollar = yyS[yypt-3 : yypt+1]
 //line sql.y:3330
 		{
-			yyVAL.expr = &OrExpr{Left: yyDollar[1].expr, Right: yyDollar[3].expr}
+			yyVAL.expr = &OrExpr{Exprs: Exprs{yyDollar[1].expr, yyDollar[3].expr}}
 		}
 	case 647:
 		yyDollar = yyS[yypt-3 : yypt+1]
 //line sql.y:3334
 		{
-			yyVAL.expr = &XorExpr{Left: yyDollar[1].expr, Right: yyDollar[3].expr}
+			yyVAL.expr = &XorExpr{Exprs: Exprs{yyDollar[1].expr, yyDollar[3].expr}}
 		}
 	case 648:
 		yyDollar = yyS[yypt-2 : yypt+1]

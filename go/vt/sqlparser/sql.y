@@ -3324,15 +3324,15 @@ expression:
   }
 | expression AND expression
   {
-    $$ = &AndExpr{Left: $1, Right: $3}
+    $$ = &AndExpr{Exprs: Exprs{$1, $3}}
   }
 | expression OR expression
   {
-    $$ = &OrExpr{Left: $1, Right: $3}
+    $$ = &OrExpr{Exprs: Exprs{$1, $3}}
   }
 | expression XOR expression
   {
-    $$ = &XorExpr{Left: $1, Right: $3}
+    $$ = &XorExpr{Exprs: Exprs{$1, $3}}
   }
 | NOT expression
   {

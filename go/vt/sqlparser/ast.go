@@ -1583,12 +1583,12 @@ type (
 
 	// AndExpr represents an AND expression.
 	AndExpr struct {
-		Left, Right Expr
+		Exprs Exprs
 	}
 
 	// OrExpr represents an OR expression.
 	OrExpr struct {
-		Left, Right Expr
+		Exprs Exprs
 	}
 
 	// XorExpr represents an XOR expression.
@@ -2763,12 +2763,22 @@ func (node Exprs) Format(buf *TrackedBuffer) {
 
 // Format formats the node.
 func (node *AndExpr) Format(buf *TrackedBuffer) {
-	buf.astPrintf(node, "%l and %r", node.Left, node.Right)
+	buf.astPrintf(node, "%v", node.Exprs[0])
+	for i, expr := range node.Exprs {
+		if i != 0 {
+			buf.astPrintf(node, " and %r", expr)
+		}
+	}
 }
 
 // Format formats the node.
 func (node *OrExpr) Format(buf *TrackedBuffer) {
-	buf.astPrintf(node, "%l or %r", node.Left, node.Right)
+	buf.astPrintf(node, "%v", node.Exprs[0])
+	for i, expr := range node.Exprs {
+		if i != 0 {
+			buf.astPrintf(node, " or %r", expr)
+		}
+	}
 }
 
 // Format formats the node.

@@ -782,10 +782,7 @@ func (node *Select) AddWhere(expr Expr) {
 		}
 		return
 	}
-	node.Where.Expr = &AndExpr{
-		Left:  node.Where.Expr,
-		Right: expr,
-	}
+	node.Where.Expr = And(node.Where.Expr, expr)
 }
 
 // AddHaving adds the boolean expression to the
@@ -798,9 +795,34 @@ func (node *Select) AddHaving(expr Expr) {
 		}
 		return
 	}
-	node.Having.Expr = &AndExpr{
-		Left:  node.Having.Expr,
-		Right: expr,
+	node.Having.Expr = And(node.Having.Expr, expr)
+}
+
+// And returns the two input expressions ANDed together, using as few AST nodes as possible
+func And(a, b Expr) Expr {
+	if a == nil {
+		return b
+	}
+	if b == nil {
+		return a
+	}
+	aAnd, aOK := a.(*AndExpr)
+	bAnd, bOK := b.(*AndExpr)
+
+	switch {
+	case aOK && bOK:
+		aAnd.Exprs = append(aAnd.Exprs, bAnd.Exprs...)
+		return aAnd
+	case aOK:
+		aAnd.Exprs = append(aAnd.Exprs, b)
+		return aAnd
+	case bOK:
+		bAnd.Exprs = append(Exprs{a}, bAnd.Exprs...)
+		return bAnd
+	default:
+		return &AndExpr{
+			Exprs: Exprs{a, b},
+		}
 	}
 }
 
@@ -834,10 +856,8 @@ func (node *Update) AddWhere(expr Expr) {
 		}
 		return
 	}
-	node.Where.Expr = &AndExpr{
-		Left:  node.Where.Expr,
-		Right: expr,
-	}
+	node.Where.Expr = And(node.Where.Expr, expr)
+
 }
 
 // AddOrder adds an order by element

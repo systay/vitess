@@ -123,11 +123,8 @@ func (a *application) apply(parent, node SQLNode, replacer replacerFunc) {
 			parent.(*AlterVschema).AutoIncSpec = newNode.(*AutoIncSpec)
 		})
 	case *AndExpr:
-		a.apply(node, n.Left, func(newNode, parent SQLNode) {
-			parent.(*AndExpr).Left = newNode.(Expr)
-		})
-		a.apply(node, n.Right, func(newNode, parent SQLNode) {
-			parent.(*AndExpr).Right = newNode.(Expr)
+		a.apply(node, n.Exprs, func(newNode, parent SQLNode) {
+			parent.(*AndExpr).Exprs = newNode.(Exprs)
 		})
 	case Argument:
 	case *AutoIncSpec:
@@ -497,11 +494,8 @@ func (a *application) apply(parent, node SQLNode, replacer replacerFunc) {
 			parent.(*OptLike).LikeTable = newNode.(TableName)
 		})
 	case *OrExpr:
-		a.apply(node, n.Left, func(newNode, parent SQLNode) {
-			parent.(*OrExpr).Left = newNode.(Expr)
-		})
-		a.apply(node, n.Right, func(newNode, parent SQLNode) {
-			parent.(*OrExpr).Right = newNode.(Expr)
+		a.apply(node, n.Exprs, func(newNode, parent SQLNode) {
+			parent.(*OrExpr).Exprs = newNode.(Exprs)
 		})
 	case *Order:
 		a.apply(node, n.Expr, func(newNode, parent SQLNode) {
@@ -910,11 +904,8 @@ func (a *application) apply(parent, node SQLNode, replacer replacerFunc) {
 			parent.(*Where).Expr = newNode.(Expr)
 		})
 	case *XorExpr:
-		a.apply(node, n.Left, func(newNode, parent SQLNode) {
-			parent.(*XorExpr).Left = newNode.(Expr)
-		})
-		a.apply(node, n.Right, func(newNode, parent SQLNode) {
-			parent.(*XorExpr).Right = newNode.(Expr)
+		a.apply(node, n.Exprs, func(newNode, parent SQLNode) {
+			parent.(*XorExpr).Exprs = newNode.(Exprs)
 		})
 	}
 	if a.post != nil && !a.post(&a.cursor) {

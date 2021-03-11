@@ -1121,8 +1121,7 @@ func CloneRefOfAndExpr(n *AndExpr) *AndExpr {
 		return nil
 	}
 	out := *n
-	out.Left = CloneExpr(n.Left)
-	out.Right = CloneExpr(n.Right)
+	out.Exprs = CloneExprs(n.Exprs)
 	return &out
 }
 
@@ -1324,8 +1323,7 @@ func CloneRefOfOrExpr(n *OrExpr) *OrExpr {
 		return nil
 	}
 	out := *n
-	out.Left = CloneExpr(n.Left)
-	out.Right = CloneExpr(n.Right)
+	out.Exprs = CloneExprs(n.Exprs)
 	return &out
 }
 
@@ -1391,8 +1389,7 @@ func CloneRefOfXorExpr(n *XorExpr) *XorExpr {
 		return nil
 	}
 	out := *n
-	out.Left = CloneExpr(n.Left)
-	out.Right = CloneExpr(n.Right)
+	out.Exprs = CloneExprs(n.Exprs)
 	return &out
 }
 
