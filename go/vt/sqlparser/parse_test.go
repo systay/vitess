@@ -1927,6 +1927,12 @@ func TestValid(t *testing.T) {
 			Walk(func(node SQLNode) (bool, error) {
 				return true, nil
 			}, tree)
+
+			// Next we just test the AST deep equal comparison works by parsing the query again and
+			// asserting that the produced AST are considered equal
+			tree2, err := Parse(tcase.input)
+			require.NoError(t, err, out)
+			assert.True(t, EqualsSQLNode(tree, tree2), "parsing same query produces AST that was not equal")
 		})
 	}
 }

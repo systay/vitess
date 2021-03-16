@@ -75,7 +75,10 @@ func isNilValue(i interface{}) bool {
 	return isNullable && valueOf.IsNil()
 }
 
-var abort = new(int) // singleton, to signal termination of Apply
+var abort = new(int)       // singleton, to signal termination of Apply
+type errorWrapper struct { // used to return error using recover
+	err error
+}
 
 func Rewrite(node AST, pre, post ApplyFunc) (result AST) {
 	parent := &struct{ AST }{node}
@@ -94,4 +97,11 @@ func replacePanic(msg string) func(newNode, parent AST) {
 	return func(newNode, parent AST) {
 		panic("Tried replacing a field of a value type. This is not supported. " + msg)
 	}
+}
+
+type Visitor func(node AST) (bool, error)
+
+func Walk(node AST, f Visitor) error {
+	_, err := VisitAST(node, f)
+	return err
 }

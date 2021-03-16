@@ -53,6 +53,76 @@ func CloneAST(in AST) AST {
 	}
 }
 
+func VisitAST(in AST, f func(node AST) (kontinue bool, err error)) (kontinue bool, err error) {
+	if in == nil {
+		return true, nil
+	}
+	switch in := in.(type) {
+	case BasicType:
+		return VisitBasicType(in, f)
+	case Bytes:
+		return false, nil
+	case InterfaceContainer:
+		return false, nil
+	case InterfaceSlice:
+		for _, node := range in {
+			k, err := f(node)
+			if err != nil {
+				return false, err
+			}
+			if !k {
+				return false, nil
+			}
+		}
+		return true, nil
+	case *Leaf:
+		return VisitRefOfLeaf(in, f)
+	case LeafSlice:
+		return CloneLeafSlice(in)
+	case *NoCloneType:
+		return CloneRefOfNoCloneType(in)
+	case *RefContainer:
+		return VisitRefOfRefContainer(in, f)
+	case *RefSliceContainer:
+		return CloneRefOfRefSliceContainer(in)
+	case *SubImpl:
+		return CloneRefOfSubImpl(in)
+	case ValueContainer:
+		return CloneValueContainer(in)
+	case ValueSliceContainer:
+		return CloneValueSliceContainer(in)
+	default:
+		// this should never happen
+		return nil
+	}
+}
+
+func VisitRefOfRefContainer(in *RefContainer, f func(node AST) (kontinue bool, err error)) (bool, error) {
+	if in == nil {
+		return true, nil
+	}
+	if cont, err := f(in); err != nil || !cont {
+		return false, err
+	}
+	if k, err := VisitRefOfLeaf(in.ASTImplementationType, f); err != nil || !k {
+		return false, err
+	}
+	if k, err := VisitAST(in.ASTType, f); err != nil || !k {
+		return false, err
+	}
+	return true, nil
+}
+
+func VisitBasicType(in BasicType, f func(node AST) (kontinue bool, err error)) (bool, error) {
+	return f(in)
+}
+
+func VisitRefOfLeaf(in *Leaf, f func(node AST) (kontinue bool, err error)) (bool, error) {
+	if in == nil {
+		return true, nil
+	}
+}
+
 // EqualsAST does deep equals between the two objects.
 func EqualsAST(inA, inB AST) bool {
 	if inA == nil && inB == nil {
