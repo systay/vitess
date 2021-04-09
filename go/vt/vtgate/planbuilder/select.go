@@ -19,6 +19,7 @@ package planbuilder
 import (
 	"errors"
 	"fmt"
+	"vitess.io/vitess/go/sqltypes"
 
 	"vitess.io/vitess/go/vt/orchestrator/external/golib/log"
 
@@ -162,6 +163,24 @@ func planOrderBy(qp *queryProjection, plan logicalPlan, semTable *semantics.SemT
 			if !exists {
 				return nil, semantics.Gen4NotSupportedF("order by column not exists in select list")
 			}
+			colName, ok := order.Expr.(*sqlparser.ColName)
+			if !ok {
+				return nil, semantics.Gen4NotSupportedF("order by non-column expression")
+			}
+
+			table := semTable.Dependencies(colName)
+			tableInfo, err := semTable.TableInfoFor(table)
+			if err != nil {
+				return nil, err
+			}
+			for _, c := range tableInfo.Table.Columns {
+				if colName.Name.Equal(c.Name) {
+					if !sqltypes.IsNumber(c.Type) {
+						
+					}
+				}
+			}
+
 			plan.eroute.OrderBy = append(plan.eroute.OrderBy, engine.OrderbyParams{
 				Col:             offset,
 				WeightStringCol: -1,

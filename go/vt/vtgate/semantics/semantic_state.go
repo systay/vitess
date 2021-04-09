@@ -27,10 +27,11 @@ import (
 )
 
 type (
-	tableInfo struct {
-		ate *sqlparser.AliasedTableExpr
-		vt  *vindexes.Table
+	TableInfo struct {
+		ASTNode *sqlparser.AliasedTableExpr
+		Table   *vindexes.Table
 	}
+	
 	// TableSet is how a set of tables is expressed.
 	// Tables get unique bits assigned in the order that they are encountered during semantic analysis
 	TableSet uint64 // we can only join 64 tables with this underlying data type
@@ -38,13 +39,13 @@ type (
 
 	// SemTable contains semantic analysis information about the query.
 	SemTable struct {
-		Tables           []*tableInfo
+		Tables           []*TableInfo
 		exprDependencies map[sqlparser.Expr]TableSet
 	}
 
 	scope struct {
 		parent *scope
-		tables map[string]*tableInfo
+		tables map[string]*TableInfo
 	}
 
 	// SchemaInformation is used tp provide table information from Vschema.
@@ -61,11 +62,19 @@ func NewSemTable() *SemTable {
 // TableSetFor returns the bitmask for this particular tableshoe
 func (st *SemTable) TableSetFor(t *sqlparser.AliasedTableExpr) TableSet {
 	for idx, t2 := range st.Tables {
-		if t == t2.ate {
+		if t == t2.ASTNode {
 			return 1 << idx
 		}
 	}
 	return 0
+}
+
+// TableSetFor returns the bitmask for this particular tableshoe
+func (st *SemTable) TableInfoFor(id TableSet) (*TableInfo, error) {
+	if id.NumberOfTables()>1 {
+		return nil, vterrors.Errorf(vtrpcpb.Code_INTERNAL, "[BUG] should only be used for single tables")
+	}
+	return st.Tables[id.TableOffset()], nil
 }
 
 // Dependencies return the table dependencies of the expression.
@@ -90,10 +99,10 @@ func (st *SemTable) Dependencies(expr sqlparser.Expr) TableSet {
 }
 
 func newScope(parent *scope) *scope {
-	return &scope{tables: map[string]*tableInfo{}, parent: parent}
+	return &scope{tables: map[string]*TableInfo{}, parent: parent}
 }
 
-func (s *scope) addTable(name string, table *tableInfo) error {
+func (s *scope) addTable(name string, table *TableInfo) error {
 	_, found := s.tables[name]
 	if found {
 		return vterrors.NewErrorf(vtrpcpb.Code_INVALID_ARGUMENT, vterrors.NonUniqTable, "Not unique table/alias: '%s'", name)
@@ -128,6 +137,16 @@ func (ts TableSet) NumberOfTables() int {
 		count++
 	}
 	return count
+}
+
+// NumberOfTables returns the number of bits set
+func (ts TableSet) TableOffset() int {
+	offset := 0
+	for ts > 1 {
+		ts = ts >> 1 
+		offset++
+	}
+	return offset
 }
 
 // Constituents returns an slice with all the
