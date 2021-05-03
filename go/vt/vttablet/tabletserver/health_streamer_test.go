@@ -19,10 +19,11 @@ package tabletserver
 import (
 	"context"
 	"errors"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/assert"
+	"vitess.io/vitess/go/mysql/fakesqldb"
 
 	querypb "vitess.io/vitess/go/vt/proto/query"
 	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
@@ -30,7 +31,9 @@ import (
 )
 
 func TestHealthStreamerClosed(t *testing.T) {
-	config := tabletenv.NewDefaultConfig()
+	db := fakesqldb.New(t)
+	defer db.Close()
+	config := newConfig(db)
 	env := tabletenv.NewEnv(config, "ReplTrackerTest")
 	alias := topodatapb.TabletAlias{
 		Cell: "cell",
@@ -44,8 +47,17 @@ func TestHealthStreamerClosed(t *testing.T) {
 	assert.Contains(t, err.Error(), "tabletserver is shutdown")
 }
 
+func newConfig(db *fakesqldb.DB) *tabletenv.TabletConfig {
+	cfg := tabletenv.NewDefaultConfig()
+	cfg.DB = newDBConfigs(db)
+	return cfg
+}
+
 func TestHealthStreamerBroadcast(t *testing.T) {
-	config := tabletenv.NewDefaultConfig()
+	db := fakesqldb.New(t)
+	defer db.Close()
+	config := newConfig(db)
+
 	env := tabletenv.NewEnv(config, "ReplTrackerTest")
 	alias := topodatapb.TabletAlias{
 		Cell: "cell",
@@ -56,7 +68,7 @@ func TestHealthStreamerBroadcast(t *testing.T) {
 	hs.Open()
 	defer hs.Close()
 	target := querypb.Target{}
-	hs.InitDBConfig(target)
+	hs.InitDBConfig(target, db.ConnParams())
 
 	ch, cancel := testStream(hs)
 	defer cancel()
@@ -134,6 +146,30 @@ func TestHealthStreamerBroadcast(t *testing.T) {
 		},
 	}
 	assert.Equal(t, want, shr)
+}
+
+func TestReloadSchema(t *testing.T) {
+	db := fakesqldb.New(t)
+	defer db.Close()
+	config := newConfig(db)
+
+	env := tabletenv.NewEnv(config, "ReplTrackerTest")
+	alias := topodatapb.TabletAlias{
+		Cell: "cell",
+		Uid:  1,
+	}
+	blpFunc = testBlpFunc
+	hs := newHealthStreamer(env, alias)
+	hs.Open()
+
+	defer hs.Close()
+	target := querypb.Target{TabletType: topodatapb.TabletType_MASTER}
+	hs.InitDBConfig(target, config.DB.DbaWithDB())
+
+	err := hs.Reload()
+	require.NoError(t, err)
+
+	assert.NotEmpty(t, hs.state.RealtimeStats.TableSchemaChanged, "no schema changes found")
 }
 
 func testStream(hs *healthStreamer) (<-chan *querypb.StreamHealthResponse, context.CancelFunc) {

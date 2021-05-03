@@ -22,6 +22,7 @@ import (
 	"io"
 	"sync"
 	"time"
+	"vitess.io/vitess/go/vt/dbconfigs"
 
 	"vitess.io/vitess/go/mysql"
 	"vitess.io/vitess/go/timer"
@@ -67,6 +68,7 @@ type healthStreamer struct {
 	history *history.History
 
 	ticks       *timer.Timer
+	cp          dbconfigs.Connector
 	conns       *connpool.Pool
 	initSuccess bool
 }
@@ -98,11 +100,12 @@ func newHealthStreamer(env tabletenv.Env, alias topodatapb.TabletAlias) *healthS
 	}
 }
 
-func (hs *healthStreamer) InitDBConfig(target querypb.Target) {
+func (hs *healthStreamer) InitDBConfig(target querypb.Target, cp dbconfigs.Connector) {
 	// Weird test failures happen if we don't instantiate
 	// a separate variable.
 	inner := target
 	hs.state.Target = &inner
+	hs.cp = cp
 }
 
 func (hs *healthStreamer) Open() {
@@ -113,6 +116,7 @@ func (hs *healthStreamer) Open() {
 		return
 	}
 	hs.ctx, hs.cancel = context.WithCancel(context.Background())
+	hs.conns.Open(hs.cp, hs.cp, hs.cp)
 	hs.ticks.Start(func() {
 		if err := hs.Reload(); err != nil {
 			log.Errorf("periodic schema reload failed in health stream: %v", err)
