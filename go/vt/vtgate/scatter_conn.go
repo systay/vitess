@@ -376,12 +376,12 @@ func (stc *ScatterConn) StreamExecuteMulti(
 	var mu sync.Mutex
 	fieldSent := false
 
-	allErrors := stc.multiGo("StreamExecute", rss, func(rs *srvtopo.ResolvedShard, i int) error {
+	_= stc.multiGo("StreamExecute", rss, func(rs *srvtopo.ResolvedShard, i int) error {
 		return rs.Gateway.StreamExecute(ctx, rs.Target, query, bindVars[i], 0, options, func(qr *sqltypes.Result) error {
 			return stc.processOneStreamingResult(&mu, &fieldSent, qr, callback)
 		})
 	})
-	return allErrors.AggrError(vterrors.Aggregate)
+	return nil
 }
 
 // timeTracker is a convenience wrapper used by MessageStream
