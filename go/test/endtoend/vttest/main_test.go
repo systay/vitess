@@ -67,6 +67,18 @@ func TestMain(m *testing.M) {
 			Port: cluster.Env.PortForProtocol("vtcombo_mysql_port", ""),
 		}
 		mysqlParams = cluster.MySQLConnParams()
+
+		ctx := context.Background()
+		conn, err := mysql.Connect(ctx, &mysqlParams)
+		if err != nil {
+			return 1
+		}
+		defer conn.Close()
+		_, err = conn.ExecuteFetch("set global max_connections = 100000", 1000, true)
+		if err != nil {
+			return 1
+		}
+
 		grpcAddress = fmt.Sprintf("localhost:%d", cluster.Env.PortForProtocol("vtcombo", "grpc"))
 		return m.Run()
 	}()
@@ -101,7 +113,7 @@ func insertStartValue(t *testing.T, keyspaces []*vttestpb.Keyspace) error {
 
 func getHundredKeyspaces() []*vttestpb.Keyspace {
 	var keyspaces []*vttestpb.Keyspace
-	for i := 1; i <= 70; i++ {
+	for i := 1; i <= 75; i++ {
 		keyspaces = append(keyspaces, &vttestpb.Keyspace{
 			Name: "ks" + strconv.Itoa(i),
 			Shards: []*vttestpb.Shard{{
