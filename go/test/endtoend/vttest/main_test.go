@@ -20,6 +20,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/stretchr/testify/assert"
 	"os"
 	"strconv"
 	"testing"
@@ -73,11 +74,11 @@ func TestMain(m *testing.M) {
 }
 
 func TestSetup(t *testing.T) {
-	err := insertStartValue(cfg.Topology.Keyspaces)
+	err := insertStartValue(t, cfg.Topology.Keyspaces)
 	require.NoError(t, err)
 }
 
-func insertStartValue(keyspaces []*vttestpb.Keyspace) error {
+func insertStartValue(t *testing.T, keyspaces []*vttestpb.Keyspace) error {
 	ctx := context.Background()
 	conn, err := mysql.Connect(ctx, &vtParams)
 	if err != nil {
@@ -88,20 +89,19 @@ func insertStartValue(keyspaces []*vttestpb.Keyspace) error {
 	// lets insert a single starting value for each keyspace
 	for i, keyspace := range keyspaces {
 		_, err = conn.ExecuteFetch(fmt.Sprintf("create table %s.t1_last_insert_id(id1 int)", keyspace.Name), 1000, true)
+		assert.NoError(t, err)
 		if err != nil {
-			return err
+			continue
 		}
 		_, err = conn.ExecuteFetch(fmt.Sprintf("insert into %s.t1_last_insert_id(id1) values(%d)", keyspace.Name, i), 1000, true)
-		if err != nil {
-			return err
-		}
+		assert.NoError(t, err)
 	}
 	return nil
 }
 
 func getHundredKeyspaces() []*vttestpb.Keyspace {
 	var keyspaces []*vttestpb.Keyspace
-	for i := 1; i <= 100; i++ {
+	for i := 1; i <= 70; i++ {
 		keyspaces = append(keyspaces, &vttestpb.Keyspace{
 			Name: "ks" + strconv.Itoa(i),
 			Shards: []*vttestpb.Shard{{
