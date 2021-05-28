@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/url"
+	"runtime/debug"
 	"sort"
 	"sync"
 	"time"
@@ -546,6 +547,7 @@ func (server *ResilientServer) WatchSrvVSchema(ctx context.Context, cell string,
 		defer func() {
 			if err := recover(); err != nil {
 				log.Errorf("WatchSrvVSchema  uncaught panic, cell :%v, err :%v)", cell, err)
+				log.Errorf("stacktrace from panic: \n" + string(debug.Stack()))
 			}
 		}()
 
