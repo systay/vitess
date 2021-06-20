@@ -1,1 +1,71 @@
 # Add your test case here for debugging and run go test -run=One.
+# Left join, multi-chunk
+"select u.col from user u left join unsharded m on u.a = m.b"
+{
+  "QueryType": "SELECT",
+  "Original": "select u.col from user u left join unsharded m on u.a = m.b",
+  "Instructions": {
+    "OperatorType": "Join",
+    "Variant": "LeftJoin",
+    "JoinColumnIndexes": "-1",
+    "TableName": "`user`_unsharded",
+    "Inputs": [
+      {
+        "OperatorType": "Route",
+        "Variant": "SelectScatter",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select u.col, u.a from `user` as u where 1 != 1",
+        "Query": "select u.col, u.a from `user` as u",
+        "Table": "`user`"
+      },
+      {
+        "OperatorType": "Route",
+        "Variant": "SelectUnsharded",
+        "Keyspace": {
+          "Name": "main",
+          "Sharded": false
+        },
+        "FieldQuery": "select 1 from unsharded as m where 1 != 1",
+        "Query": "select 1 from unsharded as m where m.b = :u_a",
+        "Table": "unsharded"
+      }
+    ]
+  }
+}
+{
+  "QueryType": "SELECT",
+  "Original": "select u.col from user u left join unsharded m on u.a = m.b",
+  "Instructions": {
+    "OperatorType": "Join",
+    "Variant": "Join",
+    "JoinColumnIndexes": "-2",
+    "TableName": "`user`_unsharded",
+    "Inputs": [
+      {
+        "OperatorType": "Route",
+        "Variant": "SelectScatter",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select u.a, u.col from `user` as u where 1 != 1",
+        "Query": "select u.a, u.col from `user` as u",
+        "Table": "`user`"
+      },
+      {
+        "OperatorType": "Route",
+        "Variant": "SelectUnsharded",
+        "Keyspace": {
+          "Name": "main",
+          "Sharded": false
+        },
+        "FieldQuery": "select 1 from unsharded as m where 1 != 1",
+        "Query": "select 1 from unsharded as m where m.b = :u_a",
+        "Table": "unsharded"
+      }
+    ]
+  }
+}

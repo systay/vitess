@@ -261,7 +261,12 @@ func mergeOrJoin(lhs, rhs joinTree, joinPredicates []sqlparser.Expr, semTable *s
 	}
 
 	tree := &joinPlan{lhs: lhs.clone(), rhs: rhs.clone()}
-	return pushPredicate2(joinPredicates, tree, semTable)
+	if inner {
+		return pushPredicate2(joinPredicates, tree, semTable)
+	}
+	tree.outer = true
+	tree.predicate = sqlparser.AndExpressions(joinPredicates...)
+	return tree, nil
 }
 
 type (

@@ -97,6 +97,9 @@ type (
 		vars map[string]int
 
 		lhs, rhs joinTree
+
+		outer     bool
+		predicate sqlparser.Expr
 	}
 
 	parenTables []relation
@@ -512,8 +515,10 @@ func (jp *joinPlan) cost() int {
 
 func (jp *joinPlan) clone() joinTree {
 	result := &joinPlan{
-		lhs: jp.lhs.clone(),
-		rhs: jp.rhs.clone(),
+		outer:     jp.outer,
+		predicate: jp.predicate,
+		lhs:       jp.lhs.clone(),
+		rhs:       jp.rhs.clone(),
 	}
 	return result
 }

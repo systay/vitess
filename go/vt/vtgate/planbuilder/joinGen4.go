@@ -80,10 +80,11 @@ func (j *joinGen4) SupplyWeightString(colNumber int) (weightcolNumber int, err e
 // Primitive implements the logicalPlan interface
 func (j *joinGen4) Primitive() engine.Primitive {
 	return &engine.Join{
-		Left:  j.Left.Primitive(),
-		Right: j.Right.Primitive(),
-		Cols:  j.Cols,
-		Vars:  j.Vars,
+		Opcode: engine.NormalJoin,
+		Left:   j.Left.Primitive(),
+		Right:  j.Right.Primitive(),
+		Cols:   j.Cols,
+		Vars:   j.Vars,
 	}
 }
 
