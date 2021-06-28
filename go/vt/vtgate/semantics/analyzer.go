@@ -150,14 +150,7 @@ func (a *analyzer) analyzeDown(cursor *sqlparser.Cursor) bool {
 		}
 		wScope.tables = append(wScope.tables, vTbl)
 	case sqlparser.OrderBy:
-		sel, ok := cursor.Parent().(*sqlparser.Select)
-		if !ok {
-			break
-		}
-		nScope := newScope(a.currentScope())
-		a.push(nScope)
-		wScope := a.wScope[sel]
-		nScope.tables = append(nScope.tables, wScope.tables...)
+		a.changeScopeForOrderBy(cursor)
 	case *sqlparser.Order:
 		l, ok := node.Expr.(*sqlparser.Literal)
 		if !ok {
@@ -216,6 +209,25 @@ func (a *analyzer) analyzeDown(cursor *sqlparser.Cursor) bool {
 	// to the current node, but that is not what we want if we have encountered an error.
 	// In order to abort the whole visitation, we have to return true here and then return false in the `analyzeUp` method
 	return true
+}
+
+func (a *analyzer) changeScopeForOrderBy(cursor *sqlparser.Cursor) {
+	sel, ok := cursor.Parent().(*sqlparser.Select)
+	if !ok {
+		return
+	}
+	// In ORDER BY, we can see both the scope in the FROM part of the query, and the SELECT columns created
+	// so before walking the rest of the tree, we change the scope to match this behaviour
+	incomingScope := a.currentScope()
+	nScope := newScope(incomingScope)
+	a.push(nScope)
+	wScope := a.wScope[sel]
+	nScope.tables = append(nScope.tables, wScope.tables...)
+	nScope.selectExprs = incomingScope.selectExprs
+
+	if a.rScope[sel] != incomingScope {
+		panic("BUG: scope counts did not match")
+	}
 }
 
 func isParentSelect(cursor *sqlparser.Cursor) bool {
