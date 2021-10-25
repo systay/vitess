@@ -44,6 +44,9 @@ var (
 		input:  "select 1",
 		output: "select 1 from dual",
 	}, {
+		input:  "create table x(location GEOMETRY DEFAULT (POINT(7.0, 3.0)))",
+		output: "create table x (\n\tlocation GEOMETRY default (POINT(7.0, 3.0))\n)",
+	}, {
 		input:  "CREATE TABLE t2 (b blob DEFAULT 'abc')",
 		output: "create table t2 (\n\tb blob default ('abc')\n)",
 	}, {
@@ -103,9 +106,6 @@ var (
 	}, {
 		input:  "create table x(location POINT DEFAULT (7.0))",
 		output: "create table x (\n\tlocation POINT default (7.0)\n)",
-	}, {
-		input:  "create table x(location GEOMETRY DEFAULT (POINT(7.0, 3.0)))",
-		output: "create table x (\n\tlocation GEOMETRY default (POINT(7.0, 3.0))\n)",
 	}, {
 		input:  "create table x(location GEOMETRY DEFAULT POINT(7.0, 3.0))",
 		output: "create table x (\n\tlocation GEOMETRY default (POINT(7.0, 3.0))\n)",

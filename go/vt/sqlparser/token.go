@@ -202,7 +202,7 @@ func (tkn *Tokenizer) Scan() (int, string) {
 		case '|':
 			if tkn.cur() == '|' {
 				tkn.skip(1)
-				return OR, ""
+				return OR_OR, ""
 			}
 			return int(ch), ""
 		case '?':
