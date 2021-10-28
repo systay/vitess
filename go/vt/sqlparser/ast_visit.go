@@ -879,7 +879,7 @@ func VisitRefOfCurTimeFuncExpr(in *CurTimeFuncExpr, f Visit) error {
 	if err := VisitColIdent(in.Name, f); err != nil {
 		return err
 	}
-	if err := VisitExpr(in.Fsp, f); err != nil {
+	if err := VisitRefOfLiteral(in.Fsp, f); err != nil {
 		return err
 	}
 	return nil
@@ -1975,7 +1975,7 @@ func VisitRefOfSubstrExpr(in *SubstrExpr, f Visit) error {
 	if cont, err := f(in); err != nil || !cont {
 		return err
 	}
-	if err := VisitRefOfColName(in.Name, f); err != nil {
+	if err := VisitExpr(in.Name, f); err != nil {
 		return err
 	}
 	if err := VisitRefOfLiteral(in.StrVal, f); err != nil {

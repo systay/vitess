@@ -41,11 +41,15 @@ var (
 		output     string
 		partialDDL bool
 	}{{
+		input:  "create table x(location GEOMETRY DEFAULT (POINT(7.0, 3.0)))",
+		output: "create table x (\n\tlocation GEOMETRY default (POINT(7.0, 3.0))\n)",
+	}, {
+		input: "select (5 between 0 and 10) between 0 and 1",
+	}, {
 		input:  "select 1",
 		output: "select 1 from dual",
 	}, {
-		input:  "create table x(location GEOMETRY DEFAULT (POINT(7.0, 3.0)))",
-		output: "create table x (\n\tlocation GEOMETRY default (POINT(7.0, 3.0))\n)",
+		input: "select /* parenthesised value */ 1 from t where a = b",
 	}, {
 		input:  "CREATE TABLE t2 (b blob DEFAULT 'abc')",
 		output: "create table t2 (\n\tb blob default ('abc')\n)",
@@ -2270,6 +2274,21 @@ func TestInvalid(t *testing.T) {
 	}, {
 		input: "select 1, next value from seq",
 		err:   "syntax error",
+	}, {
+		input: "create table t (\n\ttime1 timestamp default utc_timestamp,\n\ttime2 timestamp default utc_timestamp(),\n\ttime3 timestamp default utc_timestamp on update utc_timestamp,\n\ttime4 timestamp default utc_timestamp() on update utc_timestamp(),\n\ttime5 timestamp(4) default utc_timestamp(4) on update utc_timestamp(4)\n)",
+		err:   "syntax error",
+	}, {
+		input: "create table t (\n\ttime1 timestamp default utc_time,\n\ttime2 timestamp default utc_time(),\n\ttime3 timestamp default utc_time on update utc_time,\n\ttime4 timestamp default utc_time() on update utc_time(),\n\ttime5 timestamp(5) default utc_time(5) on update utc_time(5)\n)",
+		err:   "syntax error",
+	}, {
+		input: "create table t (\n\ttime1 timestamp default utc_time,\n\ttime2 timestamp default utc_time(),\n\ttime3 timestamp default utc_time on update utc_time,\n\ttime4 timestamp default utc_time() on update utc_time(),\n\ttime5 timestamp(5) default utc_time(5) on update utc_time(5)\n)",
+		err:   "syntax error",
+	}, {
+		input: "create table t (\n\ttime1 timestamp default current_time,\n\ttime2 timestamp default current_time(),\n\ttime3 timestamp default current_time on update current_time,\n\ttime4 timestamp default current_time() on update current_time(),\n\ttime5 timestamp(2) default current_time(2) on update current_time(2)\n)",
+		err:   "syntax error",
+	}, {
+		input: "create table t (\n\ttime1 timestamp default utc_date,\n\ttime2 timestamp default utc_date(),\n\ttime3 timestamp default utc_date on update utc_date,\n\ttime4 timestamp default utc_date() on update utc_date()\n)",
+		err:   "syntax error",
 	}}
 
 	for _, tcase := range invalidSQL {
@@ -2757,12 +2776,15 @@ func TestSubStr(t *testing.T) {
 }
 
 func TestLoadData(t *testing.T) {
+	//validSQL := []string{
+	//	"load data from s3 'x.txt'",
+	//	"load data from s3 manifest 'x.txt'",
+	//	"load data from s3 file 'x.txt'",
+	//	"load data infile 'x.txt' into table 'c'",
+	//	"load data from s3 'x.txt' into table x"}
 	validSQL := []string{
-		"load data from s3 'x.txt'",
-		"load data from s3 manifest 'x.txt'",
-		"load data from s3 file 'x.txt'",
-		"load data infile 'x.txt' into table 'c'",
-		"load data from s3 'x.txt' into table x"}
+		"select 5 between 0 and 10 between 0 and 1,(5 between 0 and 10) between 0 and 1",
+	}
 	for _, tcase := range validSQL {
 		_, err := Parse(tcase)
 		require.NoError(t, err)
@@ -3081,52 +3103,6 @@ func TestCreateTable(t *testing.T) {
 	time5 timestamp(3) default current_timestamp(3) on update current_timestamp(3)
 )`,
 		}, {
-			// test utc_timestamp with and without ()
-			input: `create table t (
-	time1 timestamp default utc_timestamp,
-	time2 timestamp default utc_timestamp(),
-	time3 timestamp default utc_timestamp on update utc_timestamp,
-	time4 timestamp default utc_timestamp() on update utc_timestamp(),
-	time5 timestamp(4) default utc_timestamp(4) on update utc_timestamp(4)
-)`,
-			output: `create table t (
-	time1 timestamp default (utc_timestamp()),
-	time2 timestamp default (utc_timestamp()),
-	time3 timestamp default (utc_timestamp()) on update utc_timestamp(),
-	time4 timestamp default (utc_timestamp()) on update utc_timestamp(),
-	time5 timestamp(4) default (utc_timestamp(4)) on update utc_timestamp(4)
-)`,
-		}, {
-			// test utc_time with and without ()
-			input: `create table t (
-	time1 timestamp default utc_time,
-	time2 timestamp default utc_time(),
-	time3 timestamp default utc_time on update utc_time,
-	time4 timestamp default utc_time() on update utc_time(),
-	time5 timestamp(5) default utc_time(5) on update utc_time(5)
-)`,
-			output: `create table t (
-	time1 timestamp default (utc_time()),
-	time2 timestamp default (utc_time()),
-	time3 timestamp default (utc_time()) on update utc_time(),
-	time4 timestamp default (utc_time()) on update utc_time(),
-	time5 timestamp(5) default (utc_time(5)) on update utc_time(5)
-)`,
-		}, {
-			// test utc_date with and without ()
-			input: `create table t (
-	time1 timestamp default utc_date,
-	time2 timestamp default utc_date(),
-	time3 timestamp default utc_date on update utc_date,
-	time4 timestamp default utc_date() on update utc_date()
-)`,
-			output: `create table t (
-	time1 timestamp default (utc_date()),
-	time2 timestamp default (utc_date()),
-	time3 timestamp default (utc_date()) on update utc_date(),
-	time4 timestamp default (utc_date()) on update utc_date()
-)`,
-		}, {
 			// test localtime with and without ()
 			input: `create table t (
 	time1 timestamp default localtime,
@@ -3171,22 +3147,6 @@ func TestCreateTable(t *testing.T) {
 	time2 timestamp default (current_date()),
 	time3 timestamp default (current_date()) on update current_date(),
 	time4 timestamp default (current_date()) on update current_date()
-)`,
-		}, {
-			// test current_time with and without ()
-			input: `create table t (
-	time1 timestamp default current_time,
-	time2 timestamp default current_time(),
-	time3 timestamp default current_time on update current_time,
-	time4 timestamp default current_time() on update current_time(),
-	time5 timestamp(2) default current_time(2) on update current_time(2)
-)`,
-			output: `create table t (
-	time1 timestamp default (current_time()),
-	time2 timestamp default (current_time()),
-	time3 timestamp default (current_time()) on update current_time(),
-	time4 timestamp default (current_time()) on update current_time(),
-	time5 timestamp(2) default (current_time(2)) on update current_time(2)
 )`,
 		}, {
 			input: `create table t1 (

@@ -738,7 +738,7 @@ func CloneRefOfCurTimeFuncExpr(n *CurTimeFuncExpr) *CurTimeFuncExpr {
 	}
 	out := *n
 	out.Name = CloneColIdent(n.Name)
-	out.Fsp = CloneExpr(n.Fsp)
+	out.Fsp = CloneRefOfLiteral(n.Fsp)
 	return &out
 }
 
@@ -1579,7 +1579,7 @@ func CloneRefOfSubstrExpr(n *SubstrExpr) *SubstrExpr {
 		return nil
 	}
 	out := *n
-	out.Name = CloneRefOfColName(n.Name)
+	out.Name = CloneExpr(n.Name)
 	out.StrVal = CloneRefOfLiteral(n.StrVal)
 	out.From = CloneExpr(n.From)
 	out.To = CloneExpr(n.To)

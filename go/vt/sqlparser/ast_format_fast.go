@@ -1485,10 +1485,15 @@ func (node *TimestampFuncExpr) formatFast(buf *TrackedBuffer) {
 
 // formatFast formats the node.
 func (node *CurTimeFuncExpr) formatFast(buf *TrackedBuffer) {
-	buf.WriteString(node.Name.String())
-	buf.WriteByte('(')
-	buf.printExpr(node, node.Fsp, true)
-	buf.WriteByte(')')
+	if node.Fsp != nil {
+		buf.WriteString(node.Name.String())
+		buf.WriteByte('(')
+		buf.printExpr(node, node.Fsp, true)
+		buf.WriteByte(')')
+	} else {
+		buf.WriteString(node.Name.String())
+		buf.WriteString("()")
+	}
 }
 
 // formatFast formats the node.
@@ -1552,22 +1557,15 @@ func (node *ValuesFuncExpr) formatFast(buf *TrackedBuffer) {
 
 // formatFast formats the node.
 func (node *SubstrExpr) formatFast(buf *TrackedBuffer) {
-	var val SQLNode
-	if node.Name != nil {
-		val = node.Name
-	} else {
-		val = node.StrVal
-	}
-
 	if node.To == nil {
 		buf.WriteString("substr(")
-		val.formatFast(buf)
+		buf.printExpr(node, node.Name, true)
 		buf.WriteString(", ")
 		buf.printExpr(node, node.From, true)
 		buf.WriteByte(')')
 	} else {
 		buf.WriteString("substr(")
-		val.formatFast(buf)
+		buf.printExpr(node, node.Name, true)
 		buf.WriteString(", ")
 		buf.printExpr(node, node.From, true)
 		buf.WriteString(", ")

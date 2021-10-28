@@ -1,6 +1,1 @@
 # Add your test case here for debugging and run go test -run=One.
-"create table x(location GEOMETRY DEFAULT (POINT(7.0, 3.0)))"
-{
-}
-{
-}

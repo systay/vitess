@@ -1544,8 +1544,8 @@ func (a *application) rewriteRefOfCurTimeFuncExpr(parent SQLNode, node *CurTimeF
 	}) {
 		return false
 	}
-	if !a.rewriteExpr(node, node.Fsp, func(newNode, parent SQLNode) {
-		parent.(*CurTimeFuncExpr).Fsp = newNode.(Expr)
+	if !a.rewriteRefOfLiteral(node, node.Fsp, func(newNode, parent SQLNode) {
+		parent.(*CurTimeFuncExpr).Fsp = newNode.(*Literal)
 	}) {
 		return false
 	}
@@ -3994,8 +3994,8 @@ func (a *application) rewriteRefOfSubstrExpr(parent SQLNode, node *SubstrExpr, r
 			return true
 		}
 	}
-	if !a.rewriteRefOfColName(node, node.Name, func(newNode, parent SQLNode) {
-		parent.(*SubstrExpr).Name = newNode.(*ColName)
+	if !a.rewriteExpr(node, node.Name, func(newNode, parent SQLNode) {
+		parent.(*SubstrExpr).Name = newNode.(Expr)
 	}) {
 		return false
 	}

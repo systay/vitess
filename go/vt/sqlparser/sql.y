@@ -176,7 +176,6 @@ func bindVariable(yylex yyLexer, bvar string) {
 %token <str> NEXT VALUE SHARE MODE
 %token <str> SQL_NO_CACHE SQL_CACHE SQL_CALC_FOUND_ROWS
 %left <str> JOIN STRAIGHT_JOIN LEFT RIGHT INNER OUTER CROSS NATURAL USE FORCE
-%left <str> EXPRESSION_PREC_SETTER
 %left <str> ON USING INPLACE COPY ALGORITHM NONE SHARED EXCLUSIVE
 %left <str> SUBQUERY_AS_EXPR
 %left <str> '(' ',' ')'
@@ -197,19 +196,18 @@ func bindVariable(yylex yyLexer, bvar string) {
 %nonassoc <str> CHARSET
 // Resolve column attribute ambiguity.
 %right <str> UNIQUE KEY
-%left <str> OR
+%left <str> EXPRESSION_PREC_SETTER
+%left <str> OR '|'
 %left <str> XOR
 %left <str> AND
 %right <str> NOT '!'
 %left <str> BETWEEN CASE WHEN THEN ELSE END
 %left <str> '=' '<' '>' LE GE NE NULL_SAFE_EQUAL IS LIKE REGEXP IN
-%left <str> '|'
 %left <str> '&'
 %left <str> SHIFT_LEFT SHIFT_RIGHT
 %left <str> '+' '-'
 %left <str> '*' '/' DIV '%' MOD
 %left <str> '^'
-%left <str> OR_OR
 %right <str> '~' UNARY
 %left <str> COLLATE
 %right <str> BINARY UNDERSCORE_BINARY UNDERSCORE_UTF8MB4 UNDERSCORE_UTF8 UNDERSCORE_LATIN1
@@ -330,7 +328,7 @@ func bindVariable(yylex yyLexer, bvar string) {
 %type <strs> select_options flush_option_list
 %type <str> select_option algorithm_view security_view security_view_opt
 %type <str> definer_opt user generated_always_opt
-%type <expr> expression signed_literal signed_literal_or_null null_as_literal now_or_signed_literal signed_literal bit_expr simple_expr literal NUM_literal text_literal bool_pri literal_or_null now
+%type <expr> expression signed_literal signed_literal_or_null null_as_literal now_or_signed_literal signed_literal bit_expr simple_expr literal NUM_literal text_literal bool_pri literal_or_null now predicate tuple_expression
 %type <tableExprs> from_opt table_references from_clause
 %type <tableExpr> table_reference table_factor join_table
 %type <joinCondition> join_condition join_condition_opt on_expression_opt
@@ -340,12 +338,11 @@ func bindVariable(yylex yyLexer, bvar string) {
 %type <aliasedTableName> aliased_table_name
 %type <indexHints> index_hint_list
 %type <expr> where_expression_opt
-%type <expr> predicate
 %type <boolVal> boolean_value
 %type <comparisonExprOperator> compare
 %type <ins> insert_data
 %type <expr> num_val
-%type <expr> function_call_keyword function_call_nonkeyword function_call_generic function_call_conflict func_datetime_precision
+%type <expr> function_call_keyword function_call_nonkeyword function_call_generic function_call_conflict
 %type <isExprOperator> is_suffix
 %type <colTuple> col_tuple
 %type <exprs> expression_list expression_list_opt
@@ -397,7 +394,7 @@ func bindVariable(yylex yyLexer, bvar string) {
 %type <convertType> convert_type
 %type <columnType> column_type
 %type <columnType> int_type decimal_type numeric_type time_type char_type spatial_type
-%type <literal> length_opt
+%type <literal> length_opt func_datetime_precision
 %type <str> charset_opt collate_opt
 %type <LengthScaleOption> float_length_opt decimal_length_opt
 %type <boolean> unsigned_opt zero_fill_opt without_valid_opt
@@ -1286,15 +1283,19 @@ now
 now:
 CURRENT_TIMESTAMP func_datetime_precision
   {
-    $$ = &CurTimeFuncExpr{Name:NewColIdent("current_timestamp"), Fsp:$2}
+    $$ = &CurTimeFuncExpr{Name:NewColIdent("current_timestamp"), Fsp: $2}
   }
 | LOCALTIME func_datetime_precision
   {
-    $$ = &CurTimeFuncExpr{Name:NewColIdent("localtime"), Fsp:$2}
+    $$ = &CurTimeFuncExpr{Name:NewColIdent("localtime"), Fsp: $2}
   }
 | LOCALTIMESTAMP func_datetime_precision
   {
-    $$ = &CurTimeFuncExpr{Name:NewColIdent("localtimestamp"), Fsp:$2}
+    $$ = &CurTimeFuncExpr{Name:NewColIdent("localtimestamp"), Fsp: $2}
+  }
+| UTC_TIMESTAMP func_datetime_precision
+  {
+    $$ = &CurTimeFuncExpr{Name:NewColIdent("utc_timestamp"), Fsp:$2}
   }
 
 
@@ -3830,6 +3831,10 @@ expression:
   {
 	  $$ = &NotExpr{Expr: $2}
   }
+| bool_pri IS is_suffix %prec IS
+  {
+	 $$ = &IsExpr{Left: $1, Right: $3}
+  }
 | bool_pri %prec EXPRESSION_PREC_SETTER
   {
 	$$ = $1
@@ -3837,9 +3842,13 @@ expression:
 
 
 bool_pri:
-bool_pri IS is_suffix %prec IS
+bool_pri IS NULL %prec IS
   {
-	 $$ = &IsExpr{Left: $1, Right: $3}
+	 $$ = &IsExpr{Left: $1, Right: IsNullOp}
+  }
+| bool_pri IS NOT NULL %prec IS
+  {
+  	$$ = &IsExpr{Left: $1, Right: IsNotNullOp}
   }
 | bool_pri compare predicate
   {
@@ -3979,10 +3988,6 @@ function_call_keyword
   {
   	$$ = $1
   }
-| simple_expr OR_OR simple_expr
-  {
-	$$ = &OrExpr{Left: $1, Right: $3}
-  }
 | '+' simple_expr %prec UNARY
   {
 	$$= $2; // TODO: do we really want to ignore unary '+' before any kind of literals?
@@ -4003,7 +4008,7 @@ function_call_keyword
   {
 	$$= $1
   }
-| row_tuple
+| tuple_expression
   {
 	$$ = $1
   }
@@ -4075,15 +4080,7 @@ boolean_value:
 
 
 is_suffix:
-  NULL
-  {
-    $$ = IsNullOp
-  }
-| NOT NULL
-  {
-    $$ = IsNotNullOp
-  }
-| TRUE
+ TRUE
   {
     $$ = IsTrueOp
   }
@@ -4196,37 +4193,21 @@ function_call_keyword:
   {
     $$ = &FuncExpr{Name: NewColIdent("right"), Exprs: $3}
   }
-| SUBSTRING openb column_name ',' expression ',' expression closeb
+| SUBSTRING openb expression ',' expression ',' expression closeb
   {
     $$ = &SubstrExpr{Name: $3, From: $5, To: $7}
   }
-| SUBSTRING openb column_name ',' expression closeb
+| SUBSTRING openb expression ',' expression closeb
   {
     $$ = &SubstrExpr{Name: $3, From: $5}
   }
-| SUBSTRING openb column_name FROM expression FOR expression closeb
+| SUBSTRING openb expression FROM expression FOR expression closeb
   {
   	$$ = &SubstrExpr{Name: $3, From: $5, To: $7}
   }
-| SUBSTRING openb column_name FROM expression closeb
+| SUBSTRING openb expression FROM expression closeb
   {
   	$$ = &SubstrExpr{Name: $3, From: $5}
-  }
-| SUBSTRING openb STRING ',' expression ',' expression closeb
-  {
-    $$ = &SubstrExpr{StrVal: NewStrLiteral($3), From: $5, To: $7}
-  }
-| SUBSTRING openb STRING ',' expression closeb
-  {
-    $$ = &SubstrExpr{StrVal: NewStrLiteral($3), From: $5}
-  }
-| SUBSTRING openb STRING FROM expression FOR expression closeb
-  {
-  	$$ = &SubstrExpr{StrVal: NewStrLiteral($3), From: $5, To: $7}
-  }
-| SUBSTRING openb STRING FROM expression closeb
-  {
-  	$$ = &SubstrExpr{StrVal: NewStrLiteral($3), From: $5}
   }
 | GROUP_CONCAT openb distinct_opt select_expression_list order_by_opt separator_opt limit_opt closeb
   {
@@ -4265,18 +4246,14 @@ UTC_DATE func_paren_opt
   {
     $$ = &FuncExpr{Name:NewColIdent("current_date")}
   }
-| UTC_TIMESTAMP func_datetime_precision
-  {
-    $$ = &CurTimeFuncExpr{Name:NewColIdent("utc_timestamp"), Fsp:$2}
-  }
 | UTC_TIME func_datetime_precision
   {
-    $$ = &CurTimeFuncExpr{Name:NewColIdent("utc_time"), Fsp:$2}
+    $$ = &CurTimeFuncExpr{Name:NewColIdent("utc_time"), Fsp: $2}
   }
   // curtime
 | CURRENT_TIME func_datetime_precision
   {
-    $$ = &CurTimeFuncExpr{Name:NewColIdent("current_time"), Fsp:$2}
+    $$ = &CurTimeFuncExpr{Name:NewColIdent("current_time"), Fsp: $2}
   }
 | TIMESTAMPADD openb sql_id ',' expression ',' expression closeb
   {
@@ -4294,11 +4271,11 @@ func_paren_opt:
 func_datetime_precision:
   /* empty */
   {
-  	$$ = NewIntLiteral("0")
+  	$$ = nil
   }
 | openb closeb
   {
-    $$ = NewIntLiteral("0")
+    $$ = nil
   }
 | openb INTEGRAL closeb
   {
@@ -4330,6 +4307,38 @@ function_call_conflict:
   {
     $$ = &FuncExpr{Name: NewColIdent("replace"), Exprs: $3}
   }
+
+
+//geometry_function:
+//GEOMETRYCOLLECTION openb select_expression_list_opt closeb
+//  {
+//  	$$ = &FuncExpr{Name: NewColIdent("geometrycollection"), Exprs: $3}
+//  }
+//| LINESTRING openb select_expression_list closeb
+//  {
+//  	$$ = &FuncExpr{Name: NewColIdent("linestring"), Exprs: $3}
+//  }
+//| MULTILINESTRING openb select_expression_list closeb
+//  {
+//  	$$ = &FuncExpr{Name: NewColIdent("multilinestring"), Exprs: $3}
+//  }
+//| MULTIPOINT openb select_expression_list closeb
+//  {
+//  	$$ = &FuncExpr{Name: NewColIdent("multipoint"), Exprs: $3}
+//  }
+//| MULTIPOLYGON openb select_expression_list closeb
+//  {
+//  	$$ = &FuncExpr{Name: NewColIdent("multipolygon"), Exprs: $3}
+//  }
+//| POINT openb select_expression_list closeb
+//  {
+//  	$$ = &FuncExpr{Name: NewColIdent("point"), Exprs: $3}
+//  }
+//| POLYGON openb select_expression_list closeb
+//  {
+//  	$$ = &FuncExpr{Name: NewColIdent("polygon"), Exprs: $3}
+//  }
+
 
 match_option:
 /*empty*/
@@ -4953,6 +4962,15 @@ row_tuple:
   openb expression_list closeb
   {
     $$ = ValTuple($2)
+  }
+tuple_expression:
+row_tuple
+  {
+    if len($1) == 1 {
+      $$ = $1[0]
+    } else {
+      $$ = $1
+    }
   }
 
 update_list:

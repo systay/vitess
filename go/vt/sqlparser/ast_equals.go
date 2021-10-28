@@ -1427,7 +1427,7 @@ func EqualsRefOfCurTimeFuncExpr(a, b *CurTimeFuncExpr) bool {
 		return false
 	}
 	return EqualsColIdent(a.Name, b.Name) &&
-		EqualsExpr(a.Fsp, b.Fsp)
+		EqualsRefOfLiteral(a.Fsp, b.Fsp)
 }
 
 // EqualsRefOfDefault does deep equals between the two objects.
@@ -2417,7 +2417,7 @@ func EqualsRefOfSubstrExpr(a, b *SubstrExpr) bool {
 	if a == nil || b == nil {
 		return false
 	}
-	return EqualsRefOfColName(a.Name, b.Name) &&
+	return EqualsExpr(a.Name, b.Name) &&
 		EqualsRefOfLiteral(a.StrVal, b.StrVal) &&
 		EqualsExpr(a.From, b.From) &&
 		EqualsExpr(a.To, b.To)

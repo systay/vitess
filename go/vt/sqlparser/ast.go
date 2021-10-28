@@ -1927,7 +1927,7 @@ type (
 	// SubstrExpr('static string value', value_expression, value_expression)
 	// In this case StrVal will be set instead of Name.
 	SubstrExpr struct {
-		Name   *ColName
+		Name   Expr
 		StrVal *Literal
 		From   Expr
 		To     Expr
@@ -1978,7 +1978,7 @@ type (
 	// supported functions are documented in the grammar
 	CurTimeFuncExpr struct {
 		Name ColIdent
-		Fsp  Expr // fractional seconds precision, integer from 0 to 6
+		Fsp  *Literal // fractional seconds precision, integer from 0 to 6
 	}
 
 	// ExtractedSubquery is a subquery that has been extracted from the original AST
