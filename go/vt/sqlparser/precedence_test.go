@@ -198,6 +198,8 @@ func TestParens(t *testing.T) {
 		{in: "10 - 2 - 1", expected: "10 - 2 - 1"},
 		{in: "(10 - 2) - 1", expected: "10 - 2 - 1"},
 		{in: "10 - (2 - 1)", expected: "10 - (2 - 1)"},
+		{in: "5 between 0 and 10 between 0 and 1", expected: "5 between 0 and (10 between 0 and 1)"},
+		{in: "(5 between 0 and 10) between 0 and 1", expected: "(5 between 0 and 10) between 0 and 1"},
 	}
 
 	for _, tc := range tests {

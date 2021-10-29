@@ -1009,7 +1009,7 @@ func (node *ComparisonExpr) Format(buf *TrackedBuffer) {
 
 // Format formats the node.
 func (node *RangeCond) Format(buf *TrackedBuffer) {
-	buf.astPrintf(node, "%v %s %l and %r", node.Left, node.Operator.ToString(), node.From, node.To)
+	buf.astPrintf(node, "%r %s %l and %r", node.Left, node.Operator.ToString(), node.From, node.To)
 }
 
 // Format formats the node.

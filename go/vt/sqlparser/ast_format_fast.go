@@ -1345,7 +1345,7 @@ func (node *ComparisonExpr) formatFast(buf *TrackedBuffer) {
 
 // formatFast formats the node.
 func (node *RangeCond) formatFast(buf *TrackedBuffer) {
-	buf.printExpr(node, node.Left, true)
+	buf.printExpr(node, node.Left, false)
 	buf.WriteByte(' ')
 	buf.WriteString(node.Operator.ToString())
 	buf.WriteByte(' ')
