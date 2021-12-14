@@ -239,6 +239,10 @@ func TestSysVarSetDisabled(t *testing.T) {
 }
 
 func TestOne(t *testing.T) {
+	verboseLogging = true
+	defer func() {
+		verboseLogging = false
+	}()
 	vschema := &vschemaWrapper{
 		v: loadSchema(t, "schema_test.json", true),
 	}
