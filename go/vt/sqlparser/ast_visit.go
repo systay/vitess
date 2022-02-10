@@ -194,6 +194,8 @@ func VisitSQLNode(in SQLNode, f Visit) error {
 		return VisitRefOfNotExpr(in, f)
 	case *NullVal:
 		return VisitRefOfNullVal(in, f)
+	case Offset:
+		return VisitOffset(in, f)
 	case OnDup:
 		return VisitOnDup(in, f)
 	case *OptLike:
@@ -2746,6 +2748,8 @@ func VisitExpr(in Expr, f Visit) error {
 		return VisitRefOfNotExpr(in, f)
 	case *NullVal:
 		return VisitRefOfNullVal(in, f)
+	case Offset:
+		return VisitOffset(in, f)
 	case *OrExpr:
 		return VisitRefOfOrExpr(in, f)
 	case *Subquery:
@@ -2974,6 +2978,10 @@ func VisitIsolationLevel(in IsolationLevel, f Visit) error {
 	return err
 }
 func VisitListArg(in ListArg, f Visit) error {
+	_, err := f(in)
+	return err
+}
+func VisitOffset(in Offset, f Visit) error {
 	_, err := f(in)
 	return err
 }

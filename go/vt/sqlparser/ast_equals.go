@@ -542,6 +542,12 @@ func EqualsSQLNode(inA, inB SQLNode) bool {
 			return false
 		}
 		return EqualsRefOfNullVal(a, b)
+	case Offset:
+		b, ok := inB.(Offset)
+		if !ok {
+			return false
+		}
+		return a == b
 	case OnDup:
 		b, ok := inB.(OnDup)
 		if !ok {
@@ -3471,6 +3477,12 @@ func EqualsExpr(inA, inB Expr) bool {
 			return false
 		}
 		return EqualsRefOfNullVal(a, b)
+	case Offset:
+		b, ok := inB.(Offset)
+		if !ok {
+			return false
+		}
+		return a == b
 	case *OrExpr:
 		b, ok := inB.(*OrExpr)
 		if !ok {

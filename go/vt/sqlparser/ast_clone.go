@@ -195,6 +195,8 @@ func CloneSQLNode(in SQLNode) SQLNode {
 		return CloneRefOfNotExpr(in)
 	case *NullVal:
 		return CloneRefOfNullVal(in)
+	case Offset:
+		return in
 	case OnDup:
 		return CloneOnDup(in)
 	case *OptLike:
@@ -2222,6 +2224,8 @@ func CloneExpr(in Expr) Expr {
 		return CloneRefOfNotExpr(in)
 	case *NullVal:
 		return CloneRefOfNullVal(in)
+	case Offset:
+		return in
 	case *OrExpr:
 		return CloneRefOfOrExpr(in)
 	case *Subquery:
