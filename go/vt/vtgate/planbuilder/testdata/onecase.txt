@@ -1,1 +1,22 @@
 # Add your test case here for debugging and run go test -run=One.
+"select * from t8 WHERE t9_id is null and user_id = 42"
+{
+  "QueryType": "SELECT",
+  "Original": "select * from t8 WHERE t9_id IS tr",
+  "Instructions": {
+    "OperatorType": "Route",
+    "Variant": "EqualUnique",
+    "Keyspace": {
+      "Name": "apa",
+      "Sharded": true
+    },
+    "FieldQuery": "select * from t8 where 1 != 1",
+    "Query": "select * from t8 where t9_id is null",
+    "Table": "t8",
+    "Values": [
+      "NULL"
+    ],
+    "Vindex": "t9_id_to_keyspace_id_idx"
+  }
+}
+Gen4 plan same as above

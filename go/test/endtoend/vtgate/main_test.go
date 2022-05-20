@@ -131,6 +131,7 @@ create table t7_fk(
 ) Engine=InnoDB;
 
 create table t8(
+    user_id bigint,
 	id bigint,
 	t9_id bigint DEFAULT NULL,
   parent_id bigint,
@@ -148,6 +149,13 @@ create table t9_id_to_keyspace_id_idx(
 	keyspace_id varbinary(10),
 	primary key(id)
 ) Engine=InnoDB;
+
+CREATE TABLE t8_on_user_id_ks_idx (
+  user_id bigint,
+  id bigint,
+  keyspace_id varbinary(10),
+  primary key(user_id, id)
+);
 `
 
 	VSchema = `
@@ -231,7 +239,16 @@ create table t9_id_to_keyspace_id_idx(
         "to": "keyspace_id"
       },
       "owner": "t9"
-    }
+    },
+	"t8_on_user_id_ks_idx": {
+	  "type": "lookup",
+	  "params": {
+		"table": "t8_on_user_id",
+		"from": "user_id,id",
+		"to": "keyspace_id"
+	  },
+	  "owner": "t8"
+	}
   },
   "tables": {
     "t1": {
@@ -401,7 +418,14 @@ create table t9_id_to_keyspace_id_idx(
         {
           "column": "t9_id",
           "name": "t9_id_to_keyspace_id_idx"
-        }
+        },
+		{
+		  "columns": [
+			"user_id",
+			"id"
+		  ],
+		  "name": "t8_on_user_id_ks_idx"
+		}
       ]
     },
     "t9": {
@@ -423,6 +447,29 @@ create table t9_id_to_keyspace_id_idx(
           "name": "hash"
         }
       ]
+    },
+	"t8_on_user_id_ks_idx": {
+      "column_vindexes": [
+        {
+          "column": "user_id",
+          "name": "hash"
+        }
+      ],
+      "columns": [
+        {
+          "name": "user_id",
+          "type": "INT64"
+        },
+        {
+          "name": "id",
+          "type": "INT64"
+        },
+        {
+          "name": "keyspace_id",
+          "type": "VARBINARY"
+        }
+      ],
+      "column_list_authoritative": true
     }
   }
 }
