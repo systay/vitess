@@ -34,7 +34,7 @@ import (
 )
 
 // buildInsertPlan builds the route for an INSERT statement.
-func buildInsertPlan(stmt sqlparser.Statement, reservedVars *sqlparser.ReservedVars, vschema plancontext.VSchema) (engine.Primitive, error) {
+func buildInsertPlan(stmt sqlparser.Statement, reservedVars *sqlparser.ReservedVars, vschema plancontext.VSchema) (*planResult, error) {
 	ins := stmt.(*sqlparser.Insert)
 	pb := newPrimitiveBuilder(vschema, newJointab(reservedVars))
 	exprs := sqlparser.TableExprs{&sqlparser.AliasedTableExpr{Expr: ins.Table}}
@@ -66,7 +66,7 @@ func buildInsertPlan(stmt sqlparser.Statement, reservedVars *sqlparser.ReservedV
 	return buildInsertShardedPlan(ins, vschemaTable, reservedVars, vschema)
 }
 
-func buildInsertUnshardedPlan(ins *sqlparser.Insert, table *vindexes.Table, reservedVars *sqlparser.ReservedVars, vschema plancontext.VSchema) (engine.Primitive, error) {
+func buildInsertUnshardedPlan(ins *sqlparser.Insert, table *vindexes.Table, reservedVars *sqlparser.ReservedVars, vschema plancontext.VSchema) (*planResult, error) {
 	eins := engine.NewSimpleInsert(
 		engine.InsertUnsharded,
 		table,
@@ -82,13 +82,13 @@ func buildInsertUnshardedPlan(ins *sqlparser.Insert, table *vindexes.Table, rese
 		if err != nil {
 			return nil, err
 		}
-		if route, ok := plan.(*engine.Route); ok && !route.Keyspace.Sharded && table.Keyspace.Name == route.Keyspace.Name {
+		if route, ok := plan.primitive.(*engine.Route); ok && !route.Keyspace.Sharded && table.Keyspace.Name == route.Keyspace.Name {
 			eins.Query = generateQuery(ins)
-			return eins, nil
+			return newPlanResult(eins), nil
 		}
-		eins.Input = plan
+		eins.Input = plan.primitive
 		generateInsertSelectQuery(ins, eins)
-		return eins, nil
+		return newPlanResult(eins), nil
 	case sqlparser.Values:
 		rows = insertValues
 	default:
@@ -118,10 +118,10 @@ func buildInsertUnshardedPlan(ins *sqlparser.Insert, table *vindexes.Table, rese
 		eins.Query = generateQuery(ins)
 	}
 
-	return eins, nil
+	return newPlanResult(eins), nil
 }
 
-func buildInsertShardedPlan(ins *sqlparser.Insert, table *vindexes.Table, reservedVars *sqlparser.ReservedVars, vschema plancontext.VSchema) (engine.Primitive, error) {
+func buildInsertShardedPlan(ins *sqlparser.Insert, table *vindexes.Table, reservedVars *sqlparser.ReservedVars, vschema plancontext.VSchema) (*planResult, error) {
 	eins := &engine.Insert{
 		Table:    table,
 		Keyspace: table.Keyspace,
@@ -187,11 +187,11 @@ func buildInsertShardedPlan(ins *sqlparser.Insert, table *vindexes.Table, reserv
 	eins.VindexValues = routeValues
 	eins.Query = generateQuery(ins)
 	generateInsertShardedQuery(ins, eins, rows)
-	return eins, nil
+	return newPlanResult(eins), nil
 }
 
 // buildInsertSelectPlan builds an insert using select plan.
-func buildInsertSelectPlan(ins *sqlparser.Insert, table *vindexes.Table, reservedVars *sqlparser.ReservedVars, vschema plancontext.VSchema, eins *engine.Insert) (engine.Primitive, error) {
+func buildInsertSelectPlan(ins *sqlparser.Insert, table *vindexes.Table, reservedVars *sqlparser.ReservedVars, vschema plancontext.VSchema, eins *engine.Insert) (*planResult, error) {
 	eins.Opcode = engine.InsertSelect
 
 	// check if column list is provided if not, then vschema should be able to provide the column list.
@@ -207,7 +207,7 @@ func buildInsertSelectPlan(ins *sqlparser.Insert, table *vindexes.Table, reserve
 	if err != nil {
 		return nil, err
 	}
-	eins.Input = plan
+	eins.Input = plan.primitive
 
 	// auto-increment column is added explicility if not provided.
 	if err := modifyForAutoinc(ins, eins); err != nil {
@@ -221,10 +221,10 @@ func buildInsertSelectPlan(ins *sqlparser.Insert, table *vindexes.Table, reserve
 	}
 
 	generateInsertSelectQuery(ins, eins)
-	return eins, nil
+	return newPlanResult(eins), nil
 }
 
-func subquerySelectPlan(ins *sqlparser.Insert, vschema plancontext.VSchema, reservedVars *sqlparser.ReservedVars, sharded bool) (engine.Primitive, error) {
+func subquerySelectPlan(ins *sqlparser.Insert, vschema plancontext.VSchema, reservedVars *sqlparser.ReservedVars, sharded bool) (*planResult, error) {
 	selectStmt, queryPlanner, err := getStatementAndPlanner(ins, vschema)
 	if err != nil {
 		return nil, err
