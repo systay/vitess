@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package vtgate
+package logstats
 
 import (
 	"bytes"
@@ -57,7 +57,7 @@ func TestLogStatsFormat(t *testing.T) {
 	*streamlog.RedactDebugUIQueries = false
 	*streamlog.QueryLogFormat = "text"
 	got := testFormat(logStats, params)
-	want := `test			''	''	2017-01-01 01:02:03.000000	2017-01-01 01:02:04.000001	1.000001	0.000000	0.000000	0.000000		"sql1"	map[intVal:type:INT64 value:"1"]	0	0	""	"ks"	"table"	"PRIMARY"	
+	want := `test			''	''	2017-01-01 01:02:03.000000	2017-01-01 01:02:04.000001	1.000001	0.000000	0.000000	0.000000		"sql1"	map[intVal:type:INT64  value:"1"]	0	0	""	"ks"	"table"	"PRIMARY"	
 `
 	assert.Equal(t, want, got)
 
@@ -144,7 +144,7 @@ func TestLogStatsFormat(t *testing.T) {
 
 	*streamlog.QueryLogFormat = "text"
 	got = testFormat(logStats, params)
-	want = `test			''	''	2017-01-01 01:02:03.000000	2017-01-01 01:02:04.000001	1.000001	0.000000	0.000000	0.000000		"sql1"	map[strVal:type:VARCHAR value:"abc"]	0	0	""	"ks"	"table"	"PRIMARY"	
+	want = `test			''	''	2017-01-01 01:02:03.000000	2017-01-01 01:02:04.000001	1.000001	0.000000	0.000000	0.000000		"sql1"	map[strVal:type:VARCHAR  value:"abc"]	0	0	""	"ks"	"table"	"PRIMARY"	
 `
 	assert.Equal(t, want, got)
 
@@ -238,13 +238,13 @@ func TestLogStatsFilter(t *testing.T) {
 	params := map[string][]string{"full": {}}
 
 	got := testFormat(logStats, params)
-	want := `test			''	''	2017-01-01 01:02:03.000000	2017-01-01 01:02:04.000001	1.000001	0.000000	0.000000	0.000000		"sql1 /* LOG_THIS_QUERY */"	map[intVal:type:INT64 value:"1"]	0	0	""	""	""	""	
+	want := `test			''	''	2017-01-01 01:02:03.000000	2017-01-01 01:02:04.000001	1.000001	0.000000	0.000000	0.000000		"sql1 /* LOG_THIS_QUERY */"	map[intVal:type:INT64  value:"1"]	0	0	""	""	""	""	
 `
 	assert.Equal(t, want, got)
 
 	*streamlog.QueryLogFilterTag = "LOG_THIS_QUERY"
 	got = testFormat(logStats, params)
-	want = `test			''	''	2017-01-01 01:02:03.000000	2017-01-01 01:02:04.000001	1.000001	0.000000	0.000000	0.000000		"sql1 /* LOG_THIS_QUERY */"	map[intVal:type:INT64 value:"1"]	0	0	""	""	""	""	
+	want = `test			''	''	2017-01-01 01:02:03.000000	2017-01-01 01:02:04.000001	1.000001	0.000000	0.000000	0.000000		"sql1 /* LOG_THIS_QUERY */"	map[intVal:type:INT64  value:"1"]	0	0	""	""	""	""	
 `
 	assert.Equal(t, want, got)
 
@@ -263,13 +263,13 @@ func TestLogStatsRowThreshold(t *testing.T) {
 	params := map[string][]string{"full": {}}
 
 	got := testFormat(logStats, params)
-	want := `test			''	''	2017-01-01 01:02:03.000000	2017-01-01 01:02:04.000001	1.000001	0.000000	0.000000	0.000000		"sql1 /* LOG_THIS_QUERY */"	map[intVal:type:INT64 value:"1"]	0	0	""	""	""	""	
+	want := `test			''	''	2017-01-01 01:02:03.000000	2017-01-01 01:02:04.000001	1.000001	0.000000	0.000000	0.000000		"sql1 /* LOG_THIS_QUERY */"	map[intVal:type:INT64  value:"1"]	0	0	""	""	""	""	
 `
 	assert.Equal(t, want, got)
 
 	*streamlog.QueryLogRowThreshold = 0
 	got = testFormat(logStats, params)
-	want = `test			''	''	2017-01-01 01:02:03.000000	2017-01-01 01:02:04.000001	1.000001	0.000000	0.000000	0.000000		"sql1 /* LOG_THIS_QUERY */"	map[intVal:type:INT64 value:"1"]	0	0	""	""	""	""	
+	want = `test			''	''	2017-01-01 01:02:03.000000	2017-01-01 01:02:04.000001	1.000001	0.000000	0.000000	0.000000		"sql1 /* LOG_THIS_QUERY */"	map[intVal:type:INT64  value:"1"]	0	0	""	""	""	""	
 `
 	assert.Equal(t, want, got)
 

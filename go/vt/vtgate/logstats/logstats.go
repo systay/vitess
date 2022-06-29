@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package vtgate
+package logstats
 
 import (
 	"encoding/json"
@@ -70,10 +70,9 @@ func NewLogStats(ctx context.Context, methodName, sql string, bindVars map[strin
 	}
 }
 
-// Send finalizes a record and sends it
-func (stats *LogStats) Send() {
+// SaveEndTime sets the end time of this request to now
+func (stats *LogStats) SaveEndTime() {
 	stats.EndTime = time.Now()
-	QueryLogger.Send(stats)
 }
 
 // Context returns the context used by LogStats.
