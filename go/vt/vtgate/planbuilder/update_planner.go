@@ -36,14 +36,14 @@ func buildUpdatePlan(string) stmtPlanner {
 		if upd.With != nil {
 			return nil, vterrors.New(vtrpcpb.Code_UNIMPLEMENTED, "unsupported: with expression in update statement")
 		}
-		dml, ksidVindex, err := buildDMLPlan(vschema, "update", stmt, reservedVars, upd.TableExprs, upd.Where, upd.OrderBy, upd.Limit, upd.Comments, upd.Exprs)
+		dml, tables, ksidVindex, err := buildDMLPlan(vschema, "update", stmt, reservedVars, upd.TableExprs, upd.Where, upd.OrderBy, upd.Limit, upd.Comments, upd.Exprs)
 		if err != nil {
 			return nil, err
 		}
 		eupd := &engine.Update{DML: dml}
 
 		if dml.Opcode == engine.Unsharded {
-			return newPlanResult(eupd), nil
+			return newPlanResult(eupd, tables...), nil
 		}
 
 		cvv, ovq, err := buildChangedVindexesValues(upd, eupd.Table, ksidVindex.Columns)
@@ -56,7 +56,7 @@ func buildUpdatePlan(string) stmtPlanner {
 			eupd.KsidVindex = ksidVindex.Vindex
 			eupd.KsidLength = len(ksidVindex.Columns)
 		}
-		return newPlanResult(eupd), nil
+		return newPlanResult(eupd, tables...), nil
 	}
 }
 
