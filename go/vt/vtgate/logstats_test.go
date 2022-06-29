@@ -42,6 +42,10 @@ func testFormat(stats *LogStats, params url.Values) string {
 }
 
 func TestLogStatsFormat(t *testing.T) {
+	defer func() {
+		*streamlog.RedactDebugUIQueries = false
+		*streamlog.QueryLogFormat = "text"
+	}()
 	logStats := NewLogStats(context.Background(), "test", "sql1", map[string]*querypb.BindVariable{"intVal": sqltypes.Int64BindVariable(1)})
 	logStats.StartTime = time.Date(2017, time.January, 1, 1, 2, 3, 0, time.UTC)
 	logStats.EndTime = time.Date(2017, time.January, 1, 1, 2, 4, 1234, time.UTC)
@@ -179,7 +183,50 @@ func TestLogStatsFormat(t *testing.T) {
 }`
 	assert.Equal(t, want, string(formatted))
 
+	*streamlog.QueryLogFormat = "json"
+	*streamlog.RedactDebugUIQueries = true
+	logStats.Keyspace = "ks_ks2_ks"
+	logStats.Table = "table_tabl2_table 3"
+	logStats.TablesUsed = []string{"ks.table", "ks2.table2", "ks.table 3"}
+	got = testFormat(logStats, params)
+	err = json.Unmarshal([]byte(got), &parsed)
+	assert.NoError(t, err, "logstats format: error unmarshaling json: %v -- got:\n%v", err, got)
+	formatted, err = json.MarshalIndent(parsed, "", "    ")
+	assert.NoError(t, err, "logstats format: error marshaling json: %v -- got:\n%v", err, got)
+	want = `{
+    "BindVars": "[REDACTED]",
+    "CommitTime": 0,
+    "Effective Caller": "",
+    "End": "2017-01-01 01:02:04.000001",
+    "Error": "",
+    "ExecuteTime": 0,
+    "ImmediateCaller": "",
+    "Keyspace": "ks_ks2_ks",
+    "Method": "test",
+    "PlanTime": 0,
+    "RemoteAddr": "",
+    "RowsAffected": 0,
+    "SQL": "sql1",
+    "ShardQueries": 0,
+    "Start": "2017-01-01 01:02:03.000000",
+    "StmtType": "",
+    "Table": "table_tabl2_table 3",
+    "TablesUsed": [
+        "ks.table",
+        "ks2.table2",
+        "ks.table 3"
+    ],
+    "TabletType": "PRIMARY",
+    "TotalTime": 1.000001,
+    "Username": ""
+}`
+	assert.Equal(t, want, string(formatted))
+
 	*streamlog.QueryLogFormat = "text"
+	got = testFormat(logStats, params)
+	want = `test			''	''	2017-01-01 01:02:03.000000	2017-01-01 01:02:04.000001	1.000001	0.000000	0.000000	0.000000		"sql1"	"[REDACTED]"	0	0	""	"ks_ks2_ks"	"table_tabl2_table 3"	"PRIMARY"	["ks.table","ks2.table2","ks.table 3"]	
+`
+	assert.Equal(t, want, got)
 }
 
 func TestLogStatsFilter(t *testing.T) {
