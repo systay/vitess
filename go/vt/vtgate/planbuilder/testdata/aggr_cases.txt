@@ -67,8 +67,8 @@
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select count(*), col from `user` where 1 != 1",
-    "Query": "select count(*), col from `user` where id = 1",
+    "FieldQuery": "select count(*), `user`.col from `user` where 1 != 1",
+    "Query": "select count(*), `user`.col from `user` where `user`.id = 1",
     "Table": "`user`",
     "Values": [
       "INT64(1)"
@@ -107,8 +107,8 @@
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select fun(1), col from `user` where 1 != 1",
-    "Query": "select fun(1), col from `user`",
+    "FieldQuery": "select fun(1), `user`.col from `user` where 1 != 1",
+    "Query": "select fun(1), `user`.col from `user`",
     "Table": "`user`"
   },
   "TablesUsed": [
@@ -143,8 +143,8 @@
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select col1, id from `user` where 1 != 1",
-    "Query": "select distinct col1, id from `user`",
+    "FieldQuery": "select `user`.col1, `user`.id from `user` where 1 != 1",
+    "Query": "select distinct `user`.col1, `user`.id from `user`",
     "Table": "`user`"
   },
   "TablesUsed": [
@@ -179,8 +179,8 @@
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select col1, id from `user` where 1 != 1 group by col1",
-    "Query": "select distinct col1, id from `user` group by col1",
+    "FieldQuery": "select `user`.col1, `user`.id from `user` where 1 != 1 group by `user`.col1",
+    "Query": "select distinct `user`.col1, `user`.id from `user` group by `user`.col1",
     "Table": "`user`"
   },
   "TablesUsed": [
@@ -233,9 +233,9 @@
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select count(*), a, textcol1, b, weight_string(a), weight_string(b) from `user` where 1 != 1 group by a, weight_string(a), textcol1, b, weight_string(b)",
+        "FieldQuery": "select count(*), `user`.a, `user`.textcol1, `user`.b, weight_string(`user`.a), weight_string(`user`.b) from `user` where 1 != 1 group by `user`.a, weight_string(`user`.a), `user`.textcol1, `user`.b, weight_string(`user`.b)",
         "OrderBy": "(1|4) ASC, 2 ASC COLLATE latin1_swedish_ci, (3|5) ASC",
-        "Query": "select count(*), a, textcol1, b, weight_string(a), weight_string(b) from `user` group by a, weight_string(a), textcol1, b, weight_string(b) order by a asc, textcol1 asc, b asc",
+        "Query": "select count(*), `user`.a, `user`.textcol1, `user`.b, weight_string(`user`.a), weight_string(`user`.b) from `user` group by `user`.a, weight_string(`user`.a), `user`.textcol1, `user`.b, weight_string(`user`.b) order by `user`.a asc, `user`.textcol1 asc, `user`.b asc",
         "Table": "`user`"
       }
     ]
@@ -287,9 +287,9 @@
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select count(*), intcol from `user` where 1 != 1 group by intcol",
+        "FieldQuery": "select count(*), `user`.intcol from `user` where 1 != 1 group by `user`.intcol",
         "OrderBy": "1 ASC",
-        "Query": "select count(*), intcol from `user` group by intcol order by intcol asc",
+        "Query": "select count(*), `user`.intcol from `user` group by `user`.intcol order by `user`.intcol asc",
         "Table": "`user`"
       }
     ]
@@ -339,30 +339,23 @@
   "QueryType": "SELECT",
   "Original": "select count(*) k, a, textcol1, b from user group by a, textcol1, b order by k, textcol1",
   "Instructions": {
-    "OperatorType": "Sort",
-    "Variant": "Memory",
-    "OrderBy": "0 ASC, 2 ASC COLLATE latin1_swedish_ci",
+    "OperatorType": "Aggregate",
+    "Variant": "Ordered",
+    "Aggregates": "sum_count_star(0) AS k, random(4) AS k",
+    "GroupBy": "2 COLLATE latin1_swedish_ci, (1|5), (3|6)",
     "ResultColumns": 4,
     "Inputs": [
       {
-        "OperatorType": "Aggregate",
-        "Variant": "Ordered",
-        "Aggregates": "sum_count_star(0) AS k",
-        "GroupBy": "(1|4), 2 COLLATE latin1_swedish_ci, (3|5)",
-        "Inputs": [
-          {
-            "OperatorType": "Route",
-            "Variant": "Scatter",
-            "Keyspace": {
-              "Name": "user",
-              "Sharded": true
-            },
-            "FieldQuery": "select count(*) as k, a, textcol1, b, weight_string(a), weight_string(b) from `user` where 1 != 1 group by a, weight_string(a), textcol1, b, weight_string(b)",
-            "OrderBy": "(1|4) ASC, 2 ASC COLLATE latin1_swedish_ci, (3|5) ASC",
-            "Query": "select count(*) as k, a, textcol1, b, weight_string(a), weight_string(b) from `user` group by a, weight_string(a), textcol1, b, weight_string(b) order by a asc, textcol1 asc, b asc",
-            "Table": "`user`"
-          }
-        ]
+        "OperatorType": "Route",
+        "Variant": "Scatter",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select count(*) as k, `user`.a, `user`.textcol1, `user`.b, `user`.k, weight_string(`user`.a), weight_string(`user`.b) from `user` where 1 != 1 group by `user`.a, weight_string(`user`.a), `user`.textcol1, `user`.b, weight_string(`user`.b)",
+        "OrderBy": "0 ASC, 2 ASC COLLATE latin1_swedish_ci, (1|5) ASC, (3|6) ASC",
+        "Query": "select count(*) as k, `user`.a, `user`.textcol1, `user`.b, `user`.k, weight_string(`user`.a), weight_string(`user`.b) from `user` group by `user`.a, weight_string(`user`.a), `user`.textcol1, `user`.b, weight_string(`user`.b) order by `user`.k asc, `user`.textcol1 asc, `user`.a asc, `user`.b asc",
+        "Table": "`user`"
       }
     ]
   },
@@ -451,7 +444,7 @@
   "Instructions": {
     "OperatorType": "Aggregate",
     "Variant": "Scalar",
-    "Aggregates": "sum(0) AS sum(col)",
+    "Aggregates": "sum(0) AS sum(`user`.col)",
     "Inputs": [
       {
         "OperatorType": "Route",
@@ -460,8 +453,8 @@
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select sum(col) from `user` where 1 != 1",
-        "Query": "select sum(col) from `user`",
+        "FieldQuery": "select sum(`user`.col) from `user` where 1 != 1",
+        "Query": "select sum(`user`.col) from `user`",
         "Table": "`user`"
       }
     ]
@@ -501,7 +494,7 @@
   "Instructions": {
     "OperatorType": "Aggregate",
     "Variant": "Scalar",
-    "Aggregates": "min(0) AS min(col)",
+    "Aggregates": "min(0) AS min(`user`.col)",
     "Inputs": [
       {
         "OperatorType": "Route",
@@ -510,8 +503,8 @@
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select min(col) from `user` where 1 != 1",
-        "Query": "select min(col) from `user`",
+        "FieldQuery": "select min(`user`.col) from `user` where 1 != 1",
+        "Query": "select min(`user`.col) from `user`",
         "Table": "`user`"
       }
     ]
@@ -551,7 +544,7 @@
   "Instructions": {
     "OperatorType": "Aggregate",
     "Variant": "Scalar",
-    "Aggregates": "max(0) AS max(col)",
+    "Aggregates": "max(0) AS max(`user`.col)",
     "Inputs": [
       {
         "OperatorType": "Route",
@@ -560,8 +553,8 @@
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select max(col) from `user` where 1 != 1",
-        "Query": "select max(col) from `user`",
+        "FieldQuery": "select max(`user`.col) from `user` where 1 != 1",
+        "Query": "select max(`user`.col) from `user`",
         "Table": "`user`"
       }
     ]
@@ -613,9 +606,9 @@
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select col1, col2, weight_string(col1), weight_string(col2) from `user` where 1 != 1 group by col1",
+        "FieldQuery": "select `user`.col1, `user`.col2, weight_string(`user`.col1), weight_string(`user`.col2) from `user` where 1 != 1 group by `user`.col1",
         "OrderBy": "(0|2) ASC, (1|3) ASC",
-        "Query": "select distinct col1, col2, weight_string(col1), weight_string(col2) from `user` group by col1 order by col1 asc, col2 asc",
+        "Query": "select distinct `user`.col1, `user`.col2, weight_string(`user`.col1), weight_string(`user`.col2) from `user` group by `user`.col1 order by `user`.col1 asc, `user`.col2 asc",
         "Table": "`user`"
       }
     ]
@@ -727,8 +720,8 @@
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select id, count(*) from `user` where 1 != 1 group by id",
-    "Query": "select id, count(*) from `user` group by id",
+    "FieldQuery": "select `user`.id, count(*) from `user` where 1 != 1 group by `user`.id",
+    "Query": "select `user`.id, count(*) from `user` group by `user`.id",
     "Table": "`user`"
   },
   "TablesUsed": [
@@ -763,8 +756,8 @@
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select id, col, count(*) from `user` where 1 != 1 group by id, col",
-    "Query": "select id, col, count(*) from `user` group by id, col",
+    "FieldQuery": "select `user`.id, `user`.col, count(*) from `user` where 1 != 1 group by `user`.id, `user`.col",
+    "Query": "select `user`.id, `user`.col, count(*) from `user` group by `user`.id, `user`.col",
     "Table": "`user`"
   },
   "TablesUsed": [
@@ -814,9 +807,9 @@
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select col, count(*) from `user` where 1 != 1 group by col",
+        "FieldQuery": "select `user`.col, count(*) from `user` where 1 != 1 group by `user`.col",
         "OrderBy": "0 ASC",
-        "Query": "select col, count(*) from `user` group by col order by col asc",
+        "Query": "select `user`.col, count(*) from `user` group by `user`.col order by `user`.col asc",
         "Table": "`user`"
       }
     ]
@@ -846,9 +839,9 @@
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select col, count(*), baz, weight_string(baz) from `user` where 1 != 1 group by col, baz, weight_string(baz)",
+        "FieldQuery": "select `user`.col, count(*), `user`.baz, weight_string(`user`.baz) from `user` where 1 != 1 group by `user`.col, `user`.baz, weight_string(`user`.baz)",
         "OrderBy": "0 ASC, (2|3) ASC",
-        "Query": "select col, count(*), baz, weight_string(baz) from `user` group by col, baz, weight_string(baz) order by col asc, baz asc",
+        "Query": "select `user`.col, count(*), `user`.baz, weight_string(`user`.baz) from `user` group by `user`.col, `user`.baz, weight_string(`user`.baz) order by `user`.col asc, `user`.baz asc",
         "Table": "`user`"
       }
     ]
@@ -902,9 +895,9 @@
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select `name`, count(*), weight_string(`name`) from `user` where 1 != 1 group by `name`, weight_string(`name`)",
+        "FieldQuery": "select `user`.`name`, count(*), weight_string(`user`.`name`) from `user` where 1 != 1 group by `user`.`name`, weight_string(`user`.`name`)",
         "OrderBy": "(0|2) ASC",
-        "Query": "select `name`, count(*), weight_string(`name`) from `user` group by `name`, weight_string(`name`) order by `name` asc",
+        "Query": "select `user`.`name`, count(*), weight_string(`user`.`name`) from `user` group by `user`.`name`, weight_string(`user`.`name`) order by `user`.`name` asc",
         "Table": "`user`"
       }
     ]
@@ -941,8 +934,8 @@
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select id, 1 + count(*) from `user` where 1 != 1 group by id",
-    "Query": "select id, 1 + count(*) from `user` group by id",
+    "FieldQuery": "select `user`.id, 1 + count(*) from `user` where 1 != 1 group by `user`.id",
+    "Query": "select `user`.id, 1 + count(*) from `user` group by `user`.id",
     "Table": "`user`"
   },
   "TablesUsed": [
@@ -967,24 +960,7 @@
     "Table": "`user`"
   }
 }
-{
-  "QueryType": "SELECT",
-  "Original": "select id as val, 1+count(*) from user group by val",
-  "Instructions": {
-    "OperatorType": "Route",
-    "Variant": "Scatter",
-    "Keyspace": {
-      "Name": "user",
-      "Sharded": true
-    },
-    "FieldQuery": "select id as val, 1 + count(*) from `user` where 1 != 1 group by val",
-    "Query": "select id as val, 1 + count(*) from `user` group by val",
-    "Table": "`user`"
-  },
-  "TablesUsed": [
-    "user.user"
-  ]
-}
+Gen4 error: unsupported: in scatter query: complex aggregate expression
 
 # group by a unique vindex where expression is qualified (alias should be ignored)
 "select val as id, 1+count(*) from user group by user.id"
@@ -1013,8 +989,8 @@
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select val as id, 1 + count(*) from `user` where 1 != 1 group by `user`.id",
-    "Query": "select val as id, 1 + count(*) from `user` group by `user`.id",
+    "FieldQuery": "select `user`.val as id, 1 + count(*) from `user` where 1 != 1 group by `user`.id",
+    "Query": "select `user`.val as id, 1 + count(*) from `user` group by `user`.id",
     "Table": "`user`"
   },
   "TablesUsed": [
@@ -1072,8 +1048,8 @@ Gen4 error: unsupported: '*' expression in cross-shard query
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select id, count(*) as c from `user` where 1 != 1 group by id",
-    "Query": "select id, count(*) as c from `user` where id = 1 group by id having c = 10",
+    "FieldQuery": "select `user`.id, count(*) as c from `user` where 1 != 1 group by `user`.id",
+    "Query": "select `user`.id, count(*) as c from `user` where `user`.id = 1 group by `user`.id having `user`.c = 10",
     "Table": "`user`",
     "Values": [
       "INT64(1)"
@@ -1112,8 +1088,8 @@ Gen4 error: unsupported: '*' expression in cross-shard query
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select id, count(*) as c from `user` where 1 != 1 group by id",
-    "Query": "select id, count(*) as c from `user` group by id having max(col) \u003e 10",
+    "FieldQuery": "select `user`.id, count(*) as c from `user` where 1 != 1 group by `user`.id",
+    "Query": "select `user`.id, count(*) as c from `user` group by `user`.id having max(`user`.col) \u003e 10",
     "Table": "`user`"
   },
   "TablesUsed": [
@@ -1226,8 +1202,8 @@ Gen4 error: unsupported: '*' expression in cross-shard query
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select id, count(*) from `user` where 1 != 1",
-        "Query": "select id, count(*) from `user`",
+        "FieldQuery": "select `user`.id, count(*) from `user` where 1 != 1",
+        "Query": "select `user`.id, count(*) from `user`",
         "Table": "`user`"
       }
     ]
@@ -1277,9 +1253,9 @@ Gen4 error: unsupported: '*' expression in cross-shard query
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select col from `user` where 1 != 1",
+        "FieldQuery": "select `user`.col from `user` where 1 != 1",
         "OrderBy": "0 ASC",
-        "Query": "select distinct col from `user` order by col asc",
+        "Query": "select distinct `user`.col from `user` order by `user`.col asc",
         "Table": "`user`"
       }
     ]
@@ -1329,9 +1305,9 @@ Gen4 error: unsupported: '*' expression in cross-shard query
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select col from `user` where 1 != 1 group by col",
+        "FieldQuery": "select `user`.col from `user` where 1 != 1 group by `user`.col",
         "OrderBy": "0 ASC",
-        "Query": "select col from `user` group by col order by col asc",
+        "Query": "select `user`.col from `user` group by `user`.col order by `user`.col asc",
         "Table": "`user`"
       }
     ]
@@ -1368,8 +1344,8 @@ Gen4 error: unsupported: '*' expression in cross-shard query
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select id, count(distinct col) from `user` where 1 != 1 group by id",
-    "Query": "select id, count(distinct col) from `user` group by id",
+    "FieldQuery": "select `user`.id, count(distinct `user`.col) from `user` where 1 != 1 group by `user`.id",
+    "Query": "select `user`.id, count(distinct `user`.col) from `user` group by `user`.id",
     "Table": "`user`"
   },
   "TablesUsed": [
@@ -1409,7 +1385,7 @@ Gen4 error: unsupported: '*' expression in cross-shard query
   "Instructions": {
     "OperatorType": "Aggregate",
     "Variant": "Ordered",
-    "Aggregates": "sum_count_distinct(1) AS count(distinct id)",
+    "Aggregates": "sum_count_distinct(1) AS count(distinct `user`.id)",
     "GroupBy": "0",
     "Inputs": [
       {
@@ -1419,9 +1395,9 @@ Gen4 error: unsupported: '*' expression in cross-shard query
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select col, count(distinct id) from `user` where 1 != 1 group by col",
+        "FieldQuery": "select `user`.col, count(distinct `user`.id) from `user` where 1 != 1 group by `user`.col",
         "OrderBy": "0 ASC",
-        "Query": "select col, count(distinct id) from `user` group by col order by col asc",
+        "Query": "select `user`.col, count(distinct `user`.id) from `user` group by `user`.col order by `user`.col asc",
         "Table": "`user`"
       }
     ]
@@ -1464,7 +1440,7 @@ Gen4 error: unsupported: '*' expression in cross-shard query
   "Instructions": {
     "OperatorType": "Aggregate",
     "Variant": "Ordered",
-    "Aggregates": "count_distinct(1|3) AS count(distinct col2)",
+    "Aggregates": "count_distinct(1|3) AS count(distinct `user`.col2)",
     "GroupBy": "(0|2)",
     "ResultColumns": 2,
     "Inputs": [
@@ -1475,9 +1451,9 @@ Gen4 error: unsupported: '*' expression in cross-shard query
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select col1, col2, weight_string(col1), weight_string(col2) from `user` where 1 != 1 group by col1, weight_string(col1), col2, weight_string(col2)",
+        "FieldQuery": "select `user`.col1, `user`.col2, weight_string(`user`.col1), weight_string(`user`.col2) from `user` where 1 != 1 group by `user`.col1, weight_string(`user`.col1), `user`.col2, weight_string(`user`.col2)",
         "OrderBy": "(0|2) ASC, (1|3) ASC",
-        "Query": "select col1, col2, weight_string(col1), weight_string(col2) from `user` group by col1, weight_string(col1), col2, weight_string(col2) order by col1 asc, col2 asc",
+        "Query": "select `user`.col1, `user`.col2, weight_string(`user`.col1), weight_string(`user`.col2) from `user` group by `user`.col1, weight_string(`user`.col1), `user`.col2, weight_string(`user`.col2) order by `user`.col1 asc, `user`.col2 asc",
         "Table": "`user`"
       }
     ]
@@ -1519,7 +1495,7 @@ Gen4 error: unsupported: '*' expression in cross-shard query
   "Instructions": {
     "OperatorType": "Aggregate",
     "Variant": "Scalar",
-    "Aggregates": "count_distinct(0|1) AS count(distinct col2)",
+    "Aggregates": "count_distinct(0|1) AS count(distinct `user`.col2)",
     "ResultColumns": 1,
     "Inputs": [
       {
@@ -1529,9 +1505,9 @@ Gen4 error: unsupported: '*' expression in cross-shard query
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select col2, weight_string(col2) from `user` where 1 != 1 group by col2, weight_string(col2)",
+        "FieldQuery": "select `user`.col2, weight_string(`user`.col2) from `user` where 1 != 1 group by `user`.col2, weight_string(`user`.col2)",
         "OrderBy": "(0|1) ASC",
-        "Query": "select col2, weight_string(col2) from `user` group by col2, weight_string(col2) order by col2 asc",
+        "Query": "select `user`.col2, weight_string(`user`.col2) from `user` group by `user`.col2, weight_string(`user`.col2) order by `user`.col2 asc",
         "Table": "`user`"
       }
     ]
@@ -1585,9 +1561,9 @@ Gen4 error: unsupported: '*' expression in cross-shard query
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select col1, col2, weight_string(col1), weight_string(col2) from `user` where 1 != 1 group by col1, weight_string(col1), col2, weight_string(col2)",
+        "FieldQuery": "select `user`.col1, `user`.col2, weight_string(`user`.col1), weight_string(`user`.col2) from `user` where 1 != 1 group by `user`.col1, weight_string(`user`.col1), `user`.col2, weight_string(`user`.col2)",
         "OrderBy": "(0|2) ASC, (1|3) ASC",
-        "Query": "select col1, col2, weight_string(col1), weight_string(col2) from `user` group by col1, weight_string(col1), col2, weight_string(col2) order by col1 asc, col2 asc",
+        "Query": "select `user`.col1, `user`.col2, weight_string(`user`.col1), weight_string(`user`.col2) from `user` group by `user`.col1, weight_string(`user`.col1), `user`.col2, weight_string(`user`.col2) order by `user`.col1 asc, `user`.col2 asc",
         "Table": "`user`"
       }
     ]
@@ -1630,7 +1606,7 @@ Gen4 error: unsupported: '*' expression in cross-shard query
   "Instructions": {
     "OperatorType": "Aggregate",
     "Variant": "Ordered",
-    "Aggregates": "sum_distinct(1|3) AS sum(distinct col2)",
+    "Aggregates": "sum_distinct(1|3) AS sum(distinct `user`.col2)",
     "GroupBy": "(0|2)",
     "ResultColumns": 2,
     "Inputs": [
@@ -1641,9 +1617,9 @@ Gen4 error: unsupported: '*' expression in cross-shard query
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select col1, col2, weight_string(col1), weight_string(col2) from `user` where 1 != 1 group by col1, weight_string(col1), col2, weight_string(col2)",
+        "FieldQuery": "select `user`.col1, `user`.col2, weight_string(`user`.col1), weight_string(`user`.col2) from `user` where 1 != 1 group by `user`.col1, weight_string(`user`.col1), `user`.col2, weight_string(`user`.col2)",
         "OrderBy": "(0|2) ASC, (1|3) ASC",
-        "Query": "select col1, col2, weight_string(col1), weight_string(col2) from `user` group by col1, weight_string(col1), col2, weight_string(col2) order by col1 asc, col2 asc",
+        "Query": "select `user`.col1, `user`.col2, weight_string(`user`.col1), weight_string(`user`.col2) from `user` group by `user`.col1, weight_string(`user`.col1), `user`.col2, weight_string(`user`.col2) order by `user`.col1 asc, `user`.col2 asc",
         "Table": "`user`"
       }
     ]
@@ -1686,7 +1662,7 @@ Gen4 error: unsupported: '*' expression in cross-shard query
   "Instructions": {
     "OperatorType": "Aggregate",
     "Variant": "Ordered",
-    "Aggregates": "min(1|3) AS min(distinct col2)",
+    "Aggregates": "min(1|3) AS min(distinct `user`.col2)",
     "GroupBy": "(0|2)",
     "ResultColumns": 2,
     "Inputs": [
@@ -1697,9 +1673,9 @@ Gen4 error: unsupported: '*' expression in cross-shard query
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select col1, col2, weight_string(col1), weight_string(col2) from `user` where 1 != 1 group by col1, weight_string(col1), col2, weight_string(col2)",
+        "FieldQuery": "select `user`.col1, `user`.col2, weight_string(`user`.col1), weight_string(`user`.col2) from `user` where 1 != 1 group by `user`.col1, weight_string(`user`.col1), `user`.col2, weight_string(`user`.col2)",
         "OrderBy": "(0|2) ASC, (1|3) ASC",
-        "Query": "select col1, col2, weight_string(col1), weight_string(col2) from `user` group by col1, weight_string(col1), col2, weight_string(col2) order by col1 asc, col2 asc",
+        "Query": "select `user`.col1, `user`.col2, weight_string(`user`.col1), weight_string(`user`.col2) from `user` group by `user`.col1, weight_string(`user`.col1), `user`.col2, weight_string(`user`.col2) order by `user`.col1 asc, `user`.col2 asc",
         "Table": "`user`"
       }
     ]
@@ -1747,30 +1723,23 @@ Gen4 error: unsupported: '*' expression in cross-shard query
   "QueryType": "SELECT",
   "Original": "select col1, count(distinct col2) k from user group by col1 order by k",
   "Instructions": {
-    "OperatorType": "Sort",
-    "Variant": "Memory",
-    "OrderBy": "1 ASC",
+    "OperatorType": "Aggregate",
+    "Variant": "Ordered",
+    "Aggregates": "count_distinct(1|4) AS k, random(2) AS k",
+    "GroupBy": "(0|3)",
     "ResultColumns": 2,
     "Inputs": [
       {
-        "OperatorType": "Aggregate",
-        "Variant": "Ordered",
-        "Aggregates": "count_distinct(1|3) AS k",
-        "GroupBy": "(0|2)",
-        "Inputs": [
-          {
-            "OperatorType": "Route",
-            "Variant": "Scatter",
-            "Keyspace": {
-              "Name": "user",
-              "Sharded": true
-            },
-            "FieldQuery": "select col1, col2, weight_string(col1), weight_string(col2) from `user` where 1 != 1 group by col1, weight_string(col1), col2, weight_string(col2)",
-            "OrderBy": "(0|2) ASC, (1|3) ASC",
-            "Query": "select col1, col2, weight_string(col1), weight_string(col2) from `user` group by col1, weight_string(col1), col2, weight_string(col2) order by col1 asc, col2 asc",
-            "Table": "`user`"
-          }
-        ]
+        "OperatorType": "Route",
+        "Variant": "Scatter",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select `user`.col1, `user`.col2, `user`.k, weight_string(`user`.col1), weight_string(`user`.col2) from `user` where 1 != 1 group by `user`.col1, weight_string(`user`.col1), `user`.col2, weight_string(`user`.col2)",
+        "OrderBy": "2 ASC, (0|3) ASC, (1|4) ASC",
+        "Query": "select `user`.col1, `user`.col2, `user`.k, weight_string(`user`.col1), weight_string(`user`.col2) from `user` group by `user`.col1, weight_string(`user`.col1), `user`.col2, weight_string(`user`.col2) order by `user`.k asc, `user`.col1 asc, `user`.col2 asc",
+        "Table": "`user`"
       }
     ]
   },
@@ -1782,7 +1751,33 @@ Gen4 error: unsupported: '*' expression in cross-shard query
 # scatter aggregate group by aggregate function
 "select count(*) b from user group by b"
 "Can't group on 'b'"
-Gen4 error: Can't group on 'count(*)'
+{
+  "QueryType": "SELECT",
+  "Original": "select count(*) b from user group by b",
+  "Instructions": {
+    "OperatorType": "Aggregate",
+    "Variant": "Ordered",
+    "Aggregates": "sum_count_star(0) AS b",
+    "GroupBy": "0",
+    "Inputs": [
+      {
+        "OperatorType": "Route",
+        "Variant": "Scatter",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select count(*) as b from `user` where 1 != 1 group by `user`.b",
+        "OrderBy": "0 ASC",
+        "Query": "select count(*) as b from `user` group by `user`.b order by `user`.b asc",
+        "Table": "`user`"
+      }
+    ]
+  },
+  "TablesUsed": [
+    "user.user"
+  ]
+}
 
 # scatter aggregate multiple group by (columns)
 "select a, b, count(*) from user group by b, a"
@@ -1828,9 +1823,9 @@ Gen4 error: Can't group on 'count(*)'
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select a, b, count(*), weight_string(a), weight_string(b) from `user` where 1 != 1 group by a, weight_string(a), b, weight_string(b)",
+        "FieldQuery": "select `user`.a, `user`.b, count(*), weight_string(`user`.a), weight_string(`user`.b) from `user` where 1 != 1 group by `user`.a, weight_string(`user`.a), `user`.b, weight_string(`user`.b)",
         "OrderBy": "(0|3) ASC, (1|4) ASC",
-        "Query": "select a, b, count(*), weight_string(a), weight_string(b) from `user` group by a, weight_string(a), b, weight_string(b) order by a asc, b asc",
+        "Query": "select `user`.a, `user`.b, count(*), weight_string(`user`.a), weight_string(`user`.b) from `user` group by `user`.a, weight_string(`user`.a), `user`.b, weight_string(`user`.b) order by `user`.a asc, `user`.b asc",
         "Table": "`user`"
       }
     ]
@@ -1884,9 +1879,9 @@ Gen4 error: Can't group on 'count(*)'
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select a, b, count(*), weight_string(a), weight_string(b) from `user` where 1 != 1 group by a, weight_string(a), b, weight_string(b)",
+        "FieldQuery": "select `user`.a, `user`.b, count(*), weight_string(`user`.a), weight_string(`user`.b) from `user` where 1 != 1 group by `user`.a, weight_string(`user`.a), `user`.b, weight_string(`user`.b)",
         "OrderBy": "(0|3) ASC, (1|4) ASC",
-        "Query": "select a, b, count(*), weight_string(a), weight_string(b) from `user` group by a, weight_string(a), b, weight_string(b) order by a asc, b asc",
+        "Query": "select `user`.a, `user`.b, count(*), weight_string(`user`.a), weight_string(`user`.b) from `user` group by `user`.a, weight_string(`user`.a), `user`.b, weight_string(`user`.b) order by `user`.a asc, `user`.b asc",
         "Table": "`user`"
       }
     ]
@@ -1940,9 +1935,9 @@ Gen4 error: Can't group on 'count(*)'
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select a, b, count(*), weight_string(a), weight_string(b) from `user` where 1 != 1 group by a, weight_string(a), b, weight_string(b)",
+        "FieldQuery": "select `user`.a, `user`.b, count(*), weight_string(`user`.a), weight_string(`user`.b) from `user` where 1 != 1 group by `user`.a, weight_string(`user`.a), `user`.b, weight_string(`user`.b)",
         "OrderBy": "(0|3) ASC, (1|4) ASC",
-        "Query": "select a, b, count(*), weight_string(a), weight_string(b) from `user` group by a, weight_string(a), b, weight_string(b) order by a asc, b asc",
+        "Query": "select `user`.a, `user`.b, count(*), weight_string(`user`.a), weight_string(`user`.b) from `user` group by `user`.a, weight_string(`user`.a), `user`.b, weight_string(`user`.b) order by `user`.a asc, `user`.b asc",
         "Table": "`user`"
       }
     ]
@@ -1992,9 +1987,9 @@ Gen4 error: Can't group on 'count(*)'
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select col from `user` where 1 != 1 group by col",
+        "FieldQuery": "select `user`.col from `user` where 1 != 1 group by `user`.col",
         "OrderBy": "0 ASC",
-        "Query": "select col from `user` group by col order by col asc",
+        "Query": "select `user`.col from `user` group by `user`.col order by `user`.col asc",
         "Table": "`user`"
       }
     ]
@@ -2103,9 +2098,9 @@ Gen4 plan same as above
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select a, b, c, d, count(*), weight_string(a), weight_string(b), weight_string(c) from `user` where 1 != 1 group by a, weight_string(a), b, weight_string(b), c, weight_string(c)",
+        "FieldQuery": "select `user`.a, `user`.b, `user`.c, `user`.d, count(*), weight_string(`user`.a), weight_string(`user`.b), weight_string(`user`.c) from `user` where 1 != 1 group by `user`.a, weight_string(`user`.a), `user`.b, weight_string(`user`.b), `user`.c, weight_string(`user`.c)",
         "OrderBy": "(0|5) ASC, (1|6) ASC, (2|7) ASC",
-        "Query": "select a, b, c, d, count(*), weight_string(a), weight_string(b), weight_string(c) from `user` group by a, weight_string(a), b, weight_string(b), c, weight_string(c) order by a asc, b asc, c asc",
+        "Query": "select `user`.a, `user`.b, `user`.c, `user`.d, count(*), weight_string(`user`.a), weight_string(`user`.b), weight_string(`user`.c) from `user` group by `user`.a, weight_string(`user`.a), `user`.b, weight_string(`user`.b), `user`.c, weight_string(`user`.c) order by `user`.a asc, `user`.b asc, `user`.c asc",
         "Table": "`user`"
       }
     ]
@@ -2159,9 +2154,9 @@ Gen4 plan same as above
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select a, b, c, d, count(*), weight_string(a), weight_string(b), weight_string(c) from `user` where 1 != 1 group by a, weight_string(a), b, weight_string(b), c, weight_string(c)",
+        "FieldQuery": "select `user`.a, `user`.b, `user`.c, `user`.d, count(*), weight_string(`user`.a), weight_string(`user`.b), weight_string(`user`.c) from `user` where 1 != 1 group by `user`.a, weight_string(`user`.a), `user`.b, weight_string(`user`.b), `user`.c, weight_string(`user`.c)",
         "OrderBy": "(0|5) ASC, (1|6) ASC, (2|7) ASC",
-        "Query": "select a, b, c, d, count(*), weight_string(a), weight_string(b), weight_string(c) from `user` group by a, weight_string(a), b, weight_string(b), c, weight_string(c) order by a asc, b asc, c asc",
+        "Query": "select `user`.a, `user`.b, `user`.c, `user`.d, count(*), weight_string(`user`.a), weight_string(`user`.b), weight_string(`user`.c) from `user` group by `user`.a, weight_string(`user`.a), `user`.b, weight_string(`user`.b), `user`.c, weight_string(`user`.c) order by `user`.a asc, `user`.b asc, `user`.c asc",
         "Table": "`user`"
       }
     ]
@@ -2215,9 +2210,9 @@ Gen4 plan same as above
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select a, b, c, d, count(*), weight_string(a), weight_string(b), weight_string(c), weight_string(d) from `user` where 1 != 1 group by a, weight_string(a), b, weight_string(b), c, weight_string(c), d, weight_string(d)",
+        "FieldQuery": "select `user`.a, `user`.b, `user`.c, `user`.d, count(*), weight_string(`user`.a), weight_string(`user`.b), weight_string(`user`.c), weight_string(`user`.d) from `user` where 1 != 1 group by `user`.a, weight_string(`user`.a), `user`.b, weight_string(`user`.b), `user`.c, weight_string(`user`.c), `user`.d, weight_string(`user`.d)",
         "OrderBy": "(3|8) ASC, (1|6) ASC, (0|5) ASC, (2|7) ASC",
-        "Query": "select a, b, c, d, count(*), weight_string(a), weight_string(b), weight_string(c), weight_string(d) from `user` group by a, weight_string(a), b, weight_string(b), c, weight_string(c), d, weight_string(d) order by d asc, b asc, a asc, c asc",
+        "Query": "select `user`.a, `user`.b, `user`.c, `user`.d, count(*), weight_string(`user`.a), weight_string(`user`.b), weight_string(`user`.c), weight_string(`user`.d) from `user` group by `user`.a, weight_string(`user`.a), `user`.b, weight_string(`user`.b), `user`.c, weight_string(`user`.c), `user`.d, weight_string(`user`.d) order by `user`.d asc, `user`.b asc, `user`.a asc, `user`.c asc",
         "Table": "`user`"
       }
     ]
@@ -2271,9 +2266,9 @@ Gen4 plan same as above
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select a, b, c, d, count(*), weight_string(a), weight_string(b), weight_string(c), weight_string(d) from `user` where 1 != 1 group by a, weight_string(a), b, weight_string(b), c, weight_string(c), d, weight_string(d)",
+        "FieldQuery": "select `user`.a, `user`.b, `user`.c, `user`.d, count(*), weight_string(`user`.a), weight_string(`user`.b), weight_string(`user`.c), weight_string(`user`.d) from `user` where 1 != 1 group by `user`.a, weight_string(`user`.a), `user`.b, weight_string(`user`.b), `user`.c, weight_string(`user`.c), `user`.d, weight_string(`user`.d)",
         "OrderBy": "(3|8) ASC, (1|6) ASC, (0|5) ASC, (2|7) ASC",
-        "Query": "select a, b, c, d, count(*), weight_string(a), weight_string(b), weight_string(c), weight_string(d) from `user` group by a, weight_string(a), b, weight_string(b), c, weight_string(c), d, weight_string(d) order by d asc, b asc, a asc, c asc",
+        "Query": "select `user`.a, `user`.b, `user`.c, `user`.d, count(*), weight_string(`user`.a), weight_string(`user`.b), weight_string(`user`.c), weight_string(`user`.d) from `user` group by `user`.a, weight_string(`user`.a), `user`.b, weight_string(`user`.b), `user`.c, weight_string(`user`.c), `user`.d, weight_string(`user`.d) order by `user`.d asc, `user`.b asc, `user`.a asc, `user`.c asc",
         "Table": "`user`"
       }
     ]
@@ -2327,9 +2322,9 @@ Gen4 plan same as above
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select a, b, c, count(*), weight_string(a), weight_string(b), weight_string(c) from `user` where 1 != 1 group by a, weight_string(a), b, weight_string(b), c, weight_string(c)",
+        "FieldQuery": "select `user`.a, `user`.b, `user`.c, count(*), weight_string(`user`.a), weight_string(`user`.b), weight_string(`user`.c) from `user` where 1 != 1 group by `user`.a, weight_string(`user`.a), `user`.b, weight_string(`user`.b), `user`.c, weight_string(`user`.c)",
         "OrderBy": "(0|4) DESC, (2|6) DESC, (1|5) ASC",
-        "Query": "select a, b, c, count(*), weight_string(a), weight_string(b), weight_string(c) from `user` group by a, weight_string(a), b, weight_string(b), c, weight_string(c) order by a desc, c desc, b asc",
+        "Query": "select `user`.a, `user`.b, `user`.c, count(*), weight_string(`user`.a), weight_string(`user`.b), weight_string(`user`.c) from `user` group by `user`.a, weight_string(`user`.a), `user`.b, weight_string(`user`.b), `user`.c, weight_string(`user`.c) order by `user`.a desc, `user`.c desc, `user`.b asc",
         "Table": "`user`"
       }
     ]
@@ -2396,9 +2391,9 @@ Gen4 plan same as above
               "Name": "user",
               "Sharded": true
             },
-            "FieldQuery": "select col, count(*) from `user` where 1 != 1 group by col",
+            "FieldQuery": "select `user`.col, count(*) from `user` where 1 != 1 group by `user`.col",
             "OrderBy": "0 ASC",
-            "Query": "select col, count(*) from `user` group by col order by col asc limit :__upper_limit",
+            "Query": "select `user`.col, count(*) from `user` group by `user`.col order by `user`.col asc limit :__upper_limit",
             "Table": "`user`"
           }
         ]
@@ -2441,8 +2436,8 @@ Gen4 plan same as above
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select `user`.col1 as a from `user` where 1 != 1 group by a collate utf8_general_ci",
-    "Query": "select `user`.col1 as a from `user` where `user`.id = 5 group by a collate utf8_general_ci",
+    "FieldQuery": "select `user`.col1 as a from `user` where 1 != 1 group by `user`.a collate utf8_general_ci",
+    "Query": "select `user`.col1 as a from `user` where `user`.id = 5 group by `user`.a collate utf8_general_ci",
     "Table": "`user`",
     "Values": [
       "INT64(5)"
@@ -2481,8 +2476,8 @@ Gen4 plan same as above
       "Name": "main",
       "Sharded": false
     },
-    "FieldQuery": "select id, count(*) from unsharded as route2 where 1 != 1 group by id",
-    "Query": "select id, count(*) from unsharded as route2 group by id",
+    "FieldQuery": "select route2.id, count(*) from unsharded as route2 where 1 != 1 group by route2.id",
+    "Query": "select route2.id, count(*) from unsharded as route2 group by route2.id",
     "Table": "unsharded"
   },
   "TablesUsed": [
@@ -2517,8 +2512,8 @@ Gen4 plan same as above
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select col from ref where 1 != 1",
-    "Query": "select col from ref order by col asc",
+    "FieldQuery": "select ref.col from ref where 1 != 1",
+    "Query": "select ref.col from ref order by ref.col asc",
     "Table": "ref"
   },
   "TablesUsed": [
@@ -2578,8 +2573,8 @@ Gen4 plan same as above
               "Name": "user",
               "Sharded": true
             },
-            "FieldQuery": "select a, count(*) from `user` where 1 != 1",
-            "Query": "select a, count(*) from `user`",
+            "FieldQuery": "select `user`.a, count(*) from `user` where 1 != 1",
+            "Query": "select `user`.a, count(*) from `user`",
             "Table": "`user`"
           }
         ]
@@ -2645,9 +2640,9 @@ Gen4 plan same as above
               "Name": "user",
               "Sharded": true
             },
-            "FieldQuery": "select a, count(*), weight_string(a) from `user` where 1 != 1 group by a, weight_string(a)",
+            "FieldQuery": "select `user`.a, count(*), weight_string(`user`.a) from `user` where 1 != 1 group by `user`.a, weight_string(`user`.a)",
             "OrderBy": "(0|2) ASC",
-            "Query": "select a, count(*), weight_string(a) from `user` group by a, weight_string(a) order by a asc",
+            "Query": "select `user`.a, count(*), weight_string(`user`.a) from `user` group by `user`.a, weight_string(`user`.a) order by `user`.a asc",
             "Table": "`user`"
           }
         ]
@@ -2679,9 +2674,9 @@ Gen4 plan same as above
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select id, 1.1 from `user` where 1 != 1 group by 1.1",
+        "FieldQuery": "select `user`.id, 1.1 from `user` where 1 != 1 group by 1.1",
         "OrderBy": "1 ASC",
-        "Query": "select id, 1.1 from `user` group by 1.1 order by 1.1 asc",
+        "Query": "select `user`.id, 1.1 from `user` group by 1.1 order by 1.1 asc",
         "Table": "`user`"
       }
     ]
@@ -2746,9 +2741,9 @@ Gen4 plan same as above
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select col, count(*) from (select `user`.col, user_extra.extra, weight_string(user_extra.extra) from `user`, user_extra where 1 != 1) as a where 1 != 1 group by col",
+        "FieldQuery": "select a.col, count(*) from (select `user`.col, user_extra.extra, weight_string(user_extra.extra) from `user`, user_extra where 1 != 1) as a where 1 != 1 group by a.col",
         "OrderBy": "(1|2) ASC, 0 ASC",
-        "Query": "select col, count(*) from (select `user`.col, user_extra.extra, weight_string(user_extra.extra) from `user`, user_extra where `user`.id = user_extra.user_id order by user_extra.extra asc) as a group by col order by col asc",
+        "Query": "select a.col, count(*) from (select `user`.col, user_extra.extra, weight_string(user_extra.extra) from `user`, user_extra where `user`.id = user_extra.user_id order by user_extra.extra asc) as a group by a.col order by a.col asc",
         "Table": "`user`, user_extra"
       }
     ]
@@ -2801,9 +2796,9 @@ Gen4 plan same as above
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select col1, col2, weight_string(col1), weight_string(col2) from `user` where 1 != 1 group by col1, col2",
+        "FieldQuery": "select `user`.col1, `user`.col2, weight_string(`user`.col1), weight_string(`user`.col2) from `user` where 1 != 1 group by `user`.col1, `user`.col2",
         "OrderBy": "(0|2) ASC, (1|3) ASC",
-        "Query": "select distinct col1, col2, weight_string(col1), weight_string(col2) from `user` group by col1, col2 order by col1 asc, col2 asc",
+        "Query": "select distinct `user`.col1, `user`.col2, weight_string(`user`.col1), weight_string(`user`.col2) from `user` group by `user`.col1, `user`.col2 order by `user`.col1 asc, `user`.col2 asc",
         "Table": "`user`"
       }
     ]
@@ -2931,7 +2926,7 @@ Gen4 plan same as above
 # Cannot have more than one aggr(distinct...
 "select count(distinct a), count(distinct b) from user"
 "unsupported: only one distinct aggregation allowed in a select: count(distinct b)"
-Gen4 plan same as above
+Gen4 error: unsupported: only one distinct aggregation allowed in a select: count(distinct `user`.b)
 
 # multiple distinct functions with grouping.
 "select col1, count(distinct col2), sum(distinct col2) from user group by col1"
@@ -2942,7 +2937,7 @@ Gen4 plan same as above
   "Instructions": {
     "OperatorType": "Aggregate",
     "Variant": "Ordered",
-    "Aggregates": "count_distinct(1|4) AS count(distinct col2), sum_distinct(2|4) AS sum(distinct col2)",
+    "Aggregates": "count_distinct(1|4) AS count(distinct `user`.col2), sum_distinct(2|4) AS sum(distinct `user`.col2)",
     "GroupBy": "(0|3)",
     "ResultColumns": 3,
     "Inputs": [
@@ -2953,9 +2948,9 @@ Gen4 plan same as above
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select col1, col2, col2, weight_string(col1), weight_string(col2) from `user` where 1 != 1 group by col1, weight_string(col1), col2, weight_string(col2)",
+        "FieldQuery": "select `user`.col1, `user`.col2, `user`.col2, weight_string(`user`.col1), weight_string(`user`.col2) from `user` where 1 != 1 group by `user`.col1, weight_string(`user`.col1), `user`.col2, weight_string(`user`.col2)",
         "OrderBy": "(0|3) ASC, (1|4) ASC",
-        "Query": "select col1, col2, col2, weight_string(col1), weight_string(col2) from `user` group by col1, weight_string(col1), col2, weight_string(col2) order by col1 asc, col2 asc",
+        "Query": "select `user`.col1, `user`.col2, `user`.col2, weight_string(`user`.col1), weight_string(`user`.col2) from `user` group by `user`.col1, weight_string(`user`.col1), `user`.col2, weight_string(`user`.col2) order by `user`.col1 asc, `user`.col2 asc",
         "Table": "`user`"
       }
     ]
@@ -2972,29 +2967,23 @@ Gen4 plan same as above
   "QueryType": "SELECT",
   "Original": "select col, count(*) k from user group by col order by null, k",
   "Instructions": {
-    "OperatorType": "Sort",
-    "Variant": "Memory",
-    "OrderBy": "1 ASC",
+    "OperatorType": "Aggregate",
+    "Variant": "Ordered",
+    "Aggregates": "sum_count_star(1) AS k, random(2) AS k",
+    "GroupBy": "0",
+    "ResultColumns": 2,
     "Inputs": [
       {
-        "OperatorType": "Aggregate",
-        "Variant": "Ordered",
-        "Aggregates": "sum_count_star(1) AS k",
-        "GroupBy": "0",
-        "Inputs": [
-          {
-            "OperatorType": "Route",
-            "Variant": "Scatter",
-            "Keyspace": {
-              "Name": "user",
-              "Sharded": true
-            },
-            "FieldQuery": "select col, count(*) as k from `user` where 1 != 1 group by col",
-            "OrderBy": "0 ASC",
-            "Query": "select col, count(*) as k from `user` group by col order by col asc",
-            "Table": "`user`"
-          }
-        ]
+        "OperatorType": "Route",
+        "Variant": "Scatter",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select `user`.col, count(*) as k, `user`.k from `user` where 1 != 1 group by `user`.col",
+        "OrderBy": "1 ASC, 0 ASC",
+        "Query": "select `user`.col, count(*) as k, `user`.k from `user` group by `user`.col order by `user`.k asc, `user`.col asc",
+        "Table": "`user`"
       }
     ]
   },
@@ -3045,9 +3034,9 @@ Gen4 plan same as above
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select col, count(*) as k from `user` where 1 != 1 group by col",
+        "FieldQuery": "select `user`.col, count(*) as k from `user` where 1 != 1 group by `user`.col",
         "OrderBy": "0 ASC",
-        "Query": "select col, count(*) as k from `user` group by col order by col asc",
+        "Query": "select `user`.col, count(*) as k from `user` group by `user`.col order by `user`.col asc",
         "Table": "`user`"
       }
     ]
@@ -3158,8 +3147,8 @@ Gen4 plan same as above
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select id from `user` where 1 != 1 group by id",
-    "Query": "select id from `user` group by id having count(id) = 10",
+    "FieldQuery": "select `user`.id from `user` where 1 != 1 group by `user`.id",
+    "Query": "select `user`.id from `user` group by `user`.id having count(`user`.id) = 10",
     "Table": "`user`"
   },
   "TablesUsed": [
@@ -3200,7 +3189,7 @@ Gen4 plan same as above
   "Instructions": {
     "OperatorType": "Aggregate",
     "Variant": "Ordered",
-    "Aggregates": "sum_count_star(1) AS count(*)",
+    "Aggregates": "random(0) AS v, sum_count_star(1) AS count(*)",
     "GroupBy": "(0|2)",
     "ResultColumns": 2,
     "Inputs": [
@@ -3211,9 +3200,9 @@ Gen4 plan same as above
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select lower(textcol1) as v, count(*), weight_string(lower(textcol1)) from `user` where 1 != 1 group by v, weight_string(lower(textcol1))",
+        "FieldQuery": "select lower(`user`.textcol1) as v, count(*), weight_string(`user`.v) from `user` where 1 != 1 group by `user`.v, weight_string(`user`.v)",
         "OrderBy": "(0|2) ASC",
-        "Query": "select lower(textcol1) as v, count(*), weight_string(lower(textcol1)) from `user` group by v, weight_string(lower(textcol1)) order by v asc",
+        "Query": "select lower(`user`.textcol1) as v, count(*), weight_string(`user`.v) from `user` group by `user`.v, weight_string(`user`.v) order by `user`.v asc",
         "Table": "`user`"
       }
     ]
@@ -3256,7 +3245,7 @@ Gen4 plan same as above
   "Instructions": {
     "OperatorType": "Aggregate",
     "Variant": "Ordered",
-    "Aggregates": "sum_count_star(1) AS count(*)",
+    "Aggregates": "random(0) AS a, sum_count_star(1) AS count(*)",
     "GroupBy": "(0|2)",
     "ResultColumns": 2,
     "Inputs": [
@@ -3267,9 +3256,9 @@ Gen4 plan same as above
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select char_length(texcol1) as a, count(*), weight_string(char_length(texcol1)) from `user` where 1 != 1 group by a, weight_string(char_length(texcol1))",
+        "FieldQuery": "select char_length(`user`.texcol1) as a, count(*), weight_string(`user`.a) from `user` where 1 != 1 group by `user`.a, weight_string(`user`.a)",
         "OrderBy": "(0|2) ASC",
-        "Query": "select char_length(texcol1) as a, count(*), weight_string(char_length(texcol1)) from `user` group by a, weight_string(char_length(texcol1)) order by a asc",
+        "Query": "select char_length(`user`.texcol1) as a, count(*), weight_string(`user`.a) from `user` group by `user`.a, weight_string(`user`.a) order by `user`.a asc",
         "Table": "`user`"
       }
     ]
@@ -3318,9 +3307,9 @@ Gen4 plan same as above
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select id, weight_string(id) from `user` where 1 != 1",
+        "FieldQuery": "select `user`.id, weight_string(`user`.id) from `user` where 1 != 1",
         "OrderBy": "(0|1) ASC",
-        "Query": "select id, weight_string(id) from `user` order by id asc limit :__upper_limit",
+        "Query": "select `user`.id, weight_string(`user`.id) from `user` order by `user`.id asc limit :__upper_limit",
         "ResultColumns": 1,
         "Table": "`user`"
       }
@@ -3352,9 +3341,9 @@ Gen4 plan same as above
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select `user`.id, col, weight_string(id) from `user` where 1 != 1",
+        "FieldQuery": "select `user`.id, `user`.col, weight_string(`user`.id) from `user` where 1 != 1",
         "OrderBy": "(0|2) ASC",
-        "Query": "select `user`.id, col, weight_string(id) from `user` order by id asc",
+        "Query": "select `user`.id, `user`.col, weight_string(`user`.id) from `user` order by `user`.id asc",
         "Table": "`user`"
       },
       {
@@ -3388,7 +3377,7 @@ Gen4 plan same as above
   "Original": "select count(*) a from user having a = 10",
   "Instructions": {
     "OperatorType": "Filter",
-    "Predicate": "a = 10",
+    "Predicate": "`user`.a = 10",
     "Inputs": [
       {
         "OperatorType": "Aggregate",
@@ -3423,7 +3412,7 @@ Gen4 plan same as above
   "Original": "select count(*) a from user having a = '1'",
   "Instructions": {
     "OperatorType": "Filter",
-    "Predicate": "a = '1'",
+    "Predicate": "`user`.a = '1'",
     "Inputs": [
       {
         "OperatorType": "Aggregate",
@@ -3458,7 +3447,7 @@ Gen4 plan same as above
   "Original": "select count(*) a from user having a != 10",
   "Instructions": {
     "OperatorType": "Filter",
-    "Predicate": "a != 10",
+    "Predicate": "`user`.a != 10",
     "Inputs": [
       {
         "OperatorType": "Aggregate",
@@ -3493,7 +3482,7 @@ Gen4 plan same as above
   "Original": "select count(*) a from user having a != '1'",
   "Instructions": {
     "OperatorType": "Filter",
-    "Predicate": "a != '1'",
+    "Predicate": "`user`.a != '1'",
     "Inputs": [
       {
         "OperatorType": "Aggregate",
@@ -3528,7 +3517,7 @@ Gen4 plan same as above
   "Original": "select count(*) a from user having a \u003e 10",
   "Instructions": {
     "OperatorType": "Filter",
-    "Predicate": "a \u003e 10",
+    "Predicate": "`user`.a \u003e 10",
     "Inputs": [
       {
         "OperatorType": "Aggregate",
@@ -3563,7 +3552,7 @@ Gen4 plan same as above
   "Original": "select count(*) a from user having a \u003e= 10",
   "Instructions": {
     "OperatorType": "Filter",
-    "Predicate": "a \u003e= 10",
+    "Predicate": "`user`.a \u003e= 10",
     "Inputs": [
       {
         "OperatorType": "Aggregate",
@@ -3598,7 +3587,7 @@ Gen4 plan same as above
   "Original": "select count(*) a from user having a \u003c 10",
   "Instructions": {
     "OperatorType": "Filter",
-    "Predicate": "a \u003c 10",
+    "Predicate": "`user`.a \u003c 10",
     "Inputs": [
       {
         "OperatorType": "Aggregate",
@@ -3633,7 +3622,7 @@ Gen4 plan same as above
   "Original": "select count(*) a from user having a \u003c= 10",
   "Instructions": {
     "OperatorType": "Filter",
-    "Predicate": "a \u003c= 10",
+    "Predicate": "`user`.a \u003c= 10",
     "Inputs": [
       {
         "OperatorType": "Aggregate",
@@ -3668,7 +3657,7 @@ Gen4 plan same as above
   "Original": "select col, count(*) a from user group by col having a \u003c= 10",
   "Instructions": {
     "OperatorType": "Filter",
-    "Predicate": "a \u003c= 10",
+    "Predicate": "`user`.a \u003c= 10",
     "Inputs": [
       {
         "OperatorType": "Aggregate",
@@ -3683,9 +3672,9 @@ Gen4 plan same as above
               "Name": "user",
               "Sharded": true
             },
-            "FieldQuery": "select col, count(*) as a from `user` where 1 != 1 group by col",
+            "FieldQuery": "select `user`.col, count(*) as a from `user` where 1 != 1 group by `user`.col",
             "OrderBy": "0 ASC",
-            "Query": "select col, count(*) as a from `user` group by col order by col asc",
+            "Query": "select `user`.col, count(*) as a from `user` group by `user`.col order by `user`.col asc",
             "Table": "`user`"
           }
         ]
@@ -3712,7 +3701,7 @@ Gen4 plan same as above
     "Inputs": [
       {
         "OperatorType": "Filter",
-        "Predicate": "a = 1.00",
+        "Predicate": "`user`.a = 1.00",
         "Inputs": [
           {
             "OperatorType": "Aggregate",
@@ -3727,9 +3716,9 @@ Gen4 plan same as above
                   "Name": "user",
                   "Sharded": true
                 },
-                "FieldQuery": "select count(*) as a, val1, weight_string(val1) from `user` where 1 != 1 group by val1, weight_string(val1)",
+                "FieldQuery": "select count(*) as a, `user`.val1, weight_string(`user`.val1) from `user` where 1 != 1 group by `user`.val1, weight_string(`user`.val1)",
                 "OrderBy": "(1|2) ASC",
-                "Query": "select count(*) as a, val1, weight_string(val1) from `user` group by val1, weight_string(val1) order by val1 asc",
+                "Query": "select count(*) as a, `user`.val1, weight_string(`user`.val1) from `user` group by `user`.val1, weight_string(`user`.val1) order by `user`.val1 asc",
                 "Table": "`user`"
               }
             ]
@@ -3776,7 +3765,7 @@ Gen4 plan same as above
   "Instructions": {
     "OperatorType": "Aggregate",
     "Variant": "Ordered",
-    "Aggregates": "count_distinct(1 COLLATE latin1_swedish_ci) AS count(distinct textcol1)",
+    "Aggregates": "count_distinct(1 COLLATE latin1_swedish_ci) AS count(distinct `user`.textcol1)",
     "GroupBy": "0",
     "Inputs": [
       {
@@ -3786,9 +3775,9 @@ Gen4 plan same as above
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select col, textcol1 from `user` where 1 != 1 group by col, textcol1",
+        "FieldQuery": "select `user`.col, `user`.textcol1 from `user` where 1 != 1 group by `user`.col, `user`.textcol1",
         "OrderBy": "0 ASC, 1 ASC COLLATE latin1_swedish_ci",
-        "Query": "select col, textcol1 from `user` group by col, textcol1 order by col asc, textcol1 asc",
+        "Query": "select `user`.col, `user`.textcol1 from `user` group by `user`.col, `user`.textcol1 order by `user`.col asc, `user`.textcol1 asc",
         "Table": "`user`"
       }
     ]
@@ -3830,12 +3819,12 @@ Gen4 plan same as above
     "Inputs": [
       {
         "OperatorType": "Filter",
-        "Predicate": "OFFSET(1, 'count(id)') = 10",
+        "Predicate": "OFFSET(1, 'count(`user`.id)') = 10",
         "Inputs": [
           {
             "OperatorType": "Aggregate",
             "Variant": "Scalar",
-            "Aggregates": "random(0) AS 1, sum_count(1) AS count(id)",
+            "Aggregates": "random(0) AS 1, sum_count(1) AS count(`user`.id)",
             "Inputs": [
               {
                 "OperatorType": "Route",
@@ -3844,8 +3833,8 @@ Gen4 plan same as above
                   "Name": "user",
                   "Sharded": true
                 },
-                "FieldQuery": "select 1, count(id) from `user` where 1 != 1",
-                "Query": "select 1, count(id) from `user` where `name` = 'a'",
+                "FieldQuery": "select 1, count(`user`.id) from `user` where 1 != 1",
+                "Query": "select 1, count(`user`.id) from `user` where `user`.`name` = 'a'",
                 "Table": "`user`",
                 "Values": [
                   "VARCHAR(\"a\")"
@@ -3948,12 +3937,12 @@ Gen4 plan same as above
     "Inputs": [
       {
         "OperatorType": "Filter",
-        "Predicate": "OFFSET(1, 'count(id)') = 10",
+        "Predicate": "OFFSET(1, 'count(`user`.id)') = 10",
         "Inputs": [
           {
             "OperatorType": "Aggregate",
             "Variant": "Scalar",
-            "Aggregates": "random(0) AS 1, sum_count(1) AS count(id)",
+            "Aggregates": "random(0) AS 1, sum_count(1) AS count(`user`.id)",
             "Inputs": [
               {
                 "OperatorType": "Route",
@@ -3962,8 +3951,8 @@ Gen4 plan same as above
                   "Name": "user",
                   "Sharded": true
                 },
-                "FieldQuery": "select 1, count(id) from `user` where 1 != 1",
-                "Query": "select 1, count(id) from `user`",
+                "FieldQuery": "select 1, count(`user`.id) from `user` where 1 != 1",
+                "Query": "select 1, count(`user`.id) from `user`",
                 "Table": "`user`"
               }
             ]
@@ -4229,7 +4218,7 @@ Gen4 plan same as above
   "Instructions": {
     "OperatorType": "Aggregate",
     "Variant": "Ordered",
-    "Aggregates": "min(1) AS min(distinct id), sum_distinct(2|4) AS sum(distinct col3)",
+    "Aggregates": "min(1) AS min(distinct `user`.id), sum_distinct(2|4) AS sum(distinct `user`.col3)",
     "GroupBy": "(0|3)",
     "ResultColumns": 3,
     "Inputs": [
@@ -4240,9 +4229,9 @@ Gen4 plan same as above
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select col1, min(distinct id), col3, weight_string(col1), weight_string(col3) from `user` where 1 != 1 group by col1, weight_string(col1), col3, weight_string(col3)",
+        "FieldQuery": "select `user`.col1, min(distinct `user`.id), `user`.col3, weight_string(`user`.col1), weight_string(`user`.col3) from `user` where 1 != 1 group by `user`.col1, weight_string(`user`.col1), `user`.col3, weight_string(`user`.col3)",
         "OrderBy": "(0|3) ASC, (2|4) ASC",
-        "Query": "select col1, min(distinct id), col3, weight_string(col1), weight_string(col3) from `user` group by col1, weight_string(col1), col3, weight_string(col3) order by col1 asc, col3 asc",
+        "Query": "select `user`.col1, min(distinct `user`.id), `user`.col3, weight_string(`user`.col1), weight_string(`user`.col3) from `user` group by `user`.col1, weight_string(`user`.col1), `user`.col3, weight_string(`user`.col3) order by `user`.col1 asc, `user`.col3 asc",
         "Table": "`user`"
       }
     ]
@@ -4343,7 +4332,7 @@ Gen4 plan same as above
   "Instructions": {
     "OperatorType": "Aggregate",
     "Variant": "Ordered",
-    "Aggregates": "count_distinct(1|4) AS count(distinct val1), sum_count_star(2) AS count(*)",
+    "Aggregates": "count_distinct(1|4) AS count(distinct `user`.val1), sum_count_star(2) AS count(*)",
     "GroupBy": "(0|3)",
     "ResultColumns": 3,
     "Inputs": [
@@ -4354,9 +4343,9 @@ Gen4 plan same as above
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select val2, val1, count(*), weight_string(val2), weight_string(val1) from `user` where 1 != 1 group by val2, weight_string(val2), val1, weight_string(val1)",
+        "FieldQuery": "select `user`.val2, `user`.val1, count(*), weight_string(`user`.val2), weight_string(`user`.val1) from `user` where 1 != 1 group by `user`.val2, weight_string(`user`.val2), `user`.val1, weight_string(`user`.val1)",
         "OrderBy": "(0|3) ASC, (1|4) ASC",
-        "Query": "select val2, val1, count(*), weight_string(val2), weight_string(val1) from `user` group by val2, weight_string(val2), val1, weight_string(val1) order by val2 asc, val1 asc",
+        "Query": "select `user`.val2, `user`.val1, count(*), weight_string(`user`.val2), weight_string(`user`.val1) from `user` group by `user`.val2, weight_string(`user`.val2), `user`.val1, weight_string(`user`.val1) order by `user`.val2 asc, `user`.val1 asc",
         "Table": "`user`"
       }
     ]
@@ -4399,7 +4388,7 @@ Gen4 plan same as above
   "Instructions": {
     "OperatorType": "Aggregate",
     "Variant": "Ordered",
-    "Aggregates": "sum_count_star(1) AS count(*)",
+    "Aggregates": "random(0) AS a, sum_count_star(1) AS count(*)",
     "GroupBy": "(0|2)",
     "ResultColumns": 2,
     "Inputs": [
@@ -4410,9 +4399,9 @@ Gen4 plan same as above
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select ascii(val1) as a, count(*), weight_string(ascii(val1)) from `user` where 1 != 1 group by a, weight_string(ascii(val1))",
+        "FieldQuery": "select ascii(`user`.val1) as a, count(*), weight_string(`user`.a) from `user` where 1 != 1 group by `user`.a, weight_string(`user`.a)",
         "OrderBy": "(0|2) ASC",
-        "Query": "select ascii(val1) as a, count(*), weight_string(ascii(val1)) from `user` group by a, weight_string(ascii(val1)) order by a asc",
+        "Query": "select ascii(`user`.val1) as a, count(*), weight_string(`user`.a) from `user` group by `user`.a, weight_string(`user`.a) order by `user`.a asc",
         "Table": "`user`"
       }
     ]
@@ -4431,7 +4420,7 @@ Gen4 plan same as above
   "Instructions": {
     "OperatorType": "Aggregate",
     "Variant": "Ordered",
-    "Aggregates": "count_distinct(1|4) AS count(distinct tcol2), sum_distinct(2|4) AS sum(distinct tcol2)",
+    "Aggregates": "count_distinct(1|4) AS count(distinct `user`.tcol2), sum_distinct(2|4) AS sum(distinct `user`.tcol2)",
     "GroupBy": "(0|3)",
     "ResultColumns": 3,
     "Inputs": [
@@ -4442,9 +4431,9 @@ Gen4 plan same as above
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select tcol1, tcol2, tcol2, weight_string(tcol1), weight_string(tcol2) from `user` where 1 != 1 group by tcol1, weight_string(tcol1), tcol2, weight_string(tcol2)",
+        "FieldQuery": "select `user`.tcol1, `user`.tcol2, `user`.tcol2, weight_string(`user`.tcol1), weight_string(`user`.tcol2) from `user` where 1 != 1 group by `user`.tcol1, weight_string(`user`.tcol1), `user`.tcol2, weight_string(`user`.tcol2)",
         "OrderBy": "(0|3) ASC, (1|4) ASC",
-        "Query": "select tcol1, tcol2, tcol2, weight_string(tcol1), weight_string(tcol2) from `user` group by tcol1, weight_string(tcol1), tcol2, weight_string(tcol2) order by tcol1 asc, tcol2 asc",
+        "Query": "select `user`.tcol1, `user`.tcol2, `user`.tcol2, weight_string(`user`.tcol1), weight_string(`user`.tcol2) from `user` group by `user`.tcol1, weight_string(`user`.tcol1), `user`.tcol2, weight_string(`user`.tcol2) order by `user`.tcol1 asc, `user`.tcol2 asc",
         "Table": "`user`"
       }
     ]
@@ -4463,7 +4452,7 @@ Gen4 plan same as above
   "Instructions": {
     "OperatorType": "Aggregate",
     "Variant": "Ordered",
-    "Aggregates": "count_distinct(0|4) AS count(distinct tcol2), sum_count_star(2) AS count(*), sum_distinct(3|4) AS sum(distinct tcol2)",
+    "Aggregates": "count_distinct(0|4) AS count(distinct `user`.tcol2), sum_count_star(2) AS count(*), sum_distinct(3|4) AS sum(distinct `user`.tcol2)",
     "GroupBy": "(1|5)",
     "ResultColumns": 4,
     "Inputs": [
@@ -4474,9 +4463,9 @@ Gen4 plan same as above
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select tcol2, tcol1, count(*), tcol2, weight_string(tcol2), weight_string(tcol1) from `user` where 1 != 1 group by tcol2, weight_string(tcol2), tcol1, weight_string(tcol1)",
+        "FieldQuery": "select `user`.tcol2, `user`.tcol1, count(*), `user`.tcol2, weight_string(`user`.tcol2), weight_string(`user`.tcol1) from `user` where 1 != 1 group by `user`.tcol2, weight_string(`user`.tcol2), `user`.tcol1, weight_string(`user`.tcol1)",
         "OrderBy": "(1|5) ASC, (0|4) ASC",
-        "Query": "select tcol2, tcol1, count(*), tcol2, weight_string(tcol2), weight_string(tcol1) from `user` group by tcol2, weight_string(tcol2), tcol1, weight_string(tcol1) order by tcol1 asc, tcol2 asc",
+        "Query": "select `user`.tcol2, `user`.tcol1, count(*), `user`.tcol2, weight_string(`user`.tcol2), weight_string(`user`.tcol1) from `user` group by `user`.tcol2, weight_string(`user`.tcol2), `user`.tcol1, weight_string(`user`.tcol1) order by `user`.tcol1 asc, `user`.tcol2 asc",
         "Table": "`user`"
       }
     ]
@@ -4675,8 +4664,8 @@ Gen4 plan same as above
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select group_concat(user_id order by `name` asc), id from `user` where 1 != 1 group by id",
-    "Query": "select group_concat(user_id order by `name` asc), id from `user` group by id",
+    "FieldQuery": "select group_concat(`user`.user_id order by `user`.`name` asc), `user`.id from `user` where 1 != 1 group by `user`.id",
+    "Query": "select group_concat(`user`.user_id order by `user`.`name` asc), `user`.id from `user` group by `user`.id",
     "Table": "`user`"
   },
   "TablesUsed": [
@@ -4721,7 +4710,7 @@ Gen4 plan same as above
 
 "select count(distinct user_id, name) from user"
 "unsupported: only one expression allowed inside aggregates: count(distinct user_id, `name`)"
-Gen4 error: aggregate functions take a single argument 'count(distinct user_id, `name`)'
+Gen4 error: aggregate functions take a single argument 'count(distinct `user`.user_id, `user`.`name`)'
 
 "select sum(col) from (select user.col as col, 32 from user join user_extra) t"
 "unsupported: cross-shard query with aggregates"
@@ -4731,12 +4720,12 @@ Gen4 error: aggregate functions take a single argument 'count(distinct user_id, 
   "Instructions": {
     "OperatorType": "Aggregate",
     "Variant": "Scalar",
-    "Aggregates": "sum(0) AS sum(col)",
+    "Aggregates": "sum(0) AS sum(t.col)",
     "Inputs": [
       {
         "OperatorType": "Projection",
         "Expressions": [
-          "[COLUMN 2] * [COLUMN 3] as sum(col)"
+          "[COLUMN 2] * [COLUMN 3] as sum(t.col)"
         ],
         "Inputs": [
           {
@@ -4752,8 +4741,8 @@ Gen4 error: aggregate functions take a single argument 'count(distinct user_id, 
                   "Name": "user",
                   "Sharded": true
                 },
-                "FieldQuery": "select `user`.col as col, 32, sum(col) from `user` where 1 != 1",
-                "Query": "select `user`.col as col, 32, sum(col) from `user`",
+                "FieldQuery": "select `user`.col as col, 32, sum(t.col) from `user` where 1 != 1",
+                "Query": "select `user`.col as col, 32, sum(t.col) from `user`",
                 "Table": "`user`"
               },
               {
@@ -4809,9 +4798,9 @@ Gen4 error: aggregate functions take a single argument 'count(distinct user_id, 
                   "Name": "user",
                   "Sharded": true
                 },
-                "FieldQuery": "select foo, count(*), weight_string(foo) from `user` where 1 != 1 group by foo, weight_string(foo)",
+                "FieldQuery": "select `user`.foo, count(*), weight_string(`user`.foo) from `user` where 1 != 1 group by `user`.foo, weight_string(`user`.foo)",
                 "OrderBy": "(0|2) ASC",
-                "Query": "select foo, count(*), weight_string(foo) from `user` group by foo, weight_string(foo) order by foo asc",
+                "Query": "select `user`.foo, count(*), weight_string(`user`.foo) from `user` group by `user`.foo, weight_string(`user`.foo) order by `user`.foo asc",
                 "Table": "`user`"
               }
             ]
@@ -4841,12 +4830,12 @@ Gen4 error: aggregate functions take a single argument 'count(distinct user_id, 
     "Inputs": [
       {
         "OperatorType": "Filter",
-        "Predicate": "OFFSET(1, 'sum(foo)') + OFFSET(2, 'sum(bar)') = 42",
+        "Predicate": "OFFSET(1, 'sum(`user`.foo)') + OFFSET(2, 'sum(`user`.bar)') = 42",
         "Inputs": [
           {
             "OperatorType": "Aggregate",
             "Variant": "Ordered",
-            "Aggregates": "sum(1) AS sum(foo), sum(2) AS sum(bar)",
+            "Aggregates": "sum(1) AS sum(`user`.foo), sum(2) AS sum(`user`.bar)",
             "GroupBy": "(0|3)",
             "Inputs": [
               {
@@ -4856,9 +4845,9 @@ Gen4 error: aggregate functions take a single argument 'count(distinct user_id, 
                   "Name": "user",
                   "Sharded": true
                 },
-                "FieldQuery": "select foo, sum(foo), sum(bar), weight_string(foo) from `user` where 1 != 1 group by foo, weight_string(foo)",
+                "FieldQuery": "select `user`.foo, sum(`user`.foo), sum(`user`.bar), weight_string(`user`.foo) from `user` where 1 != 1 group by `user`.foo, weight_string(`user`.foo)",
                 "OrderBy": "(0|3) ASC",
-                "Query": "select foo, sum(foo), sum(bar), weight_string(foo) from `user` group by foo, weight_string(foo) order by foo asc",
+                "Query": "select `user`.foo, sum(`user`.foo), sum(`user`.bar), weight_string(`user`.foo) from `user` group by `user`.foo, weight_string(`user`.foo) order by `user`.foo asc",
                 "Table": "`user`"
               }
             ]
@@ -4888,7 +4877,7 @@ Gen4 error: aggregate functions take a single argument 'count(distinct user_id, 
     "Inputs": [
       {
         "OperatorType": "Filter",
-        "Predicate": "fooSum + OFFSET(2, 'sum(bar)') = 42",
+        "Predicate": "`user`.fooSum + OFFSET(2, 'sum(`user`.bar)') = 42",
         "Inputs": [
           {
             "OperatorType": "Aggregate",
@@ -4903,9 +4892,9 @@ Gen4 error: aggregate functions take a single argument 'count(distinct user_id, 
                   "Name": "user",
                   "Sharded": true
                 },
-                "FieldQuery": "select foo, sum(foo) as fooSum, sum(bar) as barSum, weight_string(foo) from `user` where 1 != 1 group by foo, weight_string(foo)",
+                "FieldQuery": "select `user`.foo, sum(`user`.foo) as fooSum, sum(`user`.bar) as barSum, weight_string(`user`.foo) from `user` where 1 != 1 group by `user`.foo, weight_string(`user`.foo)",
                 "OrderBy": "(0|3) ASC",
-                "Query": "select foo, sum(foo) as fooSum, sum(bar) as barSum, weight_string(foo) from `user` group by foo, weight_string(foo) order by foo asc",
+                "Query": "select `user`.foo, sum(`user`.foo) as fooSum, sum(`user`.bar) as barSum, weight_string(`user`.foo) from `user` group by `user`.foo, weight_string(`user`.foo) order by `user`.foo asc",
                 "Table": "`user`"
               }
             ]
@@ -4948,9 +4937,9 @@ Gen4 error: aggregate functions take a single argument 'count(distinct user_id, 
                   "Name": "user",
                   "Sharded": true
                 },
-                "FieldQuery": "select foo, count(*), weight_string(foo) from `user` where 1 != 1 group by foo, weight_string(foo)",
+                "FieldQuery": "select `user`.foo, count(*), weight_string(`user`.foo) from `user` where 1 != 1 group by `user`.foo, weight_string(`user`.foo)",
                 "OrderBy": "(0|2) ASC",
-                "Query": "select foo, count(*), weight_string(foo) from `user` group by foo, weight_string(foo) order by foo asc",
+                "Query": "select `user`.foo, count(*), weight_string(`user`.foo) from `user` group by `user`.foo, weight_string(`user`.foo) order by `user`.foo asc",
                 "Table": "`user`"
               }
             ]
@@ -5322,9 +5311,9 @@ Gen4 error: aggregate functions take a single argument 'count(distinct user_id, 
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select id, b as id, count(*), weight_string(b) from `user` where 1 != 1",
+        "FieldQuery": "select `user`.id, `user`.b as id, count(*), weight_string(`user`.id) from `user` where 1 != 1",
         "OrderBy": "(1|3) ASC",
-        "Query": "select id, b as id, count(*), weight_string(b) from `user` order by id asc",
+        "Query": "select `user`.id, `user`.b as id, count(*), weight_string(`user`.id) from `user` order by `user`.id asc",
         "Table": "`user`"
       }
     ]
@@ -5373,8 +5362,8 @@ Gen4 error: aggregate functions take a single argument 'count(distinct user_id, 
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select id, count(*) from `user` where 1 != 1",
-        "Query": "select id, count(*) from `user`",
+        "FieldQuery": "select `user`.id, count(*) from `user` where 1 != 1",
+        "Query": "select `user`.id, count(*) from `user`",
         "Table": "`user`"
       }
     ]
@@ -5393,22 +5382,20 @@ Gen4 error: aggregate functions take a single argument 'count(distinct user_id, 
   "Instructions": {
     "OperatorType": "Aggregate",
     "Variant": "Ordered",
-    "Aggregates": "random(0) AS id",
-    "GroupBy": "(2|1)",
+    "GroupBy": "(0|1)",
     "ResultColumns": 1,
     "Inputs": [
       {
         "OperatorType": "Projection",
         "Expressions": [
-          "[COLUMN 2] * [COLUMN 3] as id",
-          "[COLUMN 1]",
-          "[COLUMN 0] as id"
+          "[COLUMN 0] as id",
+          "[COLUMN 1]"
         ],
         "Inputs": [
           {
             "OperatorType": "Join",
             "Variant": "Join",
-            "JoinColumnIndexes": "L:0,L:1,L:0,R:1",
+            "JoinColumnIndexes": "L:0,L:1",
             "TableName": "`user`_user_extra",
             "Inputs": [
               {
@@ -5418,9 +5405,9 @@ Gen4 error: aggregate functions take a single argument 'count(distinct user_id, 
                   "Name": "user",
                   "Sharded": true
                 },
-                "FieldQuery": "select `user`.id, weight_string(id) from `user` where 1 != 1 group by id, weight_string(id)",
+                "FieldQuery": "select `user`.id, weight_string(`user`.id) from `user` where 1 != 1 group by `user`.id, weight_string(`user`.id)",
                 "OrderBy": "(0|1) ASC",
-                "Query": "select `user`.id, weight_string(id) from `user` group by id, weight_string(id) order by id asc",
+                "Query": "select `user`.id, weight_string(`user`.id) from `user` group by `user`.id, weight_string(`user`.id) order by `user`.id asc",
                 "Table": "`user`"
               },
               {
@@ -5430,8 +5417,8 @@ Gen4 error: aggregate functions take a single argument 'count(distinct user_id, 
                   "Name": "user",
                   "Sharded": true
                 },
-                "FieldQuery": "select 1, count(*) from user_extra where 1 != 1 group by 1",
-                "Query": "select 1, count(*) from user_extra group by 1",
+                "FieldQuery": "select 1 from user_extra where 1 != 1",
+                "Query": "select 1 from user_extra",
                 "Table": "user_extra"
               }
             ]
@@ -5455,12 +5442,12 @@ Gen4 error: aggregate functions take a single argument 'count(distinct user_id, 
   "Instructions": {
     "OperatorType": "Aggregate",
     "Variant": "Scalar",
-    "Aggregates": "count(0) AS count(city)",
+    "Aggregates": "count(0) AS count(x.city)",
     "Inputs": [
       {
         "OperatorType": "Projection",
         "Expressions": [
-          "[COLUMN 2] as count(city)"
+          "[COLUMN 2] as count(x.city)"
         ],
         "Inputs": [
           {
@@ -5474,8 +5461,8 @@ Gen4 error: aggregate functions take a single argument 'count(distinct user_id, 
                   "Name": "user",
                   "Sharded": true
                 },
-                "FieldQuery": "select phone, id, city from `user` where 1 != 1",
-                "Query": "select phone, id, city from `user` where id \u003e 12 limit :__upper_limit",
+                "FieldQuery": "select `user`.phone, `user`.id, `user`.city from `user` where 1 != 1",
+                "Query": "select `user`.phone, `user`.id, `user`.city from `user` where `user`.id \u003e 12 limit :__upper_limit",
                 "Table": "`user`"
               }
             ]
@@ -5517,8 +5504,8 @@ Gen4 error: aggregate functions take a single argument 'count(distinct user_id, 
                   "Name": "user",
                   "Sharded": true
                 },
-                "FieldQuery": "select phone, id, city from `user` where 1 != 1",
-                "Query": "select phone, id, city from `user` where id \u003e 12 limit :__upper_limit",
+                "FieldQuery": "select `user`.phone, `user`.id, `user`.city from `user` where 1 != 1",
+                "Query": "select `user`.phone, `user`.id, `user`.city from `user` where `user`.id \u003e 12 limit :__upper_limit",
                 "Table": "`user`"
               }
             ]
@@ -5540,12 +5527,12 @@ Gen4 error: aggregate functions take a single argument 'count(distinct user_id, 
   "Instructions": {
     "OperatorType": "Aggregate",
     "Variant": "Scalar",
-    "Aggregates": "count(0) AS count(col)",
+    "Aggregates": "count(0) AS count(x.col)",
     "Inputs": [
       {
         "OperatorType": "Projection",
         "Expressions": [
-          "[COLUMN 0] as count(col)"
+          "[COLUMN 0] as count(x.col)"
         ],
         "Inputs": [
           {

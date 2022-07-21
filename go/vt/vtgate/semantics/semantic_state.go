@@ -101,6 +101,11 @@ type (
 		Collation collations.ID
 
 		Warning string
+
+		// The key of this map is an expression that was inserted into an ORDER BY, replacing a literal.
+		// ORDER BY 1 -> ORDER BY user.num
+		// The key will be the inserted expression, and the value will be the
+		LiteralRewrites map[sqlparser.Expr]sqlparser.Expr
 	}
 
 	columnName struct {

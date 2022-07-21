@@ -37,11 +37,11 @@ func TestSubqueryRewrite(t *testing.T) {
 		input:  "select (select 1) from t1",
 		output: "select :__sq1 from t1",
 	}, {
-		input:  "select 1 from t1 where exists (select 1)",
+		input:  "select 1 from t1 where exists (select id from music)",
 		output: "select 1 from t1 where :__sq_has_values1",
 	}, {
 		input:  "select id from t1 where id in (select 1)",
-		output: "select id from t1 where :__sq_has_values1 = 1 and id in ::__sq1",
+		output: "select t1.id from t1 where :__sq_has_values1 = 1 and t1.id in ::__sq1",
 	}, {
 		input:  "select id from t1 where id not in (select 1)",
 		output: "select id from t1 where :__sq_has_values1 = 0 or id not in ::__sq1",

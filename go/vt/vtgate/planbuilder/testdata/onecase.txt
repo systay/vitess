@@ -1,1 +1,70 @@
 # Add your test case here for debugging and run go test -run=One.
+# aggregation and non-aggregations column with group by and order by
+"select count(id), num+foo from user, music group by num+foo order by 1"
+{
+  "QueryType": "SELECT",
+  "Original": "select count(id), num from user group by 2 order by 1",
+  "Instructions": {
+    "OperatorType": "Sort",
+    "Variant": "Memory",
+    "OrderBy": "0 ASC",
+    "Inputs": [
+      {
+        "OperatorType": "Aggregate",
+        "Variant": "Ordered",
+        "Aggregates": "sum_count(0) AS count",
+        "GroupBy": "1",
+        "Inputs": [
+          {
+            "OperatorType": "Route",
+            "Variant": "Scatter",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select count(id), num, weight_string(num) from `user` where 1 != 1 group by 2, weight_string(num)",
+            "OrderBy": "(1|2) ASC",
+            "Query": "select count(id), num, weight_string(num) from `user` group by 2, weight_string(num) order by num asc",
+            "ResultColumns": 2,
+            "Table": "`user`"
+          }
+        ]
+      }
+    ]
+  }
+}
+{
+  "QueryType": "SELECT",
+  "Original": "select count(id), num from user group by 2 order by 1",
+  "Instructions": {
+    "OperatorType": "Sort",
+    "Variant": "Memory",
+    "OrderBy": "0 ASC",
+    "ResultColumns": 2,
+    "Inputs": [
+      {
+        "OperatorType": "Aggregate",
+        "Variant": "Ordered",
+        "Aggregates": "sum_count(0) AS count(id)",
+        "GroupBy": "(1|2)",
+        "Inputs": [
+          {
+            "OperatorType": "Route",
+            "Variant": "Scatter",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select count(id), num, weight_string(num) from `user` where 1 != 1 group by num, weight_string(num)",
+            "OrderBy": "(1|2) ASC",
+            "Query": "select count(id), num, weight_string(num) from `user` group by num, weight_string(num) order by num asc",
+            "Table": "`user`"
+          }
+        ]
+      }
+    ]
+  },
+  "TablesUsed": [
+    "user.user"
+  ]
+}

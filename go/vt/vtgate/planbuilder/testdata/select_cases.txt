@@ -537,8 +537,8 @@
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select user_id, col1, col2 from authoritative where 1 != 1",
-    "Query": "select user_id, col1, col2 from authoritative",
+    "FieldQuery": "select authoritative.user_id, authoritative.col1, authoritative.col2 from authoritative where 1 != 1",
+    "Query": "select authoritative.user_id, authoritative.col1, authoritative.col2 from authoritative",
     "Table": "authoritative"
   },
   "TablesUsed": [
@@ -714,25 +714,59 @@ Gen4 error: Unknown table 'a'
     "Table": "`user`, user_extra"
   }
 }
-{
-  "QueryType": "SELECT",
-  "Original": "select anon_col from user join user_extra on user.id = user_extra.user_id",
-  "Instructions": {
-    "OperatorType": "Route",
-    "Variant": "Scatter",
-    "Keyspace": {
-      "Name": "user",
-      "Sharded": true
-    },
-    "FieldQuery": "select anon_col from `user`, user_extra where 1 != 1",
-    "Query": "select anon_col from `user`, user_extra where `user`.id = user_extra.user_id",
-    "Table": "`user`, user_extra"
-  },
-  "TablesUsed": [
-    "user.user",
-    "user.user_extra"
-  ]
-}
+panicked: runtime error: invalid memory address or nil pointer dereference
+goroutine 1296 [running]:
+runtime/debug.Stack()
+	/Users/systay/.gvm/gos/go1.18.1/src/runtime/debug/stack.go:24 +0x65
+vitess.io/vitess/go/vt/vtgate/planbuilder.getPlanOutput.func1()
+	/Users/systay/dev/vitess/go/vt/vtgate/planbuilder/plan_test.go:766 +0x45
+panic({0x1b75fe0, 0x2b75df0})
+	/Users/systay/.gvm/gos/go1.18.1/src/runtime/panic.go:838 +0x207
+vitess.io/vitess/go/vt/vtgate/planbuilder.(*rewriter).rewriteDown(0xc0007e4720, 0x20de2c8?)
+	/Users/systay/dev/vitess/go/vt/vtgate/planbuilder/rewrite.go:56 +0x3e3
+vitess.io/vitess/go/vt/sqlparser.(*application).rewriteRefOfColName(0xc0007fcfc0, {0x20ddd78?, 0xc0007e42a0}, 0xc0002ae640, 0x1f8dbe0)
+	/Users/systay/dev/vitess/go/vt/sqlparser/ast_rewrite.go:1493 +0xcc
+vitess.io/vitess/go/vt/sqlparser.(*application).rewriteExpr(0xc0007e42d0?, {0x20ddd78?, 0xc0007e42a0?}, {0x20e2d70?, 0xc0002ae640?}, 0x2e965b8?)
+	/Users/systay/dev/vitess/go/vt/sqlparser/ast_rewrite.go:8542 +0xfc7
+vitess.io/vitess/go/vt/sqlparser.(*application).rewriteRefOfAliasedExpr(0xc0007fcfc0, {0x20e0dc0?, 0xc000291b18}, 0xc0007e42a0, 0xc000690e40)
+	/Users/systay/dev/vitess/go/vt/sqlparser/ast_rewrite.go:622 +0x10b
+vitess.io/vitess/go/vt/sqlparser.(*application).rewriteSelectExpr(0xc0007358b0?, {0x20e0dc0?, 0xc000291b18?}, {0x20e2890?, 0xc0007e42a0?}, 0x20df6a0?)
+	/Users/systay/dev/vitess/go/vt/sqlparser/ast_rewrite.go:8732 +0x88
+vitess.io/vitess/go/vt/sqlparser.(*application).rewriteSelectExprs(0xc0007fcfc0, {0x20df6a0?, 0xc000183980}, {0xc0007358b0, 0x1, 0x1}, 0x1f8e4f8)
+	/Users/systay/dev/vitess/go/vt/sqlparser/ast_rewrite.go:6212 +0x308
+vitess.io/vitess/go/vt/sqlparser.(*application).rewriteRefOfSelect(0xc0007fcfc0, {0x20df628?, 0xc000735b10}, 0xc000183980, 0xc000735b20)
+	/Users/systay/dev/vitess/go/vt/sqlparser/ast_rewrite.go:6138 +0x194
+vitess.io/vitess/go/vt/sqlparser.(*application).rewriteSQLNode(0xc00007cd80?, {0x20df628?, 0xc000735b10?}, {0x20df6a0?, 0xc000183980?}, 0x100cb76?)
+	/Users/systay/dev/vitess/go/vt/sqlparser/ast_rewrite.go:390 +0x1bd4
+vitess.io/vitess/go/vt/sqlparser.Rewrite({0x20df6a0?, 0xc000183980}, 0xc000735af0, 0xc000735b00)
+	/Users/systay/dev/vitess/go/vt/sqlparser/rewriter_api.go:50 +0x10f
+vitess.io/vitess/go/vt/vtgate/planbuilder.queryRewrite(...)
+	/Users/systay/dev/vitess/go/vt/vtgate/planbuilder/rewrite.go:39
+vitess.io/vitess/go/vt/vtgate/planbuilder.newBuildSelectPlan({0x20ecf80?, 0xc000183980?}, 0xc0002ae820, {0x20edd50, 0xc000593710}, 0x2)
+	/Users/systay/dev/vitess/go/vt/vtgate/planbuilder/gen4_planner.go:193 +0x27e
+vitess.io/vitess/go/vt/vtgate/planbuilder.gen4SelectStmtPlanner.func1(...)
+	/Users/systay/dev/vitess/go/vt/vtgate/planbuilder/gen4_planner.go:91
+vitess.io/vitess/go/vt/vtgate/planbuilder.gen4SelectStmtPlanner({0xc0008ec410?, 0x49?}, 0x2?, {0x20ecf80?, 0xc000183980?}, 0xc0002ae820?, {0x20edd50?, 0xc000593710?})
+	/Users/systay/dev/vitess/go/vt/vtgate/planbuilder/gen4_planner.go:94 +0x325
+vitess.io/vitess/go/vt/vtgate/planbuilder.gen4Planner.func1({0x20e4120?, 0xc000183980?}, 0xc0008ec410?, {0x20edd50, 0xc000593710})
+	/Users/systay/dev/vitess/go/vt/vtgate/planbuilder/gen4_planner.go:38 +0x192
+vitess.io/vitess/go/vt/vtgate/planbuilder.buildRoutePlan({0x20e4120, 0xc000183980}, 0x1f8eaf0?, {0x20edd50?, 0xc000593710?}, 0xc000376380)
+	/Users/systay/dev/vitess/go/vt/vtgate/planbuilder/builder.go:204 +0x9a
+vitess.io/vitess/go/vt/vtgate/planbuilder.createInstructionFor({0xc0008ec410, 0x49}, {0x20e4120?, 0xc000183980}, 0x50?, {0x20edd50, 0xc000593710}, 0x0?, 0x0?)
+	/Users/systay/dev/vitess/go/vt/vtgate/planbuilder/builder.go:214 +0x130
+vitess.io/vitess/go/vt/vtgate/planbuilder.BuildFromStmt({0xc0008ec410, 0x49}, {0x20e4120, 0xc000183980}, 0x0?, {0x20edd50?, 0xc000593710?}, 0xc0002ae780, 0x0?, 0x1)
+	/Users/systay/dev/vitess/go/vt/vtgate/planbuilder/builder.go:115 +0x65
+vitess.io/vitess/go/vt/vtgate/planbuilder.TestBuilder({0xc0008ec410, 0x49}, {0x20edd50, 0xc000593710}, {0x0, 0x0})
+	/Users/systay/dev/vitess/go/vt/vtgate/planbuilder/builder.go:110 +0x24a
+vitess.io/vitess/go/vt/vtgate/planbuilder.getPlanOutput({{0xc0002a1600, 0x19}, 0x2df, {0xc0008ec410, 0x49}, {0xc000248e00, 0x1fb}, {0xc000378240, 0x212}, {0xc000508240, ...}}, ...)
+	/Users/systay/dev/vitess/go/vt/vtgate/planbuilder/plan_test.go:769 +0x9f
+vitess.io/vitess/go/vt/vtgate/planbuilder.testFile.func1(0xc0006836c0?)
+	/Users/systay/dev/vitess/go/vt/vtgate/planbuilder/plan_test.go:720 +0x3a5
+testing.tRunner(0xc000683a00, 0xc0000c4030)
+	/Users/systay/.gvm/gos/go1.18.1/src/testing/testing.go:1439 +0x102
+created by testing.(*T).Run
+	/Users/systay/.gvm/gos/go1.18.1/src/testing/testing.go:1486 +0x35f
+
 
 # Cannot auto-resolve for cross-shard joins
 "select col from user join user_extra"
@@ -791,8 +825,8 @@ Gen4 error: Column 'col' in field list is ambiguous
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select id from `user` where 1 != 1",
-        "Query": "select id from `user`",
+        "FieldQuery": "select `user`.id from `user` where 1 != 1",
+        "Query": "select `user`.id from `user`",
         "Table": "`user`"
       },
       {
@@ -802,8 +836,8 @@ Gen4 error: Column 'col' in field list is ambiguous
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select user_id from user_extra where 1 != 1",
-        "Query": "select user_id from user_extra",
+        "FieldQuery": "select user_extra.user_id from user_extra where 1 != 1",
+        "Query": "select user_extra.user_id from user_extra",
         "Table": "user_extra"
       }
     ]
@@ -1641,7 +1675,7 @@ Gen4 plan same as above
       "Sharded": true
     },
     "FieldQuery": "select * from `user` where 1 != 1",
-    "Query": "select * from `user` where id = 0x04",
+    "Query": "select * from `user` where `user`.id = 0x04",
     "Table": "`user`",
     "Values": [
       "VARBINARY(\"\\x04\")"
@@ -1694,9 +1728,9 @@ Gen4 plan same as above
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select user_id, weight_string(user_id) from music where 1 != 1",
+        "FieldQuery": "select music.user_id, weight_string(music.user_id) from music where 1 != 1",
         "OrderBy": "(0|1) ASC",
-        "Query": "select user_id, weight_string(user_id) from music order by user_id asc limit :__upper_limit",
+        "Query": "select music.user_id, weight_string(music.user_id) from music order by music.user_id asc limit :__upper_limit",
         "ResultColumns": 1,
         "Table": "music"
       }
@@ -1739,7 +1773,7 @@ Gen4 plan same as above
       "Sharded": true
     },
     "FieldQuery": "select * from `user` where 1 != 1",
-    "Query": "select * from `user` where `name` = 'abc' and id = 4 limit 5",
+    "Query": "select * from `user` where `user`.`name` = 'abc' and `user`.id = 4 limit 5",
     "Table": "`user`",
     "Values": [
       "INT64(4)"
@@ -1783,7 +1817,7 @@ Gen4 plan same as above
       "Sharded": true
     },
     "FieldQuery": "select * from `user` where 1 != 1",
-    "Query": "select * from `user` where id = 4 and `name` = 'abc' limit 5",
+    "Query": "select * from `user` where `user`.id = 4 and `user`.`name` = 'abc' limit 5",
     "Table": "`user`",
     "Values": [
       "INT64(4)"
@@ -1827,7 +1861,7 @@ Gen4 plan same as above
       "Sharded": true
     },
     "FieldQuery": "select * from `user` where 1 != 1",
-    "Query": "select * from `user` where id = 4 and `name` = 'abc' limit 5",
+    "Query": "select * from `user` where `user`.id = 4 and `user`.`name` = 'abc' limit 5",
     "Table": "`user`",
     "Values": [
       "INT64(4)"
@@ -1871,7 +1905,7 @@ Gen4 plan same as above
       "Sharded": true
     },
     "FieldQuery": "select user0_.col as col0_ from `user` as user0_ where 1 != 1",
-    "Query": "select user0_.col as col0_ from `user` as user0_ where id = 1 order by user0_.col desc limit 2",
+    "Query": "select user0_.col as col0_ from `user` as user0_ where user0_.id = 1 order by user0_.col desc limit 2",
     "Table": "`user`",
     "Values": [
       "INT64(1)"
@@ -1915,7 +1949,7 @@ Gen4 plan same as above
       "Sharded": true
     },
     "FieldQuery": "select user0_.col as col0_ from `user` as user0_ where 1 != 1",
-    "Query": "select user0_.col as col0_ from `user` as user0_ where id = 1 order by col0_ desc limit 3",
+    "Query": "select user0_.col as col0_ from `user` as user0_ where user0_.id = 1 order by user0_.col0_ desc limit 3",
     "Table": "`user`",
     "Values": [
       "INT64(1)"
@@ -1959,7 +1993,7 @@ Gen4 plan same as above
       "Sharded": true
     },
     "FieldQuery": "select * from `user` where 1 != 1",
-    "Query": "select * from `user` where id = 1 and `name` = true limit 5",
+    "Query": "select * from `user` where `user`.id = 1 and `user`.`name` = true limit 5",
     "Table": "`user`",
     "Values": [
       "INT64(1)"
@@ -2003,7 +2037,7 @@ Gen4 plan same as above
       "Sharded": true
     },
     "FieldQuery": "select * from `user` where 1 != 1",
-    "Query": "select * from `user` where id = 1 and `name` limit 5",
+    "Query": "select * from `user` where `user`.id = 1 and `user`.`name` limit 5",
     "Table": "`user`",
     "Values": [
       "INT64(1)"
@@ -2047,7 +2081,7 @@ Gen4 plan same as above
       "Sharded": true
     },
     "FieldQuery": "select * from `user` where 1 != 1",
-    "Query": "select * from `user` where id = 5 and `name` = true limit 5",
+    "Query": "select * from `user` where `user`.id = 5 and `user`.`name` = true limit 5",
     "Table": "`user`",
     "Values": [
       "INT64(5)"
@@ -2114,8 +2148,8 @@ Gen4 plan same as above
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select col from `user` where 1 != 1",
-        "Query": "select col from `user`",
+        "FieldQuery": "select `user`.col from `user` where 1 != 1",
+        "Query": "select `user`.col from `user`",
         "Table": "`user`"
       },
       {
@@ -2125,8 +2159,8 @@ Gen4 plan same as above
           "Name": "main",
           "Sharded": false
         },
-        "FieldQuery": "select a, :__sq1 from unsharded where 1 != 1",
-        "Query": "select a, :__sq1 from unsharded",
+        "FieldQuery": "select unsharded.a, :__sq1 from unsharded where 1 != 1",
+        "Query": "select unsharded.a, :__sq1 from unsharded",
         "Table": "unsharded"
       }
     ]
@@ -2192,8 +2226,8 @@ Gen4 plan same as above
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select col from `user` where 1 != 1",
-        "Query": "select col from `user`",
+        "FieldQuery": "select `user`.col from `user` where 1 != 1",
+        "Query": "select `user`.col from `user`",
         "Table": "`user`"
       },
       {
@@ -2203,8 +2237,8 @@ Gen4 plan same as above
           "Name": "main",
           "Sharded": false
         },
-        "FieldQuery": "select a, 1 + :__sq1 from unsharded where 1 != 1",
-        "Query": "select a, 1 + :__sq1 from unsharded",
+        "FieldQuery": "select unsharded.a, 1 + :__sq1 from unsharded where 1 != 1",
+        "Query": "select unsharded.a, 1 + :__sq1 from unsharded",
         "Table": "unsharded"
       }
     ]
@@ -2350,7 +2384,7 @@ Gen4 error: symbol t.col not found
       "Sharded": true
     },
     "FieldQuery": "select * from music where 1 != 1 union select * from `user` where 1 != 1",
-    "Query": "select * from music where user_id = 1 union select * from `user` where id = 1",
+    "Query": "select * from music where music.user_id = 1 union select * from `user` where `user`.id = 1",
     "Table": "music",
     "Values": [
       "INT64(1)"
@@ -2395,7 +2429,7 @@ Gen4 error: symbol t.col not found
       "Sharded": true
     },
     "FieldQuery": "select *, :__lastInsertId as `last_insert_id()` from music where 1 != 1 union select * from `user` where 1 != 1",
-    "Query": "select *, :__lastInsertId as `last_insert_id()` from music where user_id = 1 union select * from `user` where id = 1",
+    "Query": "select *, :__lastInsertId as `last_insert_id()` from music where music.user_id = 1 union select * from `user` where `user`.id = 1",
     "Table": "music",
     "Values": [
       "INT64(1)"
@@ -2804,7 +2838,7 @@ Gen4 error: symbol t.col not found
       "Sharded": true
     },
     "FieldQuery": "select * from music where 1 != 1",
-    "Query": "select * from music where user_id = 1",
+    "Query": "select * from music where music.user_id = 1",
     "Table": "music",
     "Values": [
       "INT64(1)"
@@ -2965,7 +2999,7 @@ Gen4 error: symbol t.col not found
           "Sharded": true
         },
         "FieldQuery": "select * from music where 1 != 1",
-        "Query": "select * from music where user_id = 1 limit 2",
+        "Query": "select * from music where music.user_id = 1 limit 2",
         "Table": "music",
         "Values": [
           "INT64(1)"
@@ -2980,7 +3014,7 @@ Gen4 error: symbol t.col not found
           "Sharded": true
         },
         "FieldQuery": "select count(*) from music where 1 != 1",
-        "Query": "select count(*) from music where user_id = 1",
+        "Query": "select count(*) from music where music.user_id = 1",
         "Table": "music",
         "Values": [
           "INT64(1)"
@@ -3059,9 +3093,9 @@ Gen4 error: symbol t.col not found
               "Name": "user",
               "Sharded": true
             },
-            "FieldQuery": "select user_id, count(id), weight_string(user_id) from music where 1 != 1 group by user_id",
+            "FieldQuery": "select music.user_id, count(music.id), weight_string(music.user_id) from music where 1 != 1 group by music.user_id",
             "OrderBy": "(0|2) ASC",
-            "Query": "select user_id, count(id), weight_string(user_id) from music group by user_id having count(user_id) = 1 order by user_id asc limit :__upper_limit",
+            "Query": "select music.user_id, count(music.id), weight_string(music.user_id) from music group by music.user_id having count(music.user_id) = 1 order by music.user_id asc limit :__upper_limit",
             "ResultColumns": 2,
             "Table": "music"
           }
@@ -3079,8 +3113,8 @@ Gen4 error: symbol t.col not found
               "Name": "user",
               "Sharded": true
             },
-            "FieldQuery": "select count(*) from (select user_id, count(id) from music where 1 != 1 group by user_id) as t where 1 != 1",
-            "Query": "select count(*) from (select user_id, count(id) from music group by user_id having count(user_id) = 1) as t",
+            "FieldQuery": "select count(*) from (select music.user_id, count(music.id) from music where 1 != 1 group by music.user_id) as t where 1 != 1",
+            "Query": "select count(*) from (select music.user_id, count(music.id) from music group by music.user_id having count(music.user_id) = 1) as t",
             "Table": "music"
           }
         ]
@@ -3425,8 +3459,8 @@ Gen4 plan same as above
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select 42, id from dual, `user` where 1 != 1",
-    "Query": "select 42, id from dual, `user`",
+    "FieldQuery": "select 42, `user`.id from dual, `user` where 1 != 1",
+    "Query": "select 42, `user`.id from dual, `user`",
     "Table": "`user`, dual"
   },
   "TablesUsed": [
@@ -3574,71 +3608,57 @@ Gen4 plan same as above
     ]
   }
 }
-{
-  "QueryType": "SELECT",
-  "Original": "select (select col from user limit 1) as a from user join user_extra order by a",
-  "Instructions": {
-    "OperatorType": "Subquery",
-    "Variant": "PulloutValue",
-    "PulloutVars": [
-      "__sq1"
-    ],
-    "Inputs": [
-      {
-        "OperatorType": "Limit",
-        "Count": "INT64(1)",
-        "Inputs": [
-          {
-            "OperatorType": "Route",
-            "Variant": "Scatter",
-            "Keyspace": {
-              "Name": "user",
-              "Sharded": true
-            },
-            "FieldQuery": "select col from `user` where 1 != 1",
-            "Query": "select col from `user` limit :__upper_limit",
-            "Table": "`user`"
-          }
-        ]
-      },
-      {
-        "OperatorType": "Join",
-        "Variant": "Join",
-        "JoinColumnIndexes": "L:0",
-        "TableName": "`user`_user_extra",
-        "Inputs": [
-          {
-            "OperatorType": "Route",
-            "Variant": "Scatter",
-            "Keyspace": {
-              "Name": "user",
-              "Sharded": true
-            },
-            "FieldQuery": "select :__sq1 as a, weight_string(:__sq1) from `user` where 1 != 1",
-            "OrderBy": "(0|1) ASC",
-            "Query": "select :__sq1 as a, weight_string(:__sq1) from `user` order by a asc",
-            "Table": "`user`"
-          },
-          {
-            "OperatorType": "Route",
-            "Variant": "Scatter",
-            "Keyspace": {
-              "Name": "user",
-              "Sharded": true
-            },
-            "FieldQuery": "select 1 from user_extra where 1 != 1",
-            "Query": "select 1 from user_extra",
-            "Table": "user_extra"
-          }
-        ]
-      }
-    ]
-  },
-  "TablesUsed": [
-    "user.user",
-    "user.user_extra"
-  ]
-}
+panicked: runtime error: invalid memory address or nil pointer dereference
+goroutine 1296 [running]:
+runtime/debug.Stack()
+	/Users/systay/.gvm/gos/go1.18.1/src/runtime/debug/stack.go:24 +0x65
+vitess.io/vitess/go/vt/vtgate/planbuilder.getPlanOutput.func1()
+	/Users/systay/dev/vitess/go/vt/vtgate/planbuilder/plan_test.go:766 +0x45
+panic({0x1b75fe0, 0x2b75df0})
+	/Users/systay/.gvm/gos/go1.18.1/src/runtime/panic.go:838 +0x207
+vitess.io/vitess/go/vt/vtgate/planbuilder.(*rewriter).rewriteDown(0xc000696bd0, 0x20ddd78?)
+	/Users/systay/dev/vitess/go/vt/vtgate/planbuilder/rewrite.go:56 +0x3e3
+vitess.io/vitess/go/vt/sqlparser.(*application).rewriteRefOfColName(0xc000692c40, {0x20df1f0?, 0xc000482750}, 0xc00003d810, 0x1f8e310)
+	/Users/systay/dev/vitess/go/vt/sqlparser/ast_rewrite.go:1493 +0xcc
+vitess.io/vitess/go/vt/sqlparser.(*application).rewriteExpr(0x0?, {0x20df1f0?, 0xc000482750?}, {0x20e2d70?, 0xc00003d810?}, 0x1b4afe0?)
+	/Users/systay/dev/vitess/go/vt/sqlparser/ast_rewrite.go:8542 +0xfc7
+vitess.io/vitess/go/vt/sqlparser.(*application).rewriteRefOfOrder(0xc000692c40, {0x20e0d20?, 0xc000482a68}, 0xc000482750, 0xc0002c10c0)
+	/Users/systay/dev/vitess/go/vt/sqlparser/ast_rewrite.go:5068 +0x10b
+vitess.io/vitess/go/vt/sqlparser.(*application).rewriteOrderBy(0xc000692c40, {0x20df6a0?, 0xc000183d40}, {0xc000124c00, 0x1, 0x1}, 0x1f8e528)
+	/Users/systay/dev/vitess/go/vt/sqlparser/ast_rewrite.go:5102 +0x265
+vitess.io/vitess/go/vt/sqlparser.(*application).rewriteRefOfSelect(0xc000692c40, {0x20df628?, 0xc0006cc4f0}, 0xc000183d40, 0xc0006cc500)
+	/Users/systay/dev/vitess/go/vt/sqlparser/ast_rewrite.go:6168 +0x2c8
+vitess.io/vitess/go/vt/sqlparser.(*application).rewriteSQLNode(0xc00007c900?, {0x20df628?, 0xc0006cc4f0?}, {0x20df6a0?, 0xc000183d40?}, 0x100cb76?)
+	/Users/systay/dev/vitess/go/vt/sqlparser/ast_rewrite.go:390 +0x1bd4
+vitess.io/vitess/go/vt/sqlparser.Rewrite({0x20df6a0?, 0xc000183d40}, 0xc0006cc4d0, 0xc0006cc4e0)
+	/Users/systay/dev/vitess/go/vt/sqlparser/rewriter_api.go:50 +0x10f
+vitess.io/vitess/go/vt/vtgate/planbuilder.queryRewrite(...)
+	/Users/systay/dev/vitess/go/vt/vtgate/planbuilder/rewrite.go:39
+vitess.io/vitess/go/vt/vtgate/planbuilder.newBuildSelectPlan({0x20ecf80?, 0xc000183d40?}, 0xc00003d900, {0x20edd50, 0xc000593710}, 0x2)
+	/Users/systay/dev/vitess/go/vt/vtgate/planbuilder/gen4_planner.go:193 +0x27e
+vitess.io/vitess/go/vt/vtgate/planbuilder.gen4SelectStmtPlanner.func1(...)
+	/Users/systay/dev/vitess/go/vt/vtgate/planbuilder/gen4_planner.go:91
+vitess.io/vitess/go/vt/vtgate/planbuilder.gen4SelectStmtPlanner({0xc0008ec690?, 0x4f?}, 0x2?, {0x20ecf80?, 0xc000183d40?}, 0xc00003d900?, {0x20edd50?, 0xc000593710?})
+	/Users/systay/dev/vitess/go/vt/vtgate/planbuilder/gen4_planner.go:94 +0x325
+vitess.io/vitess/go/vt/vtgate/planbuilder.gen4Planner.func1({0x20e4120?, 0xc000183d40?}, 0xc0008ec690?, {0x20edd50, 0xc000593710})
+	/Users/systay/dev/vitess/go/vt/vtgate/planbuilder/gen4_planner.go:38 +0x192
+vitess.io/vitess/go/vt/vtgate/planbuilder.buildRoutePlan({0x20e4120, 0xc000183d40}, 0x1f8eaf0?, {0x20edd50?, 0xc000593710?}, 0xc0006b8680)
+	/Users/systay/dev/vitess/go/vt/vtgate/planbuilder/builder.go:204 +0x9a
+vitess.io/vitess/go/vt/vtgate/planbuilder.createInstructionFor({0xc0008ec690, 0x4f}, {0x20e4120?, 0xc000183d40}, 0x50?, {0x20edd50, 0xc000593710}, 0x0?, 0x0?)
+	/Users/systay/dev/vitess/go/vt/vtgate/planbuilder/builder.go:214 +0x130
+vitess.io/vitess/go/vt/vtgate/planbuilder.BuildFromStmt({0xc0008ec690, 0x4f}, {0x20e4120, 0xc000183d40}, 0x0?, {0x20edd50?, 0xc000593710?}, 0xc00003d860, 0x0?, 0x1)
+	/Users/systay/dev/vitess/go/vt/vtgate/planbuilder/builder.go:115 +0x65
+vitess.io/vitess/go/vt/vtgate/planbuilder.TestBuilder({0xc0008ec690, 0x4f}, {0x20edd50, 0xc000593710}, {0x0, 0x0})
+	/Users/systay/dev/vitess/go/vt/vtgate/planbuilder/builder.go:110 +0x24a
+vitess.io/vitess/go/vt/vtgate/planbuilder.getPlanOutput({{0xc0002a1600, 0x19}, 0xe39, {0xc0008ec690, 0x4f}, {0xc000542000, 0x6f7}, {0xc000542700, 0x6fb}, {0x0, ...}}, ...)
+	/Users/systay/dev/vitess/go/vt/vtgate/planbuilder/plan_test.go:769 +0x9f
+vitess.io/vitess/go/vt/vtgate/planbuilder.testFile.func1(0xc0006836c0?)
+	/Users/systay/dev/vitess/go/vt/vtgate/planbuilder/plan_test.go:720 +0x3a5
+testing.tRunner(0xc000683a00, 0xc0000c4030)
+	/Users/systay/.gvm/gos/go1.18.1/src/testing/testing.go:1439 +0x102
+created by testing.(*T).Run
+	/Users/systay/.gvm/gos/go1.18.1/src/testing/testing.go:1486 +0x35f
+
 
 "select t.a from (select (select col from user limit 1) as a from user join user_extra) t"
 {
@@ -3737,8 +3757,8 @@ Gen4 plan same as above
                   "Name": "user",
                   "Sharded": true
                 },
-                "FieldQuery": "select col from `user` where 1 != 1",
-                "Query": "select col from `user` limit :__upper_limit",
+                "FieldQuery": "select `user`.col from `user` where 1 != 1",
+                "Query": "select `user`.col from `user` limit :__upper_limit",
                 "Table": "`user`"
               }
             ]
@@ -3892,8 +3912,8 @@ Gen4 plan same as above
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select :user_id * user_id as amount from user_extra where 1 != 1",
-        "Query": "select :user_id * user_id as amount from user_extra",
+        "FieldQuery": "select :user_id * user_extra.user_id as amount from user_extra where 1 != 1",
+        "Query": "select :user_id * user_extra.user_id as amount from user_extra",
         "Table": "user_extra"
       }
     ]
@@ -3925,8 +3945,8 @@ Gen4 plan same as above
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select `user`.id, col from `user` where 1 != 1",
-        "Query": "select `user`.id, col from `user`",
+        "FieldQuery": "select `user`.id, `user`.col from `user` where 1 != 1",
+        "Query": "select `user`.id, `user`.col from `user`",
         "Table": "`user`"
       },
       {
@@ -3973,9 +3993,9 @@ Gen4 plan same as above
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select `user`.id, col from `user` where 1 != 1",
+        "FieldQuery": "select `user`.id, `user`.col from `user` where 1 != 1",
         "OrderBy": "1 ASC",
-        "Query": "select `user`.id, col from `user` order by col asc",
+        "Query": "select `user`.id, `user`.col from `user` order by `user`.col asc",
         "Table": "`user`"
       },
       {
@@ -4174,8 +4194,8 @@ Gen4 error: exists sub-queries are only supported with AND clause
               "Name": "user",
               "Sharded": true
             },
-            "FieldQuery": "select id as found from `user` where 1 != 1",
-            "Query": "select id as found from `user`",
+            "FieldQuery": "select `user`.id as found from `user` where 1 != 1",
+            "Query": "select `user`.id as found from `user`",
             "Table": "`user`"
           },
           {
@@ -4185,8 +4205,8 @@ Gen4 error: exists sub-queries are only supported with AND clause
               "Name": "main",
               "Sharded": false
             },
-            "FieldQuery": "select id from unsharded where 1 != 1",
-            "Query": "select id from unsharded",
+            "FieldQuery": "select unsharded.id from unsharded where 1 != 1",
+            "Query": "select unsharded.id from unsharded",
             "Table": "unsharded"
           }
         ]
@@ -4392,8 +4412,8 @@ Gen4 plan same as above
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select jcol, json_storage_size(jcol), json_storage_free(jcol), json_pretty(jcol) from `user` where 1 != 1",
-    "Query": "select jcol, json_storage_size(jcol), json_storage_free(jcol), json_pretty(jcol) from `user`",
+    "FieldQuery": "select `user`.jcol, json_storage_size(`user`.jcol), json_storage_free(`user`.jcol), json_pretty(`user`.jcol) from `user` where 1 != 1",
+    "Query": "select `user`.jcol, json_storage_size(`user`.jcol), json_storage_free(`user`.jcol), json_pretty(`user`.jcol) from `user`",
     "Table": "`user`"
   },
   "TablesUsed": [
@@ -4543,9 +4563,9 @@ Gen4 plan same as above
               "Name": "user",
               "Sharded": true
             },
-            "FieldQuery": "select id, weight_string(id) from `user` where 1 != 1",
+            "FieldQuery": "select `user`.id, weight_string(`user`.id) from `user` where 1 != 1",
             "OrderBy": "(0|1) ASC",
-            "Query": "select id, weight_string(id) from `user` order by id asc limit :__upper_limit",
+            "Query": "select `user`.id, weight_string(`user`.id) from `user` order by `user`.id asc limit :__upper_limit",
             "ResultColumns": 1,
             "Table": "`user`"
           }
@@ -4623,7 +4643,7 @@ Gen4 plan same as above
       "Sharded": true
     },
     "FieldQuery": "select exists (select 1 from dual where 1 != 1) from `user` where 1 != 1",
-    "Query": "select exists (select 1 from dual limit 1) from `user` where id = 5",
+    "Query": "select exists (select 1 from dual limit 1) from `user` where `user`.id = 5",
     "Table": "`user`",
     "Values": [
       "INT64(5)"
@@ -4735,8 +4755,8 @@ Gen4 plan same as above
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select a -\u003e '$[4]', a -\u003e\u003e '$[3]' from `user` where 1 != 1",
-    "Query": "select a -\u003e '$[4]', a -\u003e\u003e '$[3]' from `user`",
+    "FieldQuery": "select `user`.a -\u003e '$[4]', `user`.a -\u003e\u003e '$[3]' from `user` where 1 != 1",
+    "Query": "select `user`.a -\u003e '$[4]', `user`.a -\u003e\u003e '$[3]' from `user`",
     "Table": "`user`"
   },
   "TablesUsed": [
@@ -5143,8 +5163,8 @@ Gen4 plan same as above
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select insert(tcol1, id, 3, tcol2) from `user` where 1 != 1",
-    "Query": "select insert(tcol1, id, 3, tcol2) from `user`",
+    "FieldQuery": "select insert(`user`.tcol1, `user`.id, 3, `user`.tcol2) from `user` where 1 != 1",
+    "Query": "select insert(`user`.tcol1, `user`.id, 3, `user`.tcol2) from `user`",
     "Table": "`user`"
   },
   "TablesUsed": [

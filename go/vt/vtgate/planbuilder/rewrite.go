@@ -17,6 +17,7 @@ limitations under the License.
 package planbuilder
 
 import (
+	"fmt"
 	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
 	"vitess.io/vitess/go/vt/sqlparser"
 	"vitess.io/vitess/go/vt/vterrors"
@@ -44,6 +45,31 @@ func (r *rewriter) rewriteDown(cursor *sqlparser.Cursor) bool {
 	switch node := cursor.Node().(type) {
 	case *sqlparser.Select:
 		rewriteHavingClause(node)
+	case *sqlparser.ColName:
+		if !node.Qualifier.IsEmpty() {
+			break
+		}
+		orig, found := r.semTable.LiteralRewrites[node]
+		if found {
+			node = orig
+		}
+		ts := r.semTable.Direct[node]
+		if ts.NumberOfTables() == 0 {
+
+			ts := r.semTable.Recursive[node]
+			fmt.Println(ts)
+			break
+		}
+		tableInfo, err := r.semTable.TableInfoFor(ts)
+		if err != nil {
+			r.err = err
+		}
+		name, err := tableInfo.Name()
+		if err != nil {
+			r.err = err
+			break
+		}
+		node.Qualifier = name
 	case *sqlparser.ComparisonExpr:
 		err := rewriteInSubquery(cursor, r, node)
 		if err != nil {

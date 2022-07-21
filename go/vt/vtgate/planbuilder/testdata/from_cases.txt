@@ -25,8 +25,8 @@
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select col from `user` where 1 != 1",
-    "Query": "select col from `user`",
+    "FieldQuery": "select `user`.col from `user` where 1 != 1",
+    "Query": "select `user`.col from `user`",
     "Table": "`user`"
   },
   "TablesUsed": [
@@ -2230,8 +2230,8 @@ Gen4 plan same as above
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select ref.col from ref, (select aa from `user` where 1 != 1) as `user` where 1 != 1",
-    "Query": "select ref.col from ref, (select aa from `user` where `user`.id = 1) as `user`",
+    "FieldQuery": "select ref.col from ref, (select `user`.aa from `user` where 1 != 1) as `user` where 1 != 1",
+    "Query": "select ref.col from ref, (select `user`.aa from `user` where `user`.id = 1) as `user`",
     "Table": "`user`, ref",
     "Values": [
       "INT64(1)"
@@ -2350,8 +2350,8 @@ Gen4 plan same as above
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select id from (select id, col from `user` where 1 != 1) as t where 1 != 1",
-    "Query": "select id from (select id, col from `user` where id = 5) as t",
+    "FieldQuery": "select t.id from (select `user`.id, `user`.col from `user` where 1 != 1) as t where 1 != 1",
+    "Query": "select t.id from (select `user`.id, `user`.col from `user` where `user`.id = 5) as t",
     "Table": "`user`",
     "Values": [
       "INT64(5)"
@@ -2394,8 +2394,8 @@ Gen4 plan same as above
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select t.id from (select id from `user` where 1 != 1) as t, user_extra where 1 != 1",
-    "Query": "select t.id from (select id from `user` where id = 5) as t, user_extra where t.id = user_extra.user_id",
+    "FieldQuery": "select t.id from (select `user`.id from `user` where 1 != 1) as t, user_extra where 1 != 1",
+    "Query": "select t.id from (select `user`.id from `user` where `user`.id = 5) as t, user_extra where t.id = user_extra.user_id",
     "Table": "`user`, user_extra",
     "Values": [
       "INT64(5)"
@@ -2485,8 +2485,8 @@ Gen4 error: Duplicate column name 'id'
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select t.id from user_extra, (select id from `user` where 1 != 1) as t where 1 != 1",
-    "Query": "select t.id from user_extra, (select id from `user` where id = 5) as t where t.id = user_extra.user_id",
+    "FieldQuery": "select t.id from user_extra, (select `user`.id from `user` where 1 != 1) as t where 1 != 1",
+    "Query": "select t.id from user_extra, (select `user`.id from `user` where `user`.id = 5) as t where t.id = user_extra.user_id",
     "Table": "`user`, user_extra",
     "Values": [
       "INT64(5)"
@@ -2561,8 +2561,8 @@ Gen4 error: Duplicate column name 'id'
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select t.id from (select id from `user` where 1 != 1) as t where 1 != 1",
-        "Query": "select t.id from (select id from `user` where id = 5) as t",
+        "FieldQuery": "select t.id from (select `user`.id from `user` where 1 != 1) as t where 1 != 1",
+        "Query": "select t.id from (select `user`.id from `user` where `user`.id = 5) as t",
         "Table": "`user`",
         "Values": [
           "INT64(5)"
@@ -2619,8 +2619,8 @@ Gen4 error: Duplicate column name 'id'
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select id from (select id, col from `user` as route1 where 1 != 1) as t where 1 != 1",
-    "Query": "select id from (select id, col from `user` as route1 where id = 5) as t",
+    "FieldQuery": "select t.id from (select route1.id, route1.col from `user` as route1 where 1 != 1) as t where 1 != 1",
+    "Query": "select t.id from (select route1.id, route1.col from `user` as route1 where route1.id = 5) as t",
     "Table": "`user`",
     "Values": [
       "INT64(5)"
@@ -2682,8 +2682,8 @@ Gen4 error: symbol t.col not found
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select id from (select id, col from `user` as route1 where 1 != 1) as t where 1 != 1",
-    "Query": "select id from (select id, col from `user` as route1 where id = 5) as t",
+    "FieldQuery": "select t.id from (select route1.id, route1.col from `user` as route1 where 1 != 1) as t where 1 != 1",
+    "Query": "select t.id from (select route1.id, route1.col from `user` as route1 where route1.id = 5) as t",
     "Table": "`user`",
     "Values": [
       "INT64(5)"
@@ -2741,8 +2741,8 @@ Gen4 error: symbol id not found
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select t.id from (select id, textcol1 as baz from `user` as route1 where 1 != 1) as t, (select id, textcol1 + textcol1 as baz from `user` where 1 != 1) as s where 1 != 1",
-    "Query": "select t.id from (select id, textcol1 as baz from `user` as route1 where textcol1 = '3') as t, (select id, textcol1 + textcol1 as baz from `user` where textcol1 + textcol1 = '3') as s where t.id = s.id",
+    "FieldQuery": "select t.id from (select route1.id, route1.textcol1 as baz from `user` as route1 where 1 != 1) as t, (select `user`.id, `user`.textcol1 + `user`.textcol1 as baz from `user` where 1 != 1) as s where 1 != 1",
+    "Query": "select t.id from (select route1.id, route1.textcol1 as baz from `user` as route1 where route1.textcol1 = '3') as t, (select `user`.id, `user`.textcol1 + `user`.textcol1 as baz from `user` where `user`.textcol1 + `user`.textcol1 = '3') as s where t.id = s.id",
     "Table": "`user`"
   },
   "TablesUsed": [
@@ -2777,8 +2777,8 @@ Gen4 error: symbol id not found
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select bar from (select foo + 4 as bar from (select colA + colB as foo from `user` where 1 != 1) as u where 1 != 1) as t where 1 != 1",
-    "Query": "select bar from (select foo + 4 as bar from (select colA + colB as foo from `user` where colA + colB + 4 = 5) as u) as t",
+    "FieldQuery": "select t.bar from (select u.foo + 4 as bar from (select `user`.colA + `user`.colB as foo from `user` where 1 != 1) as u where 1 != 1) as t where 1 != 1",
+    "Query": "select t.bar from (select u.foo + 4 as bar from (select `user`.colA + `user`.colB as foo from `user` where `user`.colA + `user`.colB + 4 = 5) as u) as t",
     "Table": "`user`"
   },
   "TablesUsed": [
@@ -2817,8 +2817,8 @@ Gen4 error: symbol id not found
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select id from (select id from (select id from `user` where 1 != 1) as u where 1 != 1) as t where 1 != 1",
-    "Query": "select id from (select id from (select id from `user` where id = 5) as u) as t",
+    "FieldQuery": "select t.id from (select u.id from (select `user`.id from `user` where 1 != 1) as u where 1 != 1) as t where 1 != 1",
+    "Query": "select t.id from (select u.id from (select `user`.id from `user` where `user`.id = 5) as u) as t",
     "Table": "`user`",
     "Values": [
       "INT64(5)"
@@ -2861,8 +2861,8 @@ Gen4 error: symbol id not found
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select u.col, e.col from (select col from `user` where 1 != 1) as u, (select col from user_extra where 1 != 1) as e where 1 != 1",
-    "Query": "select u.col, e.col from (select col from `user` where id = 5) as u, (select col from user_extra where user_id = 5) as e",
+    "FieldQuery": "select u.col, e.col from (select `user`.col from `user` where 1 != 1) as u, (select user_extra.col from user_extra where 1 != 1) as e where 1 != 1",
+    "Query": "select u.col, e.col from (select `user`.col from `user` where `user`.id = 5) as u, (select user_extra.col from user_extra where user_extra.user_id = 5) as e",
     "Table": "`user`, user_extra",
     "Values": [
       "INT64(5)"
@@ -3522,8 +3522,8 @@ Gen4 error: symbol id not found
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select col from `user` where 1 != 1",
-        "Query": "select col from `user`",
+        "FieldQuery": "select `user`.col from `user` where 1 != 1",
+        "Query": "select `user`.col from `user`",
         "Table": "`user`"
       },
       {
@@ -3601,8 +3601,8 @@ Gen4 error: symbol id not found
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select col from `user` where 1 != 1",
-        "Query": "select col from `user`",
+        "FieldQuery": "select `user`.col from `user` where 1 != 1",
+        "Query": "select `user`.col from `user`",
         "Table": "`user`"
       },
       {
@@ -3681,8 +3681,8 @@ Gen4 error: symbol id not found
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select col from `user` where 1 != 1",
-        "Query": "select col from `user`",
+        "FieldQuery": "select `user`.col from `user` where 1 != 1",
+        "Query": "select `user`.col from `user`",
         "Table": "`user`"
       },
       {
@@ -3780,8 +3780,8 @@ Gen4 error: symbol id not found
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select col from `user` where 1 != 1",
-        "Query": "select col from `user`",
+        "FieldQuery": "select `user`.col from `user` where 1 != 1",
+        "Query": "select `user`.col from `user`",
         "Table": "`user`"
       },
       {
@@ -3843,8 +3843,8 @@ Gen4 error: symbol id not found
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select col from `user` where 1 != 1",
-        "Query": "select col from `user`",
+        "FieldQuery": "select `user`.col from `user` where 1 != 1",
+        "Query": "select `user`.col from `user`",
         "Table": "`user`"
       },
       {
@@ -3981,8 +3981,8 @@ Gen4 plan same as above
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select col from `user` where 1 != 1",
-        "Query": "select col from `user`",
+        "FieldQuery": "select `user`.col from `user` where 1 != 1",
+        "Query": "select `user`.col from `user`",
         "Table": "`user`"
       },
       {
@@ -5006,8 +5006,8 @@ Gen4 plan same as above
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select u.a from (select id as b, `name` from `user` where 1 != 1) as u(a, n) where 1 != 1",
-    "Query": "select u.a from (select id as b, `name` from `user` where `name` = 1) as u(a, n)",
+    "FieldQuery": "select u.a from (select `user`.id as b, `user`.`name` from `user` where 1 != 1) as u(a, n) where 1 != 1",
+    "Query": "select u.a from (select `user`.id as b, `user`.`name` from `user` where `user`.`name` = 1) as u(a, n)",
     "Table": "`user`",
     "Values": [
       "INT64(1)"
@@ -5032,8 +5032,8 @@ Gen4 plan same as above
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select u.a from (select id as b, `name` from `user` where 1 != 1) as u(a, n) where 1 != 1",
-    "Query": "select u.a from (select id as b, `name` from `user` where b = 1 and `name` = 1) as u(a, n)",
+    "FieldQuery": "select u.a from (select `user`.id as b, `user`.`name` from `user` where 1 != 1) as u(a, n) where 1 != 1",
+    "Query": "select u.a from (select `user`.id as b, `user`.`name` from `user` where `user`.b = 1 and `user`.`name` = 1) as u(a, n)",
     "Table": "`user`",
     "Values": [
       "INT64(1)"
@@ -5186,8 +5186,8 @@ Gen4 plan same as above
               "Name": "user",
               "Sharded": true
             },
-            "FieldQuery": "select user_id from user_extra where 1 != 1",
-            "Query": "select user_id from user_extra limit :__upper_limit",
+            "FieldQuery": "select user_extra.user_id from user_extra where 1 != 1",
+            "Query": "select user_extra.user_id from user_extra limit :__upper_limit",
             "Table": "user_extra"
           }
         ]
@@ -5207,8 +5207,8 @@ Gen4 plan same as above
               "Name": "user",
               "Sharded": true
             },
-            "FieldQuery": "select id from user_extra where 1 != 1",
-            "Query": "select id from user_extra",
+            "FieldQuery": "select user_extra.id from user_extra where 1 != 1",
+            "Query": "select user_extra.id from user_extra",
             "Table": "user_extra"
           },
           {
@@ -5218,8 +5218,8 @@ Gen4 plan same as above
               "Name": "user",
               "Sharded": true
             },
-            "FieldQuery": "select id from `user` where 1 != 1",
-            "Query": "select id from `user` where :__sq_has_values1 = 1 and id in ::__vals and col = :__sq2",
+            "FieldQuery": "select `user`.id from `user` where 1 != 1",
+            "Query": "select `user`.id from `user` where :__sq_has_values1 = 1 and `user`.id in ::__vals and `user`.col = :__sq2",
             "Table": "`user`",
             "Values": [
               ":__sq1"
@@ -5573,8 +5573,8 @@ Gen4 plan same as above
       "Name": "user",
       "Sharded": true
     },
-    "FieldQuery": "select id2 from (select id from `user` where 1 != 1) as x(id2) where 1 != 1",
-    "Query": "select id2 from (select id from `user`) as x(id2)",
+    "FieldQuery": "select x.id2 from (select `user`.id from `user` where 1 != 1) as x(id2) where 1 != 1",
+    "Query": "select x.id2 from (select `user`.id from `user`) as x(id2)",
     "Table": "`user`"
   },
   "TablesUsed": [
@@ -5960,9 +5960,9 @@ Gen4 plan same as above
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select col1, count(*), weight_string(col1) from (select colC + colD as col1 from `user` where 1 != 1) as tbl where 1 != 1 group by col1, weight_string(col1)",
+        "FieldQuery": "select tbl.col1, count(*), weight_string(tbl.col1) from (select `user`.colC + `user`.colD as col1 from `user` where 1 != 1) as tbl where 1 != 1 group by tbl.col1, weight_string(tbl.col1)",
         "OrderBy": "(0|2) ASC",
-        "Query": "select col1, count(*), weight_string(col1) from (select colC + colD as col1 from `user`) as tbl group by col1, weight_string(col1) order by col1 asc",
+        "Query": "select tbl.col1, count(*), weight_string(tbl.col1) from (select `user`.colC + `user`.colD as col1 from `user`) as tbl group by tbl.col1, weight_string(tbl.col1) order by tbl.col1 asc",
         "Table": "`user`"
       }
     ]
