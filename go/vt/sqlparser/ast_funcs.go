@@ -925,6 +925,11 @@ func (node *Select) GetColumnCount() int {
 	return len(node.SelectExprs)
 }
 
+// GetColumnExprs return SelectExprs.
+func (node *Select) GetColumnExprs() SelectExprs {
+	return node.SelectExprs
+}
+
 // SetComments implements the SelectStatement interface
 func (node *Select) SetComments(comments Comments) {
 	node.Comments = comments.Parsed()
@@ -1035,6 +1040,11 @@ func (node *Union) MakeDistinct() {
 // GetColumnCount implements the SelectStatement interface
 func (node *Union) GetColumnCount() int {
 	return node.Left.GetColumnCount()
+}
+
+// GetColumnExprs implements the SelectStatement interface
+func (node *Union) GetColumnExprs() SelectExprs {
+	return node.Left.GetColumnExprs()
 }
 
 // SetComments implements the SelectStatement interface
