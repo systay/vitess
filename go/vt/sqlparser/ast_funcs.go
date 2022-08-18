@@ -895,6 +895,11 @@ func (node *Select) GetOrderBy() OrderBy {
 	return node.OrderBy
 }
 
+// GetOrderBy gets the group by clause
+func (node *Select) GetGroupBy() GroupBy {
+	return node.GroupBy
+}
+
 // SetLimit sets the limit clause
 func (node *Select) SetLimit(limit *Limit) {
 	node.Limit = limit
@@ -1010,6 +1015,11 @@ func (node *Union) SetOrderBy(orderBy OrderBy) {
 // GetOrderBy gets the order by clause
 func (node *Union) GetOrderBy() OrderBy {
 	return node.OrderBy
+}
+
+// GetGroupBy gets the group by clause
+func (node *Union) GetGroupBy() GroupBy {
+	return nil
 }
 
 // SetLimit sets the limit clause
