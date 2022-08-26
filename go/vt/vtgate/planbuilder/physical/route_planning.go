@@ -789,6 +789,32 @@ func canMergeOnFilter(ctx *plancontext.PlanningContext, a, b *Route, predicate s
 	return rVindex == lVindex
 }
 
+func isSingleValueUniqueRoute(route *Route) bool {
+	if route.RouteOpCode == engine.EqualUnique {
+		return true
+	}
+
+	if route.RouteOpCode != engine.IN {
+		return false
+	}
+
+	if !route.Selected.FoundVindex.IsUnique() {
+		return false
+	}
+
+	if len(route.Selected.ValueExprs) > 1 {
+		return false
+	}
+
+	tuple, isTuple := route.Selected.ValueExprs[0].(sqlparser.ValTuple)
+	if !isTuple || len(tuple) > 1 {
+		return false
+	}
+
+	_, isLiteral := tuple[0].(*sqlparser.Literal)
+	return isLiteral
+}
+
 func canMergeSubqueryOnColumnSelection(ctx *plancontext.PlanningContext, a, b *Route, predicate sqlparser.Expr, innerMostQuery sqlparser.SelectStatement) bool {
 	comparison, ok := predicate.(*sqlparser.ComparisonExpr)
 	if !ok {
@@ -819,7 +845,8 @@ func canMergeSubqueryOnColumnSelection(ctx *plancontext.PlanningContext, a, b *R
 		innerMostQuery = subquery.Select
 	}
 
-	groupedOnUniqueVindex := b.RouteOpCode == engine.EqualUnique
+	// TODO: Can we automatically map `IN` vindex predicates with a single value to an `EqualUnique` vindex predicate?
+	groupedOnUniqueVindex := isSingleValueUniqueRoute(b)
 	if !groupedOnUniqueVindex {
 		if len(innerMostQuery.GetGroupBy()) > 0 {
 			for _, exp := range innerMostQuery.GetGroupBy() {
@@ -841,7 +868,9 @@ func canMergeSubqueryOnColumnSelection(ctx *plancontext.PlanningContext, a, b *R
 
 	// If a subquery has a `LIMIT`/`OFFSET` statement,
 	// it can only be merged if the subquery route is `engine.EqualUnique`
-	if b.RouteOpCode != engine.EqualUnique {
+	//
+	// TODO: Can we automatically map `IN` vindex predicates with a single value to an `EqualUnique` vindex predicate?
+	if !isSingleValueUniqueRoute(b) {
 		if limit := innerMostQuery.GetLimit(); limit != nil {
 			return false
 		}
