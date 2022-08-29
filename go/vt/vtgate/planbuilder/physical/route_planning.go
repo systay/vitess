@@ -919,9 +919,36 @@ func extractSingleColumnSubquerySelection(subquery *sqlparser.Subquery, groupedO
 }
 
 func findColumnVindex(ctx *plancontext.PlanningContext, a *Route, exp sqlparser.Expr) vindexes.SingleColumn {
-	_, isCol := exp.(*sqlparser.ColName)
+	colName, isCol := exp.(*sqlparser.ColName)
 	if !isCol {
 		return nil
+	}
+
+	derived, isDerived := a.Source.(*Derived)
+	if isDerived {
+		selectQuery := derived.Query.(*sqlparser.Select)
+		for _, selectColExpr := range selectQuery.GetColumnExprs() {
+			aliasedColExpr := selectColExpr.(*sqlparser.AliasedExpr)
+
+			if aliasedColExpr.ColumnName() != colName.Name.String() {
+				continue
+			}
+
+			switch expr := aliasedColExpr.Expr.(type) {
+			case *sqlparser.ColName:
+				exp = expr
+			case *sqlparser.Max:
+				colName, ok := expr.Arg.(*sqlparser.ColName)
+				if ok {
+					exp = colName
+				}
+			case *sqlparser.Min:
+				colName, ok := expr.Arg.(*sqlparser.ColName)
+				if ok {
+					exp = colName
+				}
+			}
+		}
 	}
 
 	var singCol vindexes.SingleColumn
