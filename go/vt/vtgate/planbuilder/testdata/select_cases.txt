@@ -6976,3 +6976,182 @@ Gen4 plan same as above
     "user.music"
   ]
 }
+
+# `None` subquery as top level predicate - outer query changes from `Scatter` to `None` on merge
+"SELECT music.id FROM music WHERE music.id IN (SELECT music.id FROM music WHERE music.user_id IN (NULL))"
+{
+  "QueryType": "SELECT",
+  "Original": "SELECT music.id FROM music WHERE music.id IN (SELECT music.id FROM music WHERE music.user_id IN (NULL))",
+  "Instructions": {
+    "OperatorType": "Subquery",
+    "Variant": "PulloutIn",
+    "PulloutVars": [
+      "__sq_has_values1",
+      "__sq1"
+    ],
+    "Inputs": [
+      {
+        "OperatorType": "Route",
+        "Variant": "None",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select music.id from music where 1 != 1",
+        "Query": "select music.id from music where music.user_id in (null)",
+        "Table": "music"
+      },
+      {
+        "OperatorType": "Route",
+        "Variant": "IN",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select music.id from music where 1 != 1",
+        "Query": "select music.id from music where :__sq_has_values1 = 1 and music.id in ::__vals",
+        "Table": "music",
+        "Values": [
+          ":__sq1"
+        ],
+        "Vindex": "music_user_map"
+      }
+    ]
+  }
+}
+{
+  "QueryType": "SELECT",
+  "Original": "SELECT music.id FROM music WHERE music.id IN (SELECT music.id FROM music WHERE music.user_id IN (NULL))",
+  "Instructions": {
+    "OperatorType": "Route",
+    "Variant": "None",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "FieldQuery": "select music.id from music where 1 != 1",
+    "Query": "select music.id from music where music.id in (select music.id from music where music.user_id in (null))",
+    "Table": "music"
+  },
+  "TablesUsed": [
+    "user.music"
+  ]
+}
+
+# `None` subquery as top level predicate - outer query changes from `EqualUnique` to `None` on merge
+"SELECT music.id FROM music WHERE music.id IN (SELECT music.id FROM music WHERE music.user_id IN (NULL)) AND music.user_id = 5"
+{
+  "QueryType": "SELECT",
+  "Original": "SELECT music.id FROM music WHERE music.id IN (SELECT music.id FROM music WHERE music.user_id IN (NULL)) AND music.user_id = 5",
+  "Instructions": {
+    "OperatorType": "Subquery",
+    "Variant": "PulloutIn",
+    "PulloutVars": [
+      "__sq_has_values1",
+      "__sq1"
+    ],
+    "Inputs": [
+      {
+        "OperatorType": "Route",
+        "Variant": "None",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select music.id from music where 1 != 1",
+        "Query": "select music.id from music where music.user_id in (null)",
+        "Table": "music"
+      },
+      {
+        "OperatorType": "Route",
+        "Variant": "EqualUnique",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select music.id from music where 1 != 1",
+        "Query": "select music.id from music where music.user_id = 5 and :__sq_has_values1 = 1 and music.id in ::__sq1",
+        "Table": "music",
+        "Values": [
+          "INT64(5)"
+        ],
+        "Vindex": "user_index"
+      }
+    ]
+  }
+}
+{
+  "QueryType": "SELECT",
+  "Original": "SELECT music.id FROM music WHERE music.id IN (SELECT music.id FROM music WHERE music.user_id IN (NULL)) AND music.user_id = 5",
+  "Instructions": {
+    "OperatorType": "Route",
+    "Variant": "None",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "FieldQuery": "select music.id from music where 1 != 1",
+    "Query": "select music.id from music where music.id in (select music.id from music where music.user_id in (null)) and music.user_id = 5",
+    "Table": "music"
+  },
+  "TablesUsed": [
+    "user.music"
+  ]
+}
+
+# `None` subquery nested inside `OR` expression - outer query keeps routing information
+"SELECT music.id FROM music WHERE (music.id IN (SELECT music.id FROM music WHERE music.user_id IN (NULL)) OR music.user_id = 5)"
+{
+  "QueryType": "SELECT",
+  "Original": "SELECT music.id FROM music WHERE (music.id IN (SELECT music.id FROM music WHERE music.user_id IN (NULL)) OR music.user_id = 5)",
+  "Instructions": {
+    "OperatorType": "Subquery",
+    "Variant": "PulloutIn",
+    "PulloutVars": [
+      "__sq_has_values1",
+      "__sq1"
+    ],
+    "Inputs": [
+      {
+        "OperatorType": "Route",
+        "Variant": "None",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select music.id from music where 1 != 1",
+        "Query": "select music.id from music where music.user_id in (null)",
+        "Table": "music"
+      },
+      {
+        "OperatorType": "Route",
+        "Variant": "Scatter",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select music.id from music where 1 != 1",
+        "Query": "select music.id from music where :__sq_has_values1 = 1 and music.id in ::__sq1 or music.user_id = 5",
+        "Table": "music"
+      }
+    ]
+  }
+}
+{
+  "QueryType": "SELECT",
+  "Original": "SELECT music.id FROM music WHERE (music.id IN (SELECT music.id FROM music WHERE music.user_id IN (NULL)) OR music.user_id = 5)",
+  "Instructions": {
+    "OperatorType": "Route",
+    "Variant": "Scatter",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "FieldQuery": "select music.id from music where 1 != 1",
+    "Query": "select music.id from music where music.id in (select music.id from music where music.user_id in (null)) or music.user_id = 5",
+    "Table": "music"
+  },
+  "TablesUsed": [
+    "user.music"
+  ]
+}
