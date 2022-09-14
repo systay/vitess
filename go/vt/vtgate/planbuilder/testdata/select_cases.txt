@@ -7155,3 +7155,149 @@ Gen4 plan same as above
     "user.music"
   ]
 }
+
+# Joining with a subquery that uses an aggregate column and an `EqualUnique` route can be merged together
+"SELECT music.id FROM music INNER JOIN (SELECT MAX(id) as maxt FROM music WHERE music.user_id = 5) other ON other.maxt = music.id"
+{
+  "QueryType": "SELECT",
+  "Original": "SELECT music.id FROM music INNER JOIN (SELECT MAX(id) as maxt FROM music WHERE music.user_id = 5) other ON other.maxt = music.id",
+  "Instructions": {
+    "OperatorType": "Join",
+    "Variant": "Join",
+    "JoinColumnIndexes": "L:0",
+    "JoinVars": {
+      "music_id": 0
+    },
+    "TableName": "music_music",
+    "Inputs": [
+      {
+        "OperatorType": "Route",
+        "Variant": "Scatter",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select music.id from music where 1 != 1",
+        "Query": "select music.id from music",
+        "Table": "music"
+      },
+      {
+        "OperatorType": "Route",
+        "Variant": "EqualUnique",
+        "Keyspace": {
+          "Name": "user",
+          "Sharded": true
+        },
+        "FieldQuery": "select 1 from (select max(id) as maxt from music where 1 != 1) as other where 1 != 1",
+        "Query": "select 1 from (select max(id) as maxt from music where music.user_id = 5) as other where other.maxt = :music_id",
+        "Table": "music",
+        "Values": [
+          "INT64(5)"
+        ],
+        "Vindex": "user_index"
+      }
+    ]
+  }
+}
+{
+  "QueryType": "SELECT",
+  "Original": "SELECT music.id FROM music INNER JOIN (SELECT MAX(id) as maxt FROM music WHERE music.user_id = 5) other ON other.maxt = music.id",
+  "Instructions": {
+    "OperatorType": "Route",
+    "Variant": "EqualUnique",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "FieldQuery": "select music.id from music, (select max(id) as maxt from music where 1 != 1) as other where 1 != 1",
+    "Query": "select music.id from music, (select max(id) as maxt from music where music.user_id = 5) as other where other.maxt = music.id",
+    "Table": "music",
+    "Values": [
+      "INT64(5)"
+    ],
+    "Vindex": "user_index"
+  },
+  "TablesUsed": [
+    "user.music"
+  ]
+}
+
+# Joining with a subquery that uses an `EqualUnique` route can be merged
+"SELECT music.id FROM music INNER JOIN (SELECT id FROM music WHERE music.user_id = 5) other ON other.id = music.id"
+{
+  "QueryType": "SELECT",
+  "Original": "SELECT music.id FROM music INNER JOIN (SELECT id FROM music WHERE music.user_id = 5) other ON other.id = music.id",
+  "Instructions": {
+    "OperatorType": "Route",
+    "Variant": "Scatter",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "FieldQuery": "select music.id from music join (select id from music where 1 != 1) as other on other.id = music.id where 1 != 1",
+    "Query": "select music.id from music join (select id from music where music.user_id = 5) as other on other.id = music.id",
+    "Table": "music"
+  }
+}
+{
+  "QueryType": "SELECT",
+  "Original": "SELECT music.id FROM music INNER JOIN (SELECT id FROM music WHERE music.user_id = 5) other ON other.id = music.id",
+  "Instructions": {
+    "OperatorType": "Route",
+    "Variant": "EqualUnique",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "FieldQuery": "select music.id from music, (select id from music where 1 != 1) as other where 1 != 1",
+    "Query": "select music.id from music, (select id from music where music.user_id = 5) as other where other.id = music.id",
+    "Table": "music",
+    "Values": [
+      "INT64(5)"
+    ],
+    "Vindex": "user_index"
+  },
+  "TablesUsed": [
+    "user.music"
+  ]
+}
+
+# Joining with a subquery that has an `IN` route can be merged
+"SELECT music.id FROM music INNER JOIN (SELECT id FROM music WHERE music.user_id IN (5, 6, 7)) other ON other.id = music.id"
+{
+  "QueryType": "SELECT",
+  "Original": "SELECT music.id FROM music INNER JOIN (SELECT id FROM music WHERE music.user_id IN (5, 6, 7)) other ON other.id = music.id",
+  "Instructions": {
+    "OperatorType": "Route",
+    "Variant": "Scatter",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "FieldQuery": "select music.id from music join (select id from music where 1 != 1) as other on other.id = music.id where 1 != 1",
+    "Query": "select music.id from music join (select id from music where music.user_id in (5, 6, 7)) as other on other.id = music.id",
+    "Table": "music"
+  }
+}
+{
+  "QueryType": "SELECT",
+  "Original": "SELECT music.id FROM music INNER JOIN (SELECT id FROM music WHERE music.user_id IN (5, 6, 7)) other ON other.id = music.id",
+  "Instructions": {
+    "OperatorType": "Route",
+    "Variant": "IN",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "FieldQuery": "select music.id from music, (select id from music where 1 != 1) as other where 1 != 1",
+    "Query": "select music.id from music, (select id from music where music.user_id in ::__vals) as other where other.id = music.id",
+    "Table": "music",
+    "Values": [
+      "(INT64(5), INT64(6), INT64(7))"
+    ],
+    "Vindex": "user_index"
+  },
+  "TablesUsed": [
+    "user.music"
+  ]
+}
