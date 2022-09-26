@@ -998,35 +998,39 @@ func extractSingleColumnSubquerySelection(subquery *sqlparser.Subquery, groupedO
 }
 
 func findColumnVindex(ctx *plancontext.PlanningContext, a *Route, exp sqlparser.Expr) vindexes.SingleColumn {
-	colName, isCol := exp.(*sqlparser.ColName)
+	_, isCol := exp.(*sqlparser.ColName)
 	if !isCol {
 		return nil
 	}
 
-	derived, isDerived := a.Source.(*Derived)
-	if isDerived {
-		selectQuery := derived.Query.(*sqlparser.Select)
-		for _, selectColExpr := range selectQuery.GetColumnExprs() {
-			aliasedColExpr := selectColExpr.(*sqlparser.AliasedExpr)
+	for {
+		// if we are dealing with derived tables in derived tables
+		tbl, err := ctx.SemTable.TableInfoForExpr(exp)
+		if err != nil {
+			return nil
+		}
+		_, ok := tbl.(*semantics.DerivedTable)
+		if !ok {
+			break
+		}
 
-			if aliasedColExpr.ColumnName() != colName.Name.String() {
-				continue
-			}
+		exp, err = semantics.RewriteDerivedExpression(exp, tbl)
+		if err != nil {
+			return nil
+		}
 
-			switch expr := aliasedColExpr.Expr.(type) {
-			case *sqlparser.ColName:
-				exp = expr
-			case *sqlparser.Max:
-				colName, ok := expr.Arg.(*sqlparser.ColName)
-				if ok {
-					exp = colName
-				}
-			case *sqlparser.Min:
-				colName, ok := expr.Arg.(*sqlparser.ColName)
-				if ok {
-					exp = colName
-				}
+		switch exp.(type) {
+		case *sqlparser.ColName:
+			// do nothing
+		case *sqlparser.Max, *sqlparser.Min:
+			aggr := exp.(sqlparser.AggrFunc).GetArg()
+			colName, ok := aggr.(*sqlparser.ColName)
+			if ok {
+				exp = colName
 			}
+		default:
+			// for any other expression than a column, or the extremum of a column, we can't merge
+			return nil
 		}
 	}
 
