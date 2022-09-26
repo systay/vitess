@@ -113,9 +113,12 @@ func mergeSubQueryOp(ctx *plancontext.PlanningContext, outer *Route, inner *Rout
 	//
 	// Note that not all inner queries necessarily are part of the routing
 	// predicates list, so this might be a no-op.
+	subQueryWasPredicate := false
 	for i, predicate := range outer.SeenPredicates {
 		if sqlparser.EqualsExpr(predicate, subq.ExtractedSubquery) {
 			outer.SeenPredicates = append(outer.SeenPredicates[:i], outer.SeenPredicates[i+1:]...)
+
+			subQueryWasPredicate = true
 
 			// The `ExtractedSubquery` of an inner query is unique (due to the uniqueness of bind variable names)
 			// so we can stop after the first match.
@@ -127,6 +130,16 @@ func mergeSubQueryOp(ctx *plancontext.PlanningContext, outer *Route, inner *Rout
 	if err != nil {
 		return nil, err
 	}
+
+	if subQueryWasPredicate {
+		// Copy Vindex predicates from the inner route to the upper route (probably not right)
+		outer.VindexPreds = append(outer.VindexPreds, inner.VindexPreds...)
+
+		if inner.RouteOpCode == engine.None {
+			outer.setSelectNoneOpcode()
+		}
+	}
+
 	return outer, nil
 }
 
@@ -169,34 +182,6 @@ func tryMergeSubQueryOp(
 			// Special case: Inner query won't return any results / is not routable.
 			if subqueryRoute.RouteOpCode == engine.None {
 				merged, err := merger(outerOp, subqueryRoute)
-
-				if err != nil {
-					return nil, err
-				}
-
-				if merged != nil {
-					// Once a subquery was merged, we need to see if it was part of the outer query's predicates.
-					idx := -1
-					for i, predicate := range merged.SeenPredicates {
-						if sqlparser.EqualsExpr(predicate, subQueryInner.ExtractedSubquery) {
-							idx = i
-						}
-					}
-
-					// If it was, we need to remove it and pull the subquery vindex predicates into the outer query predicates.
-					if idx != -1 {
-						merged.SeenPredicates = append(merged.SeenPredicates[:idx], merged.SeenPredicates[idx+1:]...)
-
-						err := merged.resetRoutingSelections(ctx)
-						if err != nil {
-							return nil, err
-						}
-
-						merged.Selected = nil
-						merged.RouteOpCode = engine.None
-					}
-				}
-
 				return merged, err
 			}
 
@@ -211,27 +196,6 @@ func tryMergeSubQueryOp(
 				}
 
 				if merged != nil {
-					// Once a subquery was merged, we need to see if it was part of the outer query's predicates.
-					idx := -1
-					for i, predicate := range merged.SeenPredicates {
-						if sqlparser.EqualsExpr(predicate, subQueryInner.ExtractedSubquery) {
-							idx = i
-						}
-					}
-
-					// If it was, we need to remove it and pull the subquery vindex predicates into the outer query predicates.
-					if idx != -1 {
-						merged.SeenPredicates = append(merged.SeenPredicates[:idx], merged.SeenPredicates[idx+1:]...)
-
-						err := merged.resetRoutingSelections(ctx)
-						if err != nil {
-							return nil, err
-						}
-
-						// Copy Vindex predicates from the inner route to the upper route (probably not right)
-						merged.VindexPreds = append(merged.VindexPreds, subqueryRoute.VindexPreds...)
-					}
-
 					merged.PickBestAvailableVindex()
 					return merged, err
 				}
