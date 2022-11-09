@@ -56,33 +56,37 @@ func transformToLogicalPlan(ctx *plancontext.PlanningContext, op operators.Opera
 	case *operators.Derived:
 		return transformDerivedPlan(ctx, op)
 	case *operators.Filter:
-		plan, err := transformToLogicalPlan(ctx, op.Source, false)
-		if err != nil {
-			return nil, err
-		}
-		scl := &simpleConverterLookup{
-			canPushProjection: true,
-			ctx:               ctx,
-			plan:              plan,
-		}
-		ast := sqlparser.AndExpressions(op.Predicates...)
-		predicate, err := evalengine.Translate(ast, scl)
-		if err != nil {
-			return nil, err
-		}
-
-		return &filter{
-			logicalPlanCommon: newBuilderCommon(plan),
-			efilter: &engine.Filter{
-				Predicate:    predicate,
-				ASTPredicate: ast,
-			},
-		}, nil
+		return transformFilter(ctx, op)
 	case *operators.Horizon:
 		return transformHorizon(ctx, op, isRoot)
 	}
 
 	return nil, vterrors.Errorf(vtrpcpb.Code_INTERNAL, "[BUG] unknown type encountered: %T (transformToLogicalPlan)", op)
+}
+
+func transformFilter(ctx *plancontext.PlanningContext, op *operators.Filter) (logicalPlan, error) {
+	plan, err := transformToLogicalPlan(ctx, op.Source, false)
+	if err != nil {
+		return nil, err
+	}
+	scl := &simpleConverterLookup{
+		canPushProjection: true,
+		ctx:               ctx,
+		plan:              plan,
+	}
+	ast := sqlparser.AndExpressions(op.Predicates...)
+	predicate, err := evalengine.Translate(ast, scl)
+	if err != nil {
+		return nil, err
+	}
+
+	return &filter{
+		logicalPlanCommon: newBuilderCommon(plan),
+		efilter: &engine.Filter{
+			Predicate:    predicate,
+			ASTPredicate: ast,
+		},
+	}, nil
 }
 
 func transformHorizon(ctx *plancontext.PlanningContext, op *operators.Horizon, isRoot bool) (logicalPlan, error) {
