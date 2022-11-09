@@ -3807,6 +3807,7 @@
     "plan": "Unknown table 'user' in MULTI DELETE"
   },
   {
+    "comment": "INSERT INTO main.user_privacy_consents (user_id, accepted_at)  SELECT user_id, accepted_at FROM (SELECT 1 as user_id, 1629194864 as accepted_at) AS tmp WHERE NOT EXISTS (SELECT user_id FROM main.user_privacy_consents WHERE user_id = 1)",
     "query": "INSERT INTO main.user_privacy_consents (user_id, accepted_at)  SELECT user_id, accepted_at FROM (SELECT 1 as user_id, 1629194864 as accepted_at) AS tmp WHERE NOT EXISTS (SELECT user_id FROM main.user_privacy_consents WHERE user_id = 1)",
     "v3-plan": {
       "QueryType": "INSERT",
@@ -3827,7 +3828,7 @@
         "main.user_privacy_consents"
       ]
     },
-    "gen4-plan": "unsupported: unable to split predicates to derived table: not :__sq_has_values1"
+    "gen4-plan": "unsupported: unable to split predicates to derived table: not () in (select 1 from main.user_privacy_consents limit 1)"
   },
   {
     "comment": "Delete on backfilling unique lookup vindex should be a scatter",

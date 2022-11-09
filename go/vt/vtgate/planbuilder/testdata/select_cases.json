@@ -2535,6 +2535,7 @@
     }
   },
   {
+    "comment": "(select id from unsharded) union (select id from unsharded_auto) order by id limit 5",
     "query": "(select id from unsharded) union (select id from unsharded_auto) order by id limit 5",
     "v3-plan": {
       "QueryType": "SELECT",
@@ -3295,6 +3296,7 @@
     "plan": "syntax error at position 41 near 'into'"
   },
   {
+    "comment": "select (select u.id from user as u where u.id = 1), a.id from user as a where a.id = 1",
     "query": "select (select u.id from user as u where u.id = 1), a.id from user as a where a.id = 1",
     "v3-plan": {
       "QueryType": "SELECT",
@@ -3416,6 +3418,7 @@
     }
   },
   {
+    "comment": "((((select 1))))",
     "query": "((((select 1))))",
     "v3-plan": {
       "QueryType": "SELECT",
@@ -3585,6 +3588,7 @@
     }
   },
   {
+    "comment": "select (select col from user limit 1) as a from user join user_extra order by a",
     "query": "select (select col from user limit 1) as a from user join user_extra order by a",
     "v3-plan": {
       "QueryType": "SELECT",
@@ -3716,6 +3720,7 @@
     }
   },
   {
+    "comment": "select t.a from (select (select col from user limit 1) as a from user join user_extra) t",
     "query": "select t.a from (select (select col from user limit 1) as a from user join user_extra) t",
     "v3-plan": {
       "QueryType": "SELECT",
@@ -3860,6 +3865,7 @@
     }
   },
   {
+    "comment": "select (select col from user where user_extra.id = 4 limit 1) as a from user join user_extra",
     "query": "select (select col from user where user_extra.id = 4 limit 1) as a from user join user_extra",
     "plan": "unsupported: cross-shard correlated subquery"
   },
@@ -3986,100 +3992,13 @@
     "comment": "correlated subquery in exists clause",
     "query": "select col from user where exists(select user_id from user_extra where user_id = 3 and user_id < user.id)",
     "v3-plan": "unsupported: cross-shard correlated subquery",
-    "gen4-plan": {
-      "QueryType": "SELECT",
-      "Original": "select col from user where exists(select user_id from user_extra where user_id = 3 and user_id < user.id)",
-      "Instructions": {
-        "OperatorType": "SemiJoin",
-        "JoinVars": {
-          "user_id": 0
-        },
-        "ProjectedIndexes": "-2",
-        "TableName": "`user`_user_extra",
-        "Inputs": [
-          {
-            "OperatorType": "Route",
-            "Variant": "Scatter",
-            "Keyspace": {
-              "Name": "user",
-              "Sharded": true
-            },
-            "FieldQuery": "select `user`.id, col from `user` where 1 != 1",
-            "Query": "select `user`.id, col from `user`",
-            "Table": "`user`"
-          },
-          {
-            "OperatorType": "Route",
-            "Variant": "EqualUnique",
-            "Keyspace": {
-              "Name": "user",
-              "Sharded": true
-            },
-            "FieldQuery": "select 1 from user_extra where 1 != 1",
-            "Query": "select 1 from user_extra where user_id = 3 and user_id < :user_id",
-            "Table": "user_extra",
-            "Values": [
-              "INT64(3)"
-            ],
-            "Vindex": "user_index"
-          }
-        ]
-      },
-      "TablesUsed": [
-        "user.user",
-        "user.user_extra"
-      ]
-    }
+    "gen4-plan": "exists sub-queries are only supported with AND clause"
   },
   {
     "comment": "correlated subquery in exists clause with an order by",
     "query": "select col from user where exists(select user_id from user_extra where user_id = 3 and user_id < user.id) order by col",
     "v3-plan": "unsupported: cross-shard correlated subquery",
-    "gen4-plan": {
-      "QueryType": "SELECT",
-      "Original": "select col from user where exists(select user_id from user_extra where user_id = 3 and user_id < user.id) order by col",
-      "Instructions": {
-        "OperatorType": "SemiJoin",
-        "JoinVars": {
-          "user_id": 0
-        },
-        "ProjectedIndexes": "-2",
-        "TableName": "`user`_user_extra",
-        "Inputs": [
-          {
-            "OperatorType": "Route",
-            "Variant": "Scatter",
-            "Keyspace": {
-              "Name": "user",
-              "Sharded": true
-            },
-            "FieldQuery": "select `user`.id, col from `user` where 1 != 1",
-            "OrderBy": "1 ASC",
-            "Query": "select `user`.id, col from `user` order by col asc",
-            "Table": "`user`"
-          },
-          {
-            "OperatorType": "Route",
-            "Variant": "EqualUnique",
-            "Keyspace": {
-              "Name": "user",
-              "Sharded": true
-            },
-            "FieldQuery": "select 1 from user_extra where 1 != 1",
-            "Query": "select 1 from user_extra where user_id = 3 and user_id < :user_id",
-            "Table": "user_extra",
-            "Values": [
-              "INT64(3)"
-            ],
-            "Vindex": "user_index"
-          }
-        ]
-      },
-      "TablesUsed": [
-        "user.user",
-        "user.user_extra"
-      ]
-    }
+    "gen4-plan": "exists sub-queries are only supported with AND clause"
   },
   {
     "comment": "correlated subquery having dependencies on two tables",
@@ -4089,18 +4008,27 @@
       "QueryType": "SELECT",
       "Original": "select 1 from user u1, user u2 where exists (select 1 from user_extra ue where ue.col = u1.col and ue.col = u2.col)",
       "Instructions": {
-        "OperatorType": "SemiJoin",
-        "JoinVars": {
-          "u1_col": 0,
-          "u2_col": 1
-        },
-        "ProjectedIndexes": "-3",
-        "TableName": "`user`_`user`_user_extra",
+        "OperatorType": "Subquery",
+        "Variant": "PulloutExists",
         "Inputs": [
+          {
+            "OperatorType": "Route",
+            "Variant": "Scatter",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select ue.col, ue.col from user_extra as ue where 1 != 1",
+            "Query": "select ue.col, ue.col from user_extra as ue",
+            "Table": "user_extra"
+          },
           {
             "OperatorType": "Join",
             "Variant": "Join",
-            "JoinColumnIndexes": "L:0,R:0,L:1",
+            "JoinColumnIndexes": "L:1",
+            "JoinVars": {
+              "u1_col": 0
+            },
             "TableName": "`user`_`user`",
             "Inputs": [
               {
@@ -4121,22 +4049,11 @@
                   "Name": "user",
                   "Sharded": true
                 },
-                "FieldQuery": "select u2.col from `user` as u2 where 1 != 1",
-                "Query": "select u2.col from `user` as u2",
+                "FieldQuery": "select 1 from `user` as u2 where 1 != 1",
+                "Query": "select 1 from `user` as u2 where (:u1_col, u2.col) in (select ue.col, ue.col from user_extra as ue)",
                 "Table": "`user`"
               }
             ]
-          },
-          {
-            "OperatorType": "Route",
-            "Variant": "Scatter",
-            "Keyspace": {
-              "Name": "user",
-              "Sharded": true
-            },
-            "FieldQuery": "select 1 from user_extra as ue where 1 != 1",
-            "Query": "select 1 from user_extra as ue where ue.col = :u1_col and ue.col = :u2_col",
-            "Table": "user_extra"
           }
         ]
       },
@@ -4154,12 +4071,8 @@
       "QueryType": "SELECT",
       "Original": "select 1 from user u where exists (select 1 from user_extra ue where ue.col = u.col and u.col = ue.col2)",
       "Instructions": {
-        "OperatorType": "SemiJoin",
-        "JoinVars": {
-          "u_col": 0
-        },
-        "ProjectedIndexes": "-2",
-        "TableName": "`user`_user_extra",
+        "OperatorType": "Subquery",
+        "Variant": "PulloutExists",
         "Inputs": [
           {
             "OperatorType": "Route",
@@ -4168,9 +4081,9 @@
               "Name": "user",
               "Sharded": true
             },
-            "FieldQuery": "select u.col, 1 from `user` as u where 1 != 1",
-            "Query": "select u.col, 1 from `user` as u",
-            "Table": "`user`"
+            "FieldQuery": "select ue.col from user_extra as ue where 1 != 1",
+            "Query": "select ue.col from user_extra as ue",
+            "Table": "user_extra"
           },
           {
             "OperatorType": "Route",
@@ -4179,9 +4092,9 @@
               "Name": "user",
               "Sharded": true
             },
-            "FieldQuery": "select 1 from user_extra as ue where 1 != 1",
-            "Query": "select 1 from user_extra as ue where ue.col = :u_col and ue.col2 = :u_col",
-            "Table": "user_extra"
+            "FieldQuery": "select 1 from `user` as u where 1 != 1",
+            "Query": "select 1 from `user` as u where u.col in (select ue.col from user_extra as ue)",
+            "Table": "`user`"
           }
         ]
       },
@@ -4195,7 +4108,42 @@
     "comment": "correlated subquery part of an OR clause",
     "query": "select 1 from user u where u.col = 6 or exists (select 1 from user_extra ue where ue.col = u.col and u.col = ue.col2)",
     "v3-plan": "unsupported: cross-shard correlated subquery",
-    "gen4-plan": "exists sub-queries are only supported with AND clause"
+    "gen4-plan": {
+      "QueryType": "SELECT",
+      "Original": "select 1 from user u where u.col = 6 or exists (select 1 from user_extra ue where ue.col = u.col and u.col = ue.col2)",
+      "Instructions": {
+        "OperatorType": "Subquery",
+        "Variant": "PulloutExists",
+        "Inputs": [
+          {
+            "OperatorType": "Route",
+            "Variant": "Scatter",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select ue.col from user_extra as ue where 1 != 1",
+            "Query": "select ue.col from user_extra as ue",
+            "Table": "user_extra"
+          },
+          {
+            "OperatorType": "Route",
+            "Variant": "Scatter",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select 1 from `user` as u where 1 != 1",
+            "Query": "select 1 from `user` as u where u.col = 6 or u.col in (select ue.col from user_extra as ue)",
+            "Table": "`user`"
+          }
+        ]
+      },
+      "TablesUsed": [
+        "user.user",
+        "user.user_extra"
+      ]
+    }
   },
   {
     "comment": "correlated subquery that is dependent on one side of a join, fully mergeable",
@@ -4462,6 +4410,7 @@
     }
   },
   {
+    "comment": "select user.id, trim(leading 'x' from user.name) from user",
     "query": "select user.id, trim(leading 'x' from user.name) from user",
     "v3-plan": {
       "QueryType": "SELECT",
@@ -4565,9 +4514,7 @@
           "Sharded": false
         },
         "FieldQuery": "select 1 from dual where 1 != 1",
-        "Query": "select 1 from dual where exists (select 1 from information_schema.`TABLES` where `TABLES`.TABLE_NAME = :TABLES_TABLE_NAME and `TABLES`.TABLE_SCHEMA = :__vtschemaname limit 1)",
-        "SysTableTableName": "[TABLES_TABLE_NAME:VARCHAR(\"proc\")]",
-        "SysTableTableSchema": "[VARCHAR(\"mysql\")]",
+        "Query": "select 1 from dual where () in (select 1 from information_schema.`TABLES` limit 1)",
         "Table": "dual"
       },
       "TablesUsed": [
@@ -4613,6 +4560,7 @@
     }
   },
   {
+    "comment": "select (select id from user order by id limit 1) from user_extra",
     "query": "select (select id from user order by id limit 1) from user_extra",
     "v3-plan": {
       "QueryType": "SELECT",
@@ -5116,19 +5064,38 @@
       "QueryType": "SELECT",
       "Original": "select exists(select id from user where id = 4)",
       "Instructions": {
-        "OperatorType": "Route",
-        "Variant": "EqualUnique",
-        "Keyspace": {
-          "Name": "user",
-          "Sharded": true
-        },
-        "FieldQuery": "select exists (select 1 from `user` where 1 != 1) from dual where 1 != 1",
-        "Query": "select exists (select 1 from `user` where id = 4 limit 1) from dual",
-        "Table": "dual",
-        "Values": [
-          "INT64(4)"
-        ],
-        "Vindex": "user_index"
+        "OperatorType": "Subquery",
+        "Variant": "PulloutExists",
+        "Inputs": [
+          {
+            "OperatorType": "Limit",
+            "Count": "INT64(1)",
+            "Inputs": [
+              {
+                "OperatorType": "Route",
+                "Variant": "Scatter",
+                "Keyspace": {
+                  "Name": "user",
+                  "Sharded": true
+                },
+                "FieldQuery": "select 1 from `user` where 1 != 1",
+                "Query": "select 1 from `user` limit :__upper_limit",
+                "Table": "`user`"
+              }
+            ]
+          },
+          {
+            "OperatorType": "Route",
+            "Variant": "Reference",
+            "Keyspace": {
+              "Name": "main",
+              "Sharded": false
+            },
+            "FieldQuery": "select () in (select 1 from `user` where 1 != 1) from dual where 1 != 1",
+            "Query": "select () in (select 1 from `user` limit 1) from dual",
+            "Table": "dual"
+          }
+        ]
       },
       "TablesUsed": [
         "main.dual",
@@ -7687,6 +7654,7 @@
     }
   },
   {
+    "comment": "select user.a, t.b from user join (select id, count(*) b, req from user_extra group by req, id) as t on user.id = t.id",
     "query": "select user.a, t.b from user join (select id, count(*) b, req from user_extra group by req, id) as t on user.id = t.id",
     "v3-plan": "unsupported: filtering on results of cross-shard subquery",
     "gen4-plan": {
@@ -7765,6 +7733,7 @@
     "gen4-plan": "unsupported: JOIN not supported between derived tables"
   },
   {
+    "comment": "SELECT music.id FROM (SELECT MAX(id) as maxt FROM music WHERE music.user_id = 5) other JOIN music ON other.maxt = music.id",
     "query": "SELECT music.id FROM (SELECT MAX(id) as maxt FROM music WHERE music.user_id = 5) other JOIN music ON other.maxt = music.id",
     "v3-plan": {
       "QueryType": "SELECT",

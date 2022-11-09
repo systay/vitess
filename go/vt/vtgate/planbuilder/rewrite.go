@@ -141,6 +141,61 @@ func rewriteSubquery(cursor *sqlparser.Cursor, r *rewriter, node *sqlparser.Subq
 }
 
 func (r *rewriter) rewriteExistsSubquery(cursor *sqlparser.Cursor, node *sqlparser.ExistsExpr) error {
+	sel, ok := node.Subquery.Select.(*sqlparser.Select)
+	if ok && sel.Where != nil {
+		thisSelect := semantics.EmptyTableSet()
+		for _, tbl := range r.semTable.GetSelectTables(sel) {
+			thisSelect.MergeInPlace(r.semTable.TableIDFor(tbl))
+		}
+		var insideExprs []sqlparser.Expr
+		var outsideExprs []sqlparser.Expr
+		var leftInWhere []sqlparser.Expr
+
+		for _, expr := range sqlparser.SplitAndExpression(nil, sel.Where.Expr) {
+			switch expr := expr.(type) {
+			case *sqlparser.ComparisonExpr:
+				if expr.Operator != sqlparser.EqualOp {
+					leftInWhere = append(leftInWhere, expr)
+					continue
+				}
+				ldeps := r.semTable.RecursiveDeps(expr.Left)
+				rdeps := r.semTable.RecursiveDeps(expr.Right)
+				if ldeps.IsSolvedBy(thisSelect) && !rdeps.IsSolvedBy(thisSelect) {
+					insideExprs = append(insideExprs, expr.Left)
+					outsideExprs = append(outsideExprs, expr.Right)
+				}
+			default:
+				leftInWhere = append(leftInWhere, expr)
+			}
+		}
+
+		if len(insideExprs) > 0 {
+			sel.SelectExprs = nil
+			sel.Limit = nil
+			for _, expr := range insideExprs {
+				sel.SelectExprs = append(sel.SelectExprs, &sqlparser.AliasedExpr{Expr: expr})
+			}
+		}
+		var left sqlparser.Expr
+		if len(outsideExprs) == 1 {
+			left = outsideExprs[0]
+		} else {
+			left = sqlparser.ValTuple(outsideExprs)
+		}
+		if len(leftInWhere) == 0 {
+			sel.Where = nil
+		} else {
+			sel.Where.Expr = sqlparser.AndExpressions(leftInWhere...)
+		}
+		in := &sqlparser.ComparisonExpr{
+			Operator: sqlparser.InOp,
+			Left:     left,
+			Right:    node.Subquery,
+		}
+		cursor.Replace(in)
+		return nil
+	}
+
 	semTableSQ, found := r.semTable.SubqueryRef[node.Subquery]
 	if !found {
 		return vterrors.Errorf(vtrpcpb.Code_INTERNAL, "BUG: came across subquery that was not in the subq map")

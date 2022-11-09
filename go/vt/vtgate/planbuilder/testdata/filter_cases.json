@@ -4505,19 +4505,42 @@
       "QueryType": "SELECT",
       "Original": "select u1.col from user as u1 where u1.id = 5 and exists (select u2.name from user u2 where u2.id = 5)",
       "Instructions": {
-        "OperatorType": "Route",
-        "Variant": "EqualUnique",
-        "Keyspace": {
-          "Name": "user",
-          "Sharded": true
-        },
-        "FieldQuery": "select u1.col from `user` as u1 where 1 != 1",
-        "Query": "select u1.col from `user` as u1 where u1.id = 5 and exists (select 1 from `user` as u2 where u2.id = 5 limit 1)",
-        "Table": "`user`",
-        "Values": [
-          "INT64(5)"
-        ],
-        "Vindex": "user_index"
+        "OperatorType": "Subquery",
+        "Variant": "PulloutExists",
+        "Inputs": [
+          {
+            "OperatorType": "Limit",
+            "Count": "INT64(1)",
+            "Inputs": [
+              {
+                "OperatorType": "Route",
+                "Variant": "Scatter",
+                "Keyspace": {
+                  "Name": "user",
+                  "Sharded": true
+                },
+                "FieldQuery": "select 1 from `user` as u2 where 1 != 1",
+                "Query": "select 1 from `user` as u2 limit :__upper_limit",
+                "Table": "`user`"
+              }
+            ]
+          },
+          {
+            "OperatorType": "Route",
+            "Variant": "EqualUnique",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select u1.col from `user` as u1 where 1 != 1",
+            "Query": "select u1.col from `user` as u1 where u1.id = 5 and () in (select 1 from `user` as u2 limit 1)",
+            "Table": "`user`",
+            "Values": [
+              "INT64(5)"
+            ],
+            "Vindex": "user_index"
+          }
+        ]
       },
       "TablesUsed": [
         "user.user"
@@ -4550,19 +4573,42 @@
       "QueryType": "SELECT",
       "Original": "select u1.col from user as u1 where u1.id = 5 and not exists (select u2.name from user u2 where u2.id = 5)",
       "Instructions": {
-        "OperatorType": "Route",
-        "Variant": "EqualUnique",
-        "Keyspace": {
-          "Name": "user",
-          "Sharded": true
-        },
-        "FieldQuery": "select u1.col from `user` as u1 where 1 != 1",
-        "Query": "select u1.col from `user` as u1 where u1.id = 5 and not exists (select 1 from `user` as u2 where u2.id = 5 limit 1)",
-        "Table": "`user`",
-        "Values": [
-          "INT64(5)"
-        ],
-        "Vindex": "user_index"
+        "OperatorType": "Subquery",
+        "Variant": "PulloutExists",
+        "Inputs": [
+          {
+            "OperatorType": "Limit",
+            "Count": "INT64(1)",
+            "Inputs": [
+              {
+                "OperatorType": "Route",
+                "Variant": "Scatter",
+                "Keyspace": {
+                  "Name": "user",
+                  "Sharded": true
+                },
+                "FieldQuery": "select 1 from `user` as u2 where 1 != 1",
+                "Query": "select 1 from `user` as u2 limit :__upper_limit",
+                "Table": "`user`"
+              }
+            ]
+          },
+          {
+            "OperatorType": "Route",
+            "Variant": "EqualUnique",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select u1.col from `user` as u1 where 1 != 1",
+            "Query": "select u1.col from `user` as u1 where u1.id = 5 and not () in (select 1 from `user` as u2 limit 1)",
+            "Table": "`user`",
+            "Values": [
+              "INT64(5)"
+            ],
+            "Vindex": "user_index"
+          }
+        ]
       },
       "TablesUsed": [
         "user.user"
@@ -4618,24 +4664,23 @@
       "Instructions": {
         "OperatorType": "Subquery",
         "Variant": "PulloutExists",
-        "PulloutVars": [
-          "__sq_has_values1"
-        ],
         "Inputs": [
           {
-            "OperatorType": "Route",
-            "Variant": "EqualUnique",
-            "Keyspace": {
-              "Name": "user",
-              "Sharded": true
-            },
-            "FieldQuery": "select 1 from `user` as u2 where 1 != 1",
-            "Query": "select 1 from `user` as u2 where u2.id = 5 limit 1",
-            "Table": "`user`",
-            "Values": [
-              "INT64(5)"
-            ],
-            "Vindex": "user_index"
+            "OperatorType": "Limit",
+            "Count": "INT64(1)",
+            "Inputs": [
+              {
+                "OperatorType": "Route",
+                "Variant": "Scatter",
+                "Keyspace": {
+                  "Name": "user",
+                  "Sharded": true
+                },
+                "FieldQuery": "select 1 from `user` as u2 where 1 != 1",
+                "Query": "select 1 from `user` as u2 limit :__upper_limit",
+                "Table": "`user`"
+              }
+            ]
           },
           {
             "OperatorType": "Route",
@@ -4645,7 +4690,7 @@
               "Sharded": true
             },
             "FieldQuery": "select u1.col from `user` as u1 where 1 != 1",
-            "Query": "select u1.col from `user` as u1 where not :__sq_has_values1",
+            "Query": "select u1.col from `user` as u1 where not () in (select 1 from `user` as u2 limit 1)",
             "Table": "`user`"
           }
         ]

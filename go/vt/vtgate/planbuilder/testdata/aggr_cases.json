@@ -2106,32 +2106,7 @@
         ]
       }
     },
-    "gen4-plan": {
-      "QueryType": "SELECT",
-      "Original": "select count(*) from user where exists (select 1 from user_extra where user_id = user.id group by user_id having max(col) > 10)",
-      "Instructions": {
-        "OperatorType": "Aggregate",
-        "Variant": "Scalar",
-        "Aggregates": "sum_count_star(0) AS count(*)",
-        "Inputs": [
-          {
-            "OperatorType": "Route",
-            "Variant": "Scatter",
-            "Keyspace": {
-              "Name": "user",
-              "Sharded": true
-            },
-            "FieldQuery": "select count(*) from `user` where 1 != 1",
-            "Query": "select count(*) from `user` where exists (select 1 from user_extra where user_id = `user`.id group by user_id having max(col) > 10 limit 1)",
-            "Table": "`user`"
-          }
-        ]
-      },
-      "TablesUsed": [
-        "user.user",
-        "user.user_extra"
-      ]
-    }
+    "gen4-plan": "using aggregation on top of a *planbuilder.pulloutSubquery plan is not yet supported"
   },
   {
     "comment": "aggregation filtering by having on a route",
@@ -2341,51 +2316,7 @@
     "comment": "correlated subquery in exists clause with an ordering",
     "query": "select col, id from user where exists(select user_id from user_extra where user_id = 3 and user_id < user.id) order by id",
     "v3-plan": "unsupported: cross-shard correlated subquery",
-    "gen4-plan": {
-      "QueryType": "SELECT",
-      "Original": "select col, id from user where exists(select user_id from user_extra where user_id = 3 and user_id < user.id) order by id",
-      "Instructions": {
-        "OperatorType": "SemiJoin",
-        "JoinVars": {
-          "user_id": 0
-        },
-        "ProjectedIndexes": "-2,-1",
-        "TableName": "`user`_user_extra",
-        "Inputs": [
-          {
-            "OperatorType": "Route",
-            "Variant": "Scatter",
-            "Keyspace": {
-              "Name": "user",
-              "Sharded": true
-            },
-            "FieldQuery": "select `user`.id, col, weight_string(id) from `user` where 1 != 1",
-            "OrderBy": "(0|2) ASC",
-            "Query": "select `user`.id, col, weight_string(id) from `user` order by id asc",
-            "Table": "`user`"
-          },
-          {
-            "OperatorType": "Route",
-            "Variant": "EqualUnique",
-            "Keyspace": {
-              "Name": "user",
-              "Sharded": true
-            },
-            "FieldQuery": "select 1 from user_extra where 1 != 1",
-            "Query": "select 1 from user_extra where user_id = 3 and user_id < :user_id",
-            "Table": "user_extra",
-            "Values": [
-              "INT64(3)"
-            ],
-            "Vindex": "user_index"
-          }
-        ]
-      },
-      "TablesUsed": [
-        "user.user",
-        "user.user_extra"
-      ]
-    }
+    "gen4-plan": "exists sub-queries are only supported with AND clause"
   },
   {
     "comment": "Column and Literal equality filter on scatter aggregates",
@@ -3306,60 +3237,7 @@
     "comment": "aggregation on top of semijoin",
     "query": "select count(*) from user where exists (select 0 from user_extra where user.apa = user_extra.bar)",
     "v3-plan": "unsupported: cross-shard correlated subquery",
-    "gen4-plan": {
-      "QueryType": "SELECT",
-      "Original": "select count(*) from user where exists (select 0 from user_extra where user.apa = user_extra.bar)",
-      "Instructions": {
-        "OperatorType": "Aggregate",
-        "Variant": "Scalar",
-        "Aggregates": "sum_count_star(0) AS count(*)",
-        "Inputs": [
-          {
-            "OperatorType": "Projection",
-            "Expressions": [
-              "[COLUMN 1] as count(*)"
-            ],
-            "Inputs": [
-              {
-                "OperatorType": "SemiJoin",
-                "JoinVars": {
-                  "user_apa": 0
-                },
-                "TableName": "`user`_user_extra",
-                "Inputs": [
-                  {
-                    "OperatorType": "Route",
-                    "Variant": "Scatter",
-                    "Keyspace": {
-                      "Name": "user",
-                      "Sharded": true
-                    },
-                    "FieldQuery": "select `user`.apa, count(*), weight_string(`user`.apa) from `user` where 1 != 1 group by `user`.apa, weight_string(`user`.apa)",
-                    "Query": "select `user`.apa, count(*), weight_string(`user`.apa) from `user` group by `user`.apa, weight_string(`user`.apa)",
-                    "Table": "`user`"
-                  },
-                  {
-                    "OperatorType": "Route",
-                    "Variant": "Scatter",
-                    "Keyspace": {
-                      "Name": "user",
-                      "Sharded": true
-                    },
-                    "FieldQuery": "select 1 from user_extra where 1 != 1",
-                    "Query": "select 1 from user_extra where user_extra.bar = :user_apa",
-                    "Table": "user_extra"
-                  }
-                ]
-              }
-            ]
-          }
-        ]
-      },
-      "TablesUsed": [
-        "user.user",
-        "user.user_extra"
-      ]
-    }
+    "gen4-plan": "using aggregation on top of a *planbuilder.pulloutSubquery plan is not yet supported"
   },
   {
     "comment": "we have to track the order of distinct aggregation expressions",
@@ -3743,6 +3621,7 @@
     }
   },
   {
+    "comment": "select count(distinct user_id, name) from unsharded",
     "query": "select count(distinct user_id, name) from unsharded",
     "v3-plan": {
       "QueryType": "SELECT",
@@ -3779,11 +3658,13 @@
     }
   },
   {
+    "comment": "select count(distinct user_id, name) from user",
     "query": "select count(distinct user_id, name) from user",
     "v3-plan": "unsupported: only one expression allowed inside aggregates: count(distinct user_id, `name`)",
     "gen4-plan": "aggregate functions take a single argument 'count(distinct user_id, `name`)'"
   },
   {
+    "comment": "select sum(col) from (select user.col as col, 32 from user join user_extra) t",
     "query": "select sum(col) from (select user.col as col, 32 from user join user_extra) t",
     "v3-plan": "unsupported: cross-shard query with aggregates",
     "gen4-plan": {
@@ -4030,6 +3911,7 @@
     }
   },
   {
+    "comment": "select u.id from user u join user_extra ue on ue.id = u.id group by u.id having count(u.name) = 3",
     "query": "select u.id from user u join user_extra ue on ue.id = u.id group by u.id having count(u.name) = 3",
     "v3-plan": "unsupported: cross-shard query with aggregates",
     "gen4-plan": {
@@ -4118,6 +4000,7 @@
     }
   },
   {
+    "comment": "select u.id from user u join user_extra ue on ue.user_id = u.id group by u.id having count(u.name) = 3",
     "query": "select u.id from user u join user_extra ue on ue.user_id = u.id group by u.id having count(u.name) = 3",
     "v3-plan": {
       "QueryType": "SELECT",
@@ -4244,6 +4127,7 @@
     }
   },
   {
+    "comment": "select (select 1 from user u having count(ue.col) > 10) from user_extra ue",
     "query": "select (select 1 from user u having count(ue.col) > 10) from user_extra ue",
     "v3-plan": "symbol ue.col not found in subquery",
     "gen4-plan": {

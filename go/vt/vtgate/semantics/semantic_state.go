@@ -118,6 +118,16 @@ type (
 	}
 )
 
+func (st *SemTable) tableSetFor(t *sqlparser.AliasedTableExpr) TableSet {
+	for i, t2 := range st.Tables {
+		if t == t2.getExpr() {
+			return SingleTableSet(i)
+		}
+	}
+	panic("unknown table")
+
+}
+
 var (
 	// ErrMultipleTables refers to an error happening when something should be used only for single tables
 	ErrMultipleTables = vterrors.Errorf(vtrpcpb.Code_INTERNAL, "[BUG] should only be used for single tables")
@@ -425,4 +435,13 @@ func (st *SemTable) EqualsExpr(a, b sqlparser.Expr) bool {
 	default:
 		return sqlparser.EqualsExpr(a, b)
 	}
+}
+
+func (st *SemTable) TableIDFor(t TableInfo) TableSet {
+	for i, t2 := range st.Tables {
+		if t == t2 {
+			return SingleTableSet(i)
+		}
+	}
+	panic("unknown table")
 }
