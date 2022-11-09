@@ -80,7 +80,7 @@ func (pb *primitiveBuilder) pushLimit(limit *sqlparser.Limit) error {
 		return nil
 	}
 
-	lb, err := createLimit(pb.plan, limit)
+	lb, err := createLimit(pb.plan, limit.Rowcount, limit.Offset)
 	if err != nil {
 		return err
 	}
@@ -136,17 +136,17 @@ func setUpperLimit(plan logicalPlan) (bool, logicalPlan, error) {
 	return true, plan, nil
 }
 
-func createLimit(input logicalPlan, limit *sqlparser.Limit) (logicalPlan, error) {
+func createLimit(input logicalPlan, rowcount, offset sqlparser.Expr) (logicalPlan, error) {
 	plan := newLimit(input)
 	emptySemTable := semantics.EmptySemTable()
-	pv, err := evalengine.Translate(limit.Rowcount, emptySemTable)
+	pv, err := evalengine.Translate(rowcount, emptySemTable)
 	if err != nil {
 		return nil, vterrors.Wrap(err, "unexpected expression in LIMIT")
 	}
 	plan.elimit.Count = pv
 
-	if limit.Offset != nil {
-		pv, err = evalengine.Translate(limit.Offset, emptySemTable)
+	if offset != nil {
+		pv, err = evalengine.Translate(offset, emptySemTable)
 		if err != nil {
 			return nil, vterrors.Wrap(err, "unexpected expression in OFFSET")
 		}

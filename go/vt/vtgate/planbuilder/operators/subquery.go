@@ -109,3 +109,6 @@ func createSubqueryFromStatement(ctx *plancontext.PlanningContext, stmt sqlparse
 	}
 	return subq, nil
 }
+
+// from foo where id in (select id from bar)
+// from foo where exist (select * from bar where foo.id = bar.id)

@@ -59,9 +59,28 @@ func transformToLogicalPlan(ctx *plancontext.PlanningContext, op operators.Opera
 		return transformFilter(ctx, op)
 	case *operators.Horizon:
 		return transformHorizon(ctx, op, isRoot)
+	case *operators.Limit:
+		return transformLimit(ctx, op, isRoot)
 	}
 
 	return nil, vterrors.Errorf(vtrpcpb.Code_INTERNAL, "[BUG] unknown type encountered: %T (transformToLogicalPlan)", op)
+}
+
+func transformLimit(ctx *plancontext.PlanningContext, op *operators.Limit, isRoot bool) (logicalPlan, error) {
+	src, err := transformToLogicalPlan(ctx, op.Source, isRoot)
+	if err != nil {
+		return nil, err
+	}
+	plan, err := createLimit(src, op.Rowcount, op.Offset)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = visit(plan, setUpperLimit)
+	if err != nil {
+		return nil, err
+	}
+	return plan, nil
 }
 
 func transformFilter(ctx *plancontext.PlanningContext, op *operators.Filter) (logicalPlan, error) {
@@ -101,11 +120,7 @@ func transformHorizon(ctx *plancontext.PlanningContext, op *operators.Horizon, i
 		}
 
 		replaceSubQuery(ctx, node)
-		plan, err := hp.planHorizon(ctx, source, true)
-		if err != nil {
-			return nil, err
-		}
-		return planLimit(node.Limit, plan)
+		return hp.planHorizon(ctx, source, true)
 	case *sqlparser.Union:
 		var err error
 		rb, isRoute := source.(*routeGen4)

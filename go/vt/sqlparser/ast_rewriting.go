@@ -364,6 +364,8 @@ func (er *astRewriter) rewrite(cursor *Cursor) bool {
 		case GlobalScope, SessionScope:
 			er.sysVarRewrite(cursor, node)
 		}
+	case *ExistsExpr:
+		er.existsToIN(cursor, node)
 	case *Subquery:
 		er.unnestSubQueries(cursor, node)
 	case *NotExpr:
@@ -599,6 +601,13 @@ func (er *astRewriter) existsRewrite(cursor *Cursor, node *ExistsExpr) {
 			&AliasedExpr{Expr: NewIntLiteral("1")},
 		}
 		node.GroupBy = nil
+	}
+}
+
+func (er *astRewriter) existsToIN(cursor *Cursor, node *ExistsExpr) {
+	sel, ok := node.Subquery.Select.(*Select)
+	if !ok {
+		return
 	}
 }
 

@@ -27,7 +27,10 @@ type Filter struct {
 	Predicates []sqlparser.Expr
 }
 
+var _ Operator = (*Filter)(nil)
 var _ PhysicalOperator = (*Filter)(nil)
+var _ unresolved = (*Filter)(nil)
+var _ compactable = (*Filter)(nil)
 
 func newFilter(op Operator, expr ...sqlparser.Expr) Operator {
 	return &Filter{

@@ -38,13 +38,14 @@ func (f *Filter) compact(*plancontext.PlanningContext) (Operator, bool, error) {
 		return f.Source, true, nil
 	}
 
-	other, isFilter := f.Source.(*Filter)
-	if !isFilter {
+	switch src := f.Source.(type) {
+	case *Filter:
+		f.Source = src.Source
+		f.Predicates = append(f.Predicates, src.Predicates...)
+		return f, true, nil
+	default:
 		return f, false, nil
 	}
-	f.Source = other.Source
-	f.Predicates = append(f.Predicates, other.Predicates...)
-	return f, true, nil
 }
 
 func (u *Union) compact(*plancontext.PlanningContext) (Operator, bool, error) {

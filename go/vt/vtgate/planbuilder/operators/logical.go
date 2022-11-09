@@ -66,17 +66,25 @@ func createOperatorFromSelect(ctx *plancontext.PlanningContext, sel *sqlparser.S
 			addColumnEquality(ctx, expr)
 		}
 	}
-	if subq == nil {
-		return &Horizon{
-			Source: op,
-			Select: sel,
-		}, nil
+	if subq != nil {
+		subq.Outer = op
+		op = subq
 	}
-	subq.Outer = op
-	return &Horizon{
-		Source: subq,
+
+	op = &Horizon{
+		Source: op,
 		Select: sel,
-	}, nil
+	}
+
+	if sel.Limit != nil {
+		op = &Limit{
+			Rowcount: sel.Limit.Rowcount,
+			Offset:   sel.Limit.Offset,
+			Source:   op,
+		}
+	}
+
+	return op, nil
 }
 
 func createOperatorFromUnion(ctx *plancontext.PlanningContext, node *sqlparser.Union) (Operator, error) {

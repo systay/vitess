@@ -457,7 +457,7 @@ func planLimit(limit *sqlparser.Limit, plan logicalPlan) (logicalPlan, error) {
 		return plan, nil
 	}
 
-	lPlan, err := createLimit(plan, limit)
+	lPlan, err := createLimit(plan, limit.Rowcount, limit.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -480,10 +480,6 @@ func planHorizon(ctx *plancontext.PlanningContext, plan logicalPlan, in sqlparse
 		replaceSubQuery(ctx, node)
 		var err error
 		plan, err = hp.planHorizon(ctx, plan, truncateColumns)
-		if err != nil {
-			return nil, err
-		}
-		plan, err = planLimit(node.Limit, plan)
 		if err != nil {
 			return nil, err
 		}

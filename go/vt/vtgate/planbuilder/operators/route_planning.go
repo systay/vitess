@@ -60,6 +60,7 @@ func transformToPhysical(ctx *plancontext.PlanningContext, in Operator) (Operato
 			return optimizeSubQuery(ctx, op)
 		case *Filter:
 			return optimizeFilter(op)
+
 		default:
 			return operator, false, nil
 		}

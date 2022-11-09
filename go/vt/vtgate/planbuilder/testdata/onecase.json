@@ -1,9 +1,57 @@
 [
   {
-    "comment": "Add your test case here for debugging and run go test -run=One.",
-    "query": "",
-    "plan": {
-
+    "comment": "correlated subquery on sharding key with group by a unique vindex with having clause.",
+    "query": "select 1 from user where user.id IN (select foo from user_extra) ",
+    "v3-plan": {},
+    "gen4-plan": {
+      "QueryType": "SELECT",
+      "Original": "select 1 from user where user.id IN (select foo from user_extra) ",
+      "Instructions": {
+        "OperatorType": "Subquery",
+        "Variant": "PulloutIn",
+        "PulloutVars": [
+          "__sq_has_values1",
+          "__sq1"
+        ],
+        "Inputs": [
+          {
+            "OperatorType": "Route",
+            "Variant": "Scatter",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select foo from user_extra where 1 != 1",
+            "Query": "select foo from user_extra",
+            "Table": "user_extra"
+          },
+          {
+            "OperatorType": "Route",
+            "Variant": "IN",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select 1 from `user` where 1 != 1",
+            "Query": "select 1 from `user` where :__sq_has_values1 = 1 and `user`.id in ::__vals",
+            "Table": "`user`",
+            "Values": [
+              ":__sq1"
+            ],
+            "Vindex": "user_index"
+          }
+        ]
+      },
+      "TablesUsed": [
+        "user.user",
+        "user.user_extra"
+      ]
     }
+  },
+  {
+    "comment": "correlated subquery on sharding key with group by a unique vindex with having clause.",
+    "query": "select 1 from user where exists (select 1 from user_extra where user_extra.foo = user.id) ",
+    "v3-plan": {},
+    "gen4-plan": {}
   }
 ]

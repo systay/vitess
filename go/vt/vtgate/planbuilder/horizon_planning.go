@@ -92,7 +92,7 @@ func (hp *horizonPlanning) planHorizon(ctx *plancontext.PlanningContext, plan lo
 			return nil, err
 		}
 	default:
-		err = pushProjections(ctx, plan, hp.qp.SelectExprs)
+		err = pushProjections(ctx, plan, hp.qp.SelectExprs, !truncateColumns)
 		if err != nil {
 			return nil, err
 		}
@@ -123,13 +123,13 @@ func (hp *horizonPlanning) planHorizon(ctx *plancontext.PlanningContext, plan lo
 	return plan, nil
 }
 
-func pushProjections(ctx *plancontext.PlanningContext, plan logicalPlan, selectExprs []operators.SelectExpr) error {
+func pushProjections(ctx *plancontext.PlanningContext, plan logicalPlan, selectExprs []operators.SelectExpr, reuseCol bool) error {
 	for _, e := range selectExprs {
 		aliasExpr, err := e.GetAliasedExpr()
 		if err != nil {
 			return err
 		}
-		if _, _, err := pushProjection(ctx, aliasExpr, plan, true, false, false); err != nil {
+		if _, _, err := pushProjection(ctx, aliasExpr, plan, true, reuseCol, false); err != nil {
 			return err
 		}
 	}
@@ -162,7 +162,7 @@ func (hp *horizonPlanning) truncateColumnsIfNeeded(ctx *plancontext.PlanningCont
 		}
 
 		exprs := hp.qp.SelectExprs[0:hp.qp.GetColumnCount()]
-		err := pushProjections(ctx, plan, exprs)
+		err := pushProjections(ctx, plan, exprs, true)
 		if err != nil {
 			return nil, err
 		}
