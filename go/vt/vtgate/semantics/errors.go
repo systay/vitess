@@ -17,23 +17,45 @@ limitations under the License.
 package semantics
 
 import (
+	"fmt"
+
 	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
 	"vitess.io/vitess/go/vt/vterrors"
 )
+
+var UseIDs = false
 
 type (
 	ErrorCode int
 
 	Error struct {
-		Code ErrorCode
+		Code   ErrorCode
+		format string
+		args   []any
 	}
 
 	info struct {
 		format string
 		state  vterrors.State
 		code   vtrpcpb.Code
+		id     string
 	}
 )
+
+func NewError(code ErrorCode, args ...any) error {
+	return &Error{
+		Code: code,
+		args: args,
+	}
+}
+
+func NewErrorWithMessage(code ErrorCode, format string, args ...any) error {
+	return &Error{
+		Code:   code,
+		format: format,
+		args:   args,
+	}
+}
 
 var errors = map[ErrorCode]info{
 	UnionColumnsDoNotMatch: {
@@ -41,19 +63,35 @@ var errors = map[ErrorCode]info{
 		state:  vterrors.WrongNumberOfColumnsInSelect,
 		code:   vtrpcpb.Code_FAILED_PRECONDITION,
 	},
+	Unsupported: {
+		format: "This statement is unsupported by Vitess. Please rewrite your query to use supported syntax.",
+		code:   vtrpcpb.Code_UNIMPLEMENTED,
+		id:     "VT12001",
+	},
 }
 
 const (
 	UnionColumnsDoNotMatch ErrorCode = iota
+	Unsupported
 )
 
 func (n *Error) Error() string {
-	f, ok := errors[n.Code]
-	if !ok {
-		return "unknown error"
+	var format string
+	if n.format != "" {
+		format = n.format
+	} else {
+		f, ok := errors[n.Code]
+		if !ok {
+			return "unknown error"
+		}
+		format = f.format
+		if UseIDs && f.id != "" {
+			format = fmt.Sprintf("%s: %s", f.id, format)
+		}
 	}
 
-	return f.format
+	sprintf := fmt.Sprintf(format, n.args...)
+	return sprintf
 }
 
 func (n *Error) ErrorState() vterrors.State {
