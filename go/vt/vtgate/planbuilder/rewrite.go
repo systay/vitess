@@ -35,11 +35,21 @@ func queryRewrite(semTable *semantics.SemTable, reservedVars *sqlparser.Reserved
 		semTable:     semTable,
 		reservedVars: reservedVars,
 	}
-	sqlparser.Rewrite(statement, r.rewriteDown, r.rewriteUp)
+	sqlparser.SafeRewrite(statement, r.rewriteDown, r.rewriteUp)
 	return nil
 }
 
-func (r *rewriter) rewriteDown(cursor *sqlparser.Cursor) bool {
+func (r *rewriter) rewriteDown(node, _ sqlparser.SQLNode) bool {
+	if r.err != nil {
+		return false
+	}
+	if _, isSubQ := node.(*sqlparser.Subquery); isSubQ {
+		r.inSubquery++
+	}
+	return true
+}
+
+func (r *rewriter) rewriteUp(cursor *sqlparser.Cursor) bool {
 	switch node := cursor.Node().(type) {
 	case *sqlparser.Select:
 		rewriteHavingClause(node)
@@ -49,6 +59,9 @@ func (r *rewriter) rewriteDown(cursor *sqlparser.Cursor) bool {
 			r.err = err
 		}
 	case *sqlparser.ExistsExpr:
+		if _, cmp := cursor.Parent().(*sqlparser.ComparisonExpr); cmp {
+			return true
+		}
 		err := r.rewriteExistsSubquery(cursor, node)
 		if err != nil {
 			r.err = err
@@ -79,7 +92,7 @@ func (r *rewriter) rewriteDown(cursor *sqlparser.Cursor) bool {
 			break
 		}
 		// if there is no as clause, then move the routed table to the as clause.
-		// i.e
+		// i.e.
 		// routed as x -> original as x
 		// routed -> original as routed
 		if node.As.IsEmpty() {
@@ -89,18 +102,13 @@ func (r *rewriter) rewriteDown(cursor *sqlparser.Cursor) bool {
 		tableName.Name = vindexTable.Name
 		node.Expr = tableName
 	case *sqlparser.Subquery:
+		if _, cmp := cursor.Parent().(*sqlparser.ComparisonExpr); cmp {
+			return true
+		}
 		err := rewriteSubquery(cursor, r, node)
 		if err != nil {
 			r.err = err
 		}
-	}
-	return true
-}
-
-func (r *rewriter) rewriteUp(cursor *sqlparser.Cursor) bool {
-	switch cursor.Node().(type) {
-	case *sqlparser.Subquery:
-		r.inSubquery--
 	}
 	return r.err == nil
 }
@@ -116,7 +124,7 @@ func rewriteInSubquery(cursor *sqlparser.Cursor, r *rewriter, node *sqlparser.Co
 		return vterrors.VT13001("got subquery that was not in the subq map")
 	}
 
-	r.inSubquery++
+	r.inSubquery--
 	argName, hasValuesArg := r.reservedVars.ReserveSubQueryWithHasValues()
 	semTableSQ.SetArgName(argName)
 	semTableSQ.SetHasValuesArg(hasValuesArg)
@@ -132,7 +140,7 @@ func rewriteSubquery(cursor *sqlparser.Cursor, r *rewriter, node *sqlparser.Subq
 	if semTableSQ.GetArgName() != "" || engine.PulloutOpcode(semTableSQ.OpCode) != engine.PulloutValue {
 		return nil
 	}
-	r.inSubquery++
+	r.inSubquery--
 	argName := r.reservedVars.ReserveSubQuery()
 	semTableSQ.SetArgName(argName)
 	cursor.Replace(semTableSQ)
@@ -145,7 +153,7 @@ func (r *rewriter) rewriteExistsSubquery(cursor *sqlparser.Cursor, node *sqlpars
 		return vterrors.VT13001("got subquery that was not in the subq map")
 	}
 
-	r.inSubquery++
+	r.inSubquery--
 	hasValuesArg := r.reservedVars.ReserveHasValuesSubQuery()
 	semTableSQ.SetHasValuesArg(hasValuesArg)
 	cursor.Replace(semTableSQ)
