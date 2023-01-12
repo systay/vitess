@@ -183,38 +183,36 @@ func rewriteHavingClause(node *sqlparser.Select) {
 	for _, expr := range exprs {
 		hasAggr := sqlparser.ContainsAggregation(expr)
 		if !hasAggr {
-			sqlparser.Rewrite(expr, func(cursor *sqlparser.Cursor) bool {
-				visitColName(cursor.Node(), selectExprMap, func(original sqlparser.Expr) {
+			_ = sqlparser.Walk(func(node sqlparser.SQLNode) (kontinue bool, err error) {
+				visitColName(node, selectExprMap, func(original sqlparser.Expr) {
 					if sqlparser.ContainsAggregation(original) {
 						hasAggr = true
 					}
 				})
-				return true
-			}, nil)
+				return true, nil
+			}, expr)
 		}
 		if hasAggr {
 			node.AddHaving(expr)
 		} else {
-			sqlparser.Rewrite(expr, func(cursor *sqlparser.Cursor) bool {
+			sqlparser.SafeRewrite(expr, nil, func(cursor *sqlparser.Cursor) bool {
 				visitColName(cursor.Node(), selectExprMap, func(original sqlparser.Expr) {
 					cursor.Replace(original)
 				})
 				return true
-			}, nil)
+			})
 			node.AddWhere(expr)
 		}
 	}
 }
-func visitColName(cursor sqlparser.SQLNode, selectExprMap map[string]sqlparser.Expr, f func(original sqlparser.Expr)) {
-	switch x := cursor.(type) {
-	case *sqlparser.ColName:
-		if !x.Qualifier.IsEmpty() {
-			return
-		}
-		originalExpr, isInMap := selectExprMap[x.Name.Lowered()]
-		if isInMap {
-			f(originalExpr)
-		}
+func visitColName(node sqlparser.SQLNode, selectExprMap map[string]sqlparser.Expr, f func(original sqlparser.Expr)) {
+	col, isCol := node.(*sqlparser.ColName)
+	if !isCol || !col.Qualifier.IsEmpty() {
 		return
+	}
+
+	originalExpr, isInMap := selectExprMap[col.Name.Lowered()]
+	if isInMap {
+		f(originalExpr)
 	}
 }
