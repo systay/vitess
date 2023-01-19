@@ -17,6 +17,8 @@ limitations under the License.
 package semantics
 
 import (
+	"fmt"
+
 	"vitess.io/vitess/go/mysql/collations"
 	"vitess.io/vitess/go/vt/vterrors"
 	"vitess.io/vitess/go/vt/vtgate/vindexes"
@@ -74,6 +76,22 @@ func Analyze(statement sqlparser.Statement, currentDb string, si SchemaInformati
 		return nil, err
 	}
 
+	if analyzer.rewriter.changed {
+		analyzer2 := newAnalyzer(currentDb, newSchemaInfo(si))
+		err := analyzer2.analyze(statement)
+		if err != nil {
+			return nil, err
+		}
+
+		if analyzer2.rewriter.changed {
+			panic(12)
+		}
+
+		st := analyzer2.newSemTable(statement, si.ConnCollation())
+		st.ExpandedColumns = analyzer.rewriter.expandedColumns
+		return st, err
+	}
+
 	// Creation of the semantic table
 	semTable := analyzer.newSemTable(statement, si.ConnCollation())
 
@@ -126,6 +144,9 @@ func (a *analyzer) analyzeDown(cursor *sqlparser.Cursor) bool {
 	if !a.shouldContinue() {
 		return true
 	}
+	if _, sq := cursor.Node().(*sqlparser.Subquery); sq {
+		fmt.Println(42)
+	}
 
 	if err := a.scoper.down(cursor); err != nil {
 		a.setError(err)
@@ -135,12 +156,8 @@ func (a *analyzer) analyzeDown(cursor *sqlparser.Cursor) bool {
 		a.setError(err)
 		return true
 	}
-	if err := a.rewriter.down(cursor); err != nil {
-		a.setError(err)
-		return true
-	}
-	// log any warn in rewriting.
-	a.warning = a.rewriter.warning
+
+	a.rewriter.down(cursor.Node())
 
 	a.enterProjection(cursor)
 	// this is the visitor going down the tree. Returning false here would just not visit the children
@@ -153,6 +170,17 @@ func (a *analyzer) analyzeUp(cursor *sqlparser.Cursor) bool {
 	if !a.shouldContinue() {
 		return false
 	}
+
+	if _, sq := cursor.Node().(*sqlparser.Subquery); sq {
+		fmt.Println(42)
+	}
+
+	if err := a.rewriter.up(cursor); err != nil {
+		a.setError(err)
+		return true
+	}
+	// log any warn in rewriting.
+	a.warning = a.rewriter.warning
 
 	if err := a.binder.up(cursor); err != nil {
 		a.setError(err)

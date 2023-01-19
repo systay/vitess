@@ -32,15 +32,30 @@ type earlyRewriter struct {
 	clause          string
 	warning         string
 	expandedColumns map[sqlparser.TableName][]*sqlparser.ColName
+	changed         bool
 }
 
-func (r *earlyRewriter) down(cursor *sqlparser.Cursor) error {
+func (r *earlyRewriter) replace(newNode sqlparser.SQLNode, cursor *sqlparser.Cursor) {
+	r.changed = true
+	cursor.Replace(newNode)
+}
+
+func (r *earlyRewriter) down(node sqlparser.SQLNode) {
+	switch node.(type) {
+	case sqlparser.OrderBy:
+		r.clause = "order clause"
+	case sqlparser.GroupBy:
+		r.clause = "group statement"
+	}
+}
+
+func (r *earlyRewriter) up(cursor *sqlparser.Cursor) error {
 	switch node := cursor.Node().(type) {
 	case *sqlparser.Where:
 		if node.Type != sqlparser.HavingClause {
 			return nil
 		}
-		rewriteHavingAndOrderBy(node, cursor.Parent())
+		r.rewriteHavingAndOrderBy(node, cursor.Parent())
 	case sqlparser.SelectExprs:
 		_, isSel := cursor.Parent().(*sqlparser.Select)
 		if !isSel {
@@ -56,23 +71,19 @@ func (r *earlyRewriter) down(cursor *sqlparser.Cursor) error {
 			r.warning = "straight join is converted to normal join"
 		}
 	case sqlparser.OrderBy:
-		r.clause = "order clause"
-		rewriteHavingAndOrderBy(node, cursor.Parent())
+		r.rewriteHavingAndOrderBy(node, cursor.Parent())
 	case *sqlparser.OrExpr:
 		newNode := rewriteOrFalse(*node)
 		if newNode != nil {
-			cursor.Replace(newNode)
+			r.replace(newNode, cursor)
 		}
-	case sqlparser.GroupBy:
-		r.clause = "group statement"
-
 	case *sqlparser.Literal:
 		newNode, err := r.rewriteOrderByExpr(node)
 		if err != nil {
 			return err
 		}
 		if newNode != nil {
-			cursor.Replace(newNode)
+			r.replace(newNode, cursor)
 		}
 	case *sqlparser.CollateExpr:
 		lit, ok := node.Expr.(*sqlparser.Literal)
@@ -102,7 +113,7 @@ func (r *earlyRewriter) down(cursor *sqlparser.Cursor) error {
 				Escape:   node.Escape,
 			})
 		}
-		cursor.Replace(sqlparser.AndExpressions(predicates...))
+		r.replace(sqlparser.AndExpressions(predicates...), cursor)
 	}
 	return nil
 }
@@ -129,7 +140,7 @@ func (r *earlyRewriter) expandStar(cursor *sqlparser.Cursor, node sqlparser.Sele
 		changed = true
 	}
 	if changed {
-		cursor.ReplaceAndRevisit(selExprs)
+		r.replace(selExprs, cursor)
 	}
 	return nil
 }
@@ -143,21 +154,19 @@ func (r *earlyRewriter) expandStar(cursor *sqlparser.Cursor, node sqlparser.Sele
 //     HAVING/ORDER BY clause is inside an aggregation function
 //
 // This is a fucking weird scoping rule, but it's what MySQL seems to do... ¯\_(ツ)_/¯
-func rewriteHavingAndOrderBy(node, parent sqlparser.SQLNode) {
+func (r *earlyRewriter) rewriteHavingAndOrderBy(node, parent sqlparser.SQLNode) {
 	sel, isSel := parent.(*sqlparser.Select)
 	if !isSel {
 		return
 	}
 
-	sqlparser.SafeRewrite(node, func(node, _ sqlparser.SQLNode) bool {
+	dontVisitSubqueries := func(node, _ sqlparser.SQLNode) bool {
 		_, isSubQ := node.(*sqlparser.Subquery)
 		return !isSubQ
-	}, func(cursor *sqlparser.Cursor) bool {
+	}
+	sqlparser.SafeRewrite(node, dontVisitSubqueries, func(cursor *sqlparser.Cursor) bool {
 		col, ok := cursor.Node().(*sqlparser.ColName)
-		if !ok {
-			return true
-		}
-		if !col.Qualifier.IsEmpty() {
+		if !ok || !col.Qualifier.IsEmpty() {
 			return true
 		}
 		_, parentIsAggr := cursor.Parent().(sqlparser.AggrFunc)
@@ -168,7 +177,11 @@ func rewriteHavingAndOrderBy(node, parent sqlparser.SQLNode) {
 			}
 			_, aliasPointsToAggr := ae.Expr.(sqlparser.AggrFunc)
 			if parentIsAggr && aliasPointsToAggr {
-				return false
+				return true
+			}
+
+			if lit, isLit := ae.Expr.(*sqlparser.Literal); isLit && lit.Type == sqlparser.IntVal {
+				return true
 			}
 
 			safeToRewrite := true
@@ -183,7 +196,7 @@ func rewriteHavingAndOrderBy(node, parent sqlparser.SQLNode) {
 				return true, nil
 			}, ae.Expr)
 			if safeToRewrite {
-				cursor.Replace(ae.Expr)
+				r.replace(ae.Expr, cursor)
 			}
 		}
 		return true
@@ -221,17 +234,22 @@ func (r *earlyRewriter) rewriteOrderByExpr(node *sqlparser.Literal) (sqlparser.E
 		return nil, vterrors.Errorf(vtrpcpb.Code_INTERNAL, "don't know how to handle %s", sqlparser.String(node))
 	}
 
+	if lit, isLit := aliasedExpr.Expr.(*sqlparser.Literal); isLit && lit.Type == sqlparser.IntVal {
+		// we don't want to inject literal values in the order by clause
+		return nil, nil
+	}
+
 	if !aliasedExpr.As.IsEmpty() {
 		return sqlparser.NewColName(aliasedExpr.As.String()), nil
 	}
 
-	expr := realCloneOfColNames(aliasedExpr.Expr, currScope.isUnion)
+	expr := r.realCloneOfColNames(aliasedExpr.Expr, currScope.isUnion)
 	return expr, nil
 }
 
 // realCloneOfColNames clones all the expressions including ColName.
 // Since sqlparser.CloneRefOfColName does not clone col names, this method is needed.
-func realCloneOfColNames(expr sqlparser.Expr, union bool) sqlparser.Expr {
+func (r *earlyRewriter) realCloneOfColNames(expr sqlparser.Expr, union bool) sqlparser.Expr {
 	// todo copy-on-rewrite!
 	return sqlparser.SafeRewrite(sqlparser.CloneExpr(expr), nil, func(cursor *sqlparser.Cursor) bool {
 		exp, ok := cursor.Node().(*sqlparser.ColName)
@@ -243,7 +261,7 @@ func realCloneOfColNames(expr sqlparser.Expr, union bool) sqlparser.Expr {
 		if union {
 			newColName.Qualifier = sqlparser.TableName{}
 		}
-		cursor.Replace(&newColName)
+		r.replace(&newColName, cursor)
 		return true
 	}).(sqlparser.Expr)
 }

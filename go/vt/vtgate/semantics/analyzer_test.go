@@ -1409,6 +1409,45 @@ func TestSingleUnshardedKeyspace(t *testing.T) {
 	}
 }
 
+func TestRewriteTPC(t *testing.T) {
+	formal, err := vindexes.LoadFormal("/Users/systay/dev/vitess/go/vt/vtgate/planbuilder/testdata/vschemas/tpch_schema.json")
+	require.NoError(t, err)
+	vschema := vindexes.BuildVSchema(formal)
+	for _, ks := range vschema.Keyspaces {
+		require.NoError(t, ks.Error, ks.Keyspace.Name)
+	}
+
+	si := FakeSI{
+		Tables:       map[string]*vindexes.Table{},
+		VindexTables: map[string]vindexes.Vindex{},
+	}
+	for _, ks := range vschema.Keyspaces {
+		for s, table := range ks.Tables {
+			si.Tables[s] = table
+		}
+		for s, vindex := range ks.Vindexes {
+			si.VindexTables[s] = vindex
+		}
+
+		break
+	}
+
+	stmt, err := sqlparser.Parse("select s_name, count(*) as numwait from supplier, lineitem l1, orders, nation where s_suppkey = l1.l_suppkey and o_orderkey = l1.l_orderkey and o_orderstatus = 'F' and l1.l_receiptdate > l1.l_commitdate and exists ( select * from lineitem l2 where l2.l_orderkey = l1.l_orderkey and l2.l_suppkey <> l1.l_suppkey ) and not exists ( select * from lineitem l3 where l3.l_orderkey = l1.l_orderkey and l3.l_suppkey <> l1.l_suppkey and l3.l_receiptdate > l3.l_commitdate ) and s_nationkey = n_nationkey and n_name = 'SAUDI ARABIA' group by s_name order by numwait desc, s_name limit 100")
+	require.NoError(t, err)
+
+	result, err := sqlparser.RewriteAST(stmt, "dbName", 0, "", map[string]string{}, nil)
+	require.NoError(t, err)
+	stmt = result.AST
+
+	st, err := Analyze(stmt, "dbName", fakeSchemaInfo())
+	require.NoError(t, err)
+	fmt.Println(sqlparser.String(stmt))
+	for i, table := range st.Tables {
+		name, _ := table.Name()
+		fmt.Printf("%d - %s\n", i, name.Name.String())
+	}
+}
+
 var ks1 = &vindexes.Keyspace{
 	Name:    "ks1",
 	Sharded: false,
