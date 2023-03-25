@@ -153,32 +153,52 @@ func (a *ApplyJoin) AddColumn(ctx *plancontext.PlanningContext, expr sqlparser.E
 	both := lhs.Merge(rhs)
 	deps := ctx.SemTable.RecursiveDeps(expr)
 
+	pushLeft := func(e sqlparser.Expr) (int, error) {
+		newLHS, offset, err := a.LHS.AddColumn(ctx, expr)
+		if err != nil {
+			return 0, err
+		}
+		a.LHS = newLHS
+		return offset, nil
+	}
+	pushRight := func(e sqlparser.Expr) (int, error) {
+		newRHS, offset, err := a.RHS.AddColumn(ctx, expr)
+		if err != nil {
+			return 0, err
+		}
+		a.RHS = newRHS
+		return offset, nil
+	}
+
 	// if we get here, it's a new expression we are dealing with.
 	// We need to decide if we can push it all on either side,
 	// or if we have to break the expression into left and right parts
 	switch {
 	case deps.IsSolvedBy(lhs):
-		offset, err := a.LHS.AddColumn(ctx, expr)
+		offset, err := pushLeft(expr)
 		if err != nil {
 			return 0, err
 		}
 		a.Columns = append(a.Columns, -offset-1)
+	case deps.IsSolvedBy(rhs):
+		offset, err := pushRight(expr)
+		if err != nil {
+			return 0, err
+		}
+		a.Columns = append(a.Columns, offset+1)
 	case deps.IsSolvedBy(both):
 		bvNames, lhsExprs, rhsExpr, err := BreakExpressionInLHSandRHS(ctx, expr, lhs)
 		if err != nil {
 			return 0, err
 		}
 		for i, lhsExpr := range lhsExprs {
-			offset, err := a.LHS.AddColumn(ctx, lhsExpr)
+			offset, err := pushLeft(lhsExpr)
 			if err != nil {
 				return 0, err
 			}
 			a.Vars[bvNames[i]] = offset
 		}
-		expr = rhsExpr
-		fallthrough // now we just pass the rest to the RHS of the join
-	case deps.IsSolvedBy(rhs):
-		offset, err := a.RHS.AddColumn(ctx, expr)
+		offset, err := pushRight(rhsExpr)
 		if err != nil {
 			return 0, err
 		}

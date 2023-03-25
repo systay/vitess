@@ -46,8 +46,9 @@ func planHorizons(ctx *plancontext.PlanningContext, in ops.Operator) (ops.Operat
 
 func planHorizon(ctx *plancontext.PlanningContext, in *Horizon) (ops.Operator, rewrite.VisitRule, error) {
 	rb, isRoute := in.Source.(*Route)
-	if !isRoute {
-		return in, rewrite.VisitChildren, nil
+	if !isRoute && ctx.SemTable.NotSingleRouteErr != nil {
+		// If we got here, we don't have a single shard plan
+		return nil, rewrite.VisitChildren, ctx.SemTable.NotSingleRouteErr
 	}
 	if isRoute && rb.IsSingleShard() && in.Select.GetLimit() == nil {
 		return planSingleRoute(rb, in)
@@ -66,9 +67,29 @@ func planHorizon(ctx *plancontext.PlanningContext, in *Horizon) (ops.Operator, r
 	needsOrdering := len(qp.OrderExprs) > 0
 	canShortcut := isRoute && sel.Having == nil && !needsOrdering
 
-	if !qp.NeedsAggregation() && sel.Having == nil && canShortcut && !needsOrdering && !qp.NeedsDistinct() && in.Select.GetLimit() == nil {
+	switch {
+	case qp.NeedsAggregation() || sel.Having != nil || sel.Limit != nil:
+		return nil, rewrite.VisitChildren, errNotHorizonPlanned
+	case canShortcut:
 		return planSingleRoute(rb, in)
+	// TODO we should have a case for derived tables here somewhere
+	default:
+		for i, e := range qp.SelectExprs {
+			expr, err := e.GetAliasedExpr()
+			if err != nil {
+				return nil, false, err
+			}
+			offset, err := in.Source.AddColumn(ctx, expr.Expr)
+			if err != nil {
+				return nil, false, err
+			}
+			if i != offset {
+				panic(42)
+			}
+		}
+		return in.Source, rewrite.VisitChildren, nil
 	}
+
 	return nil, rewrite.VisitChildren, errNotHorizonPlanned
 }
 

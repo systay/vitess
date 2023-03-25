@@ -1,9 +1,77 @@
 [
   {
-    "comment": "Add your test case here for debugging and run go test -run=One.",
-    "query": "",
-    "plan": {
-
+    "comment": "Auto-resolve should work if unique vindex columns are referenced",
+    "query": "select id, user_id from user join user_extra",
+    "v3-plan": {
+      "QueryType": "SELECT",
+      "Original": "select id, user_id from user join user_extra",
+      "Instructions": {
+        "OperatorType": "Join",
+        "Variant": "Join",
+        "JoinColumnIndexes": "L:0,R:0",
+        "TableName": "`user`_user_extra",
+        "Inputs": [
+          {
+            "OperatorType": "Route",
+            "Variant": "Scatter",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select id from `user` where 1 != 1",
+            "Query": "select id from `user`",
+            "Table": "`user`"
+          },
+          {
+            "OperatorType": "Route",
+            "Variant": "Scatter",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select user_id from user_extra where 1 != 1",
+            "Query": "select user_id from user_extra",
+            "Table": "user_extra"
+          }
+        ]
+      }
+    },
+    "gen4-plan": {
+      "QueryType": "SELECT",
+      "Original": "select id, user_id from user join user_extra",
+      "Instructions": {
+        "OperatorType": "Join",
+        "Variant": "Join",
+        "JoinColumnIndexes": "L:0,R:0",
+        "TableName": "`user`_user_extra",
+        "Inputs": [
+          {
+            "OperatorType": "Route",
+            "Variant": "Scatter",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select id from `user` where 1 != 1",
+            "Query": "select id from `user`",
+            "Table": "`user`"
+          },
+          {
+            "OperatorType": "Route",
+            "Variant": "Scatter",
+            "Keyspace": {
+              "Name": "user",
+              "Sharded": true
+            },
+            "FieldQuery": "select user_id from user_extra where 1 != 1",
+            "Query": "select user_id from user_extra",
+            "Table": "user_extra"
+          }
+        ]
+      },
+      "TablesUsed": [
+        "user.user",
+        "user.user_extra"
+      ]
     }
-  }
-]
+  }]
