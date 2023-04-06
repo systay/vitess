@@ -139,46 +139,55 @@ func (d *Derived) AddPredicate(ctx *plancontext.PlanningContext, expr sqlparser.
 	return d, nil
 }
 
-func (d *Derived) AddColumn(ctx *plancontext.PlanningContext, expr *sqlparser.AliasedExpr, reuseCol bool) (ops.Operator, int, error) {
-	col, ok := expr.Expr.(*sqlparser.ColName)
-	if !ok {
-		return nil, 0, vterrors.VT13001("cannot push non-colname expression to a derived table")
-	}
+func (d *Derived) AddColumn(ctx *plancontext.PlanningContext, expr sqlparser.Expr) (ops.Operator, error) {
+	// col, ok := expr.(*sqlparser.ColName)
+	// if !ok {
+	// 	return nil, vterrors.VT13001("cannot push non-colname expression to a derived table")
+	// }
+	// if _, found := canReuseColumn(ctx, d.Columns, col); found {
+	// 	return d, nil
+	// }
+	panic(12)
+}
 
-	if offset, found := canReuseColumn(ctx, reuseCol, d.Columns, col); found {
-		return d, offset, nil
-	}
-
-	i, err := d.findOutputColumn(col)
-	if err != nil {
-		return nil, 0, err
-	}
-	var pos int
-	d.ColumnsOffset, pos = addToIntSlice(d.ColumnsOffset, i)
-
-	d.Columns = append(d.Columns, col)
-	// add it to the source if we were not already passing it through
-	if i <= -1 {
-		newSrc, _, err := d.Source.AddColumn(ctx, aeWrap(sqlparser.NewColName(col.Name.String())), true)
-		if err != nil {
-			return nil, 0, err
-		}
-		d.Source = newSrc
-	}
-	return d, pos, nil
+func (d *Derived) GetOffsetFor(ctx *plancontext.PlanningContext, expr sqlparser.Expr) (int, error) {
+	panic(12)
+	// col, ok := expr.(*sqlparser.ColName)
+	// if !ok {
+	// 	return 0, vterrors.VT13001("cannot push non-colname expression to a derived table")
+	// }
+	//
+	// if offset, found := canReuseColumn(ctx, d.Columns, col); found {
+	// 	return offset, nil
+	// }
+	//
+	// i, err := d.findOutputColumn(col)
+	// if err != nil {
+	// 	return 0, err
+	// }
+	//
+	// var pos int
+	// d.ColumnsOffset, pos = addToIntSlice(d.ColumnsOffset, i)
+	//
+	// d.Columns = append(d.Columns, col)
+	// // add it to the source if we were not already passing it through
+	// if i <= -1 {
+	// 	newSrc, err := d.Source.AddColumn(ctx, aeWrap(sqlparser.NewColName(col.Name.String())))
+	// 	if err != nil {
+	// 		return 0, err
+	// 	}
+	// 	d.Source = newSrc
+	// }
+	// return pos, nil
 }
 
 // canReuseColumn is generic, so it can be used with slices of different types.
 // We don't care about the actual type, as long as we know it's a sqlparser.Expr
 func canReuseColumn[Expr sqlparser.Expr](
 	ctx *plancontext.PlanningContext,
-	reuseCol bool,
 	columns []Expr,
 	col sqlparser.Expr,
 ) (offset int, found bool) {
-	if !reuseCol {
-		return
-	}
 
 	for offset, column := range columns {
 		if ctx.SemTable.EqualsExpr(col, column) {

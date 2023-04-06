@@ -87,13 +87,17 @@ func (f *Filter) AddPredicate(ctx *plancontext.PlanningContext, expr sqlparser.E
 	return f, nil
 }
 
-func (f *Filter) AddColumn(ctx *plancontext.PlanningContext, expr *sqlparser.AliasedExpr, reuseCol bool) (ops.Operator, int, error) {
-	newSrc, offset, err := f.Source.AddColumn(ctx, expr, reuseCol)
+func (f *Filter) AddColumn(ctx *plancontext.PlanningContext, expr sqlparser.Expr) (ops.Operator, error) {
+	newSrc, err := f.Source.AddColumn(ctx, expr)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	f.Source = newSrc
-	return f, offset, nil
+	return f, nil
+}
+
+func (f *Filter) GetOffsetFor(ctx *plancontext.PlanningContext, expr sqlparser.Expr) (int, error) {
+	return f.Source.GetOffsetFor(ctx, expr)
 }
 
 func (f *Filter) GetColumns() ([]sqlparser.Expr, error) {

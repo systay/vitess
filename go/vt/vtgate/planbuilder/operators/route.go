@@ -522,13 +522,17 @@ func (r *Route) AddPredicate(ctx *plancontext.PlanningContext, expr sqlparser.Ex
 	return r, err
 }
 
-func (r *Route) AddColumn(ctx *plancontext.PlanningContext, expr *sqlparser.AliasedExpr, reuseCol bool) (ops.Operator, int, error) {
-	newSrc, offset, err := r.Source.AddColumn(ctx, expr, reuseCol)
+func (r *Route) AddColumn(ctx *plancontext.PlanningContext, expr sqlparser.Expr) (ops.Operator, error) {
+	newSrc, err := r.Source.AddColumn(ctx, expr)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	r.Source = newSrc
-	return r, offset, nil
+	return r, nil
+}
+
+func (r *Route) GetOffsetFor(ctx *plancontext.PlanningContext, expr sqlparser.Expr) (int, error) {
+	return r.Source.GetOffsetFor(ctx, expr)
 }
 
 func (r *Route) GetColumns() ([]sqlparser.Expr, error) {

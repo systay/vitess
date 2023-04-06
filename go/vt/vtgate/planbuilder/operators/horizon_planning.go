@@ -29,17 +29,11 @@ import (
 
 var errNotHorizonPlanned = vterrors.VT12001("query cannot be fully operator planned")
 
-// planColumns is the process of figuring out all necessary columns.
+// pushOrExpandHorizon is the process of figuring out all necessary columns.
 // They can be needed because the user wants to return the value of a column,
 // or because we need a column for filtering, grouping or ordering
-func planColumns(ctx *plancontext.PlanningContext, root ops.Operator) (ops.Operator, error) {
-	// We only need to do column planning to the point we hit a Route.
-	// Everything underneath the route is handled by the mysql planner
-	stopAtRoute := func(operator ops.Operator) rewrite.VisitRule {
-		_, isRoute := operator.(*Route)
-		return rewrite.VisitRule(!isRoute)
-	}
-	visitor := func(in ops.Operator, _ semantics.TableSet) (ops.Operator, rewrite.TreeIdentity, error) {
+func pushOrExpandHorizon(ctx *plancontext.PlanningContext, root ops.Operator) (ops.Operator, error) {
+	return pointRewriteStopAtRoute(root, func(in ops.Operator, _ semantics.TableSet) (ops.Operator, rewrite.TreeIdentity, error) {
 		switch in := in.(type) {
 		case *Horizon:
 			op, err := planHorizon(ctx, in, in == root)
@@ -53,18 +47,56 @@ func planColumns(ctx *plancontext.PlanningContext, root ops.Operator) (ops.Opera
 				return nil, false, err
 			}
 			return op, rewrite.NewTree, err
+		case *Projection:
+			op, err := in.PushDown(ctx)
+			if err != nil {
+				return nil, false, err
+			}
+
+			b := op != root
+			return op, rewrite.TreeIdentity(b), nil
+		default:
+			return in, rewrite.SameTree, nil
+		}
+	})
+}
+
+// planOffsets is the process of figuring out all necessary columns.
+// They can be needed because the user wants to return the value of a column,
+// or because we need a column for filtering, grouping or ordering
+func planOffsets(ctx *plancontext.PlanningContext, root ops.Operator) (ops.Operator, error) {
+	return pointRewriteStopAtRoute(root, func(in ops.Operator, _ semantics.TableSet) (ops.Operator, rewrite.TreeIdentity, error) {
+		switch in := in.(type) {
 		case *Filter:
 			err := planFilter(ctx, in)
 			if err != nil {
 				return nil, false, err
 			}
 			return in, rewrite.SameTree, nil
+		case *Projection:
+			// TODO
+			return in, rewrite.SameTree, nil
+		case *ApplyJoin:
+			for _, expr := range in.ColumnsAST {
+				if expr.Left {
+
+				}
+			}
 		default:
 			return in, rewrite.SameTree, nil
 		}
+	})
+}
+
+func pointRewriteStopAtRoute(root ops.Operator, visitor func(in ops.Operator, _ semantics.TableSet) (ops.Operator, rewrite.TreeIdentity, error)) (ops.Operator, error) {
+	// We only need to do column planning to the point we hit a Route.
+	// Everything underneath the route is handled by the mysql planner
+	stopAtRoute := func(operator ops.Operator) rewrite.VisitRule {
+		_, isRoute := operator.(*Route)
+		return rewrite.VisitRule(!isRoute)
 	}
 
-	newOp, err := rewrite.BottomUp(root, TableID, visitor, stopAtRoute)
+	newOp, err := rewrite.FixedPointBottomUp(root, TableID, visitor, stopAtRoute)
 	if err != nil {
 		if vterr, ok := err.(*vterrors.VitessError); ok && vterr.ID == "VT13001" {
 			// we encountered a bug. let's try to back out
@@ -116,7 +148,20 @@ func planSelectExpressions(ctx *plancontext.PlanningContext, in horizonLike, isR
 	case canPushDown:
 		return rewrite.Swap(in, rb)
 	default:
-		return pushProjections(ctx, qp, src, isRoot)
+		proj := NewProjection(src)
+		for _, e := range qp.SelectExprs {
+			expr, err := e.GetAliasedExpr()
+			if err != nil {
+				return nil, err
+			}
+			if !expr.As.IsEmpty() {
+				// we are not handling column names correct yet, so let's fail here for now
+				return nil, errNotHorizonPlanned
+			}
+			proj.columns = append(proj.columns, &Expr{E: expr.Expr})
+			proj.columnNames = append(proj.columnNames, expr.ColumnName())
+		}
+		return proj, nil
 	}
 }
 
@@ -139,7 +184,7 @@ func pushProjections(ctx *plancontext.PlanningContext, qp *QueryProjection, src 
 			return nil, errNotHorizonPlanned
 		}
 		var offset int
-		src, offset, err = src.AddColumn(ctx, expr, canReuseCols)
+		src, err = src.AddColumn(ctx, expr)
 		if err != nil {
 			return nil, err
 		}
@@ -171,7 +216,7 @@ func aeWrap(e sqlparser.Expr) *sqlparser.AliasedExpr {
 
 func planFilter(ctx *plancontext.PlanningContext, in *Filter) error {
 	resolveColumn := func(col *sqlparser.ColName) (int, error) {
-		newSrc, offset, err := in.Source.AddColumn(ctx, aeWrap(col), true)
+		newSrc, err := in.Source.AddColumn(ctx, aeWrap(col))
 		if err != nil {
 			return 0, err
 		}

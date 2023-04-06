@@ -67,13 +67,17 @@ func (v *Vindex) Clone([]ops.Operator) ops.Operator {
 
 var _ ops.PhysicalOperator = (*Vindex)(nil)
 
-func (v *Vindex) AddColumn(ctx *plancontext.PlanningContext, expr *sqlparser.AliasedExpr, reuseCol bool) (ops.Operator, int, error) {
-	offset, err := addColumn(ctx, v, expr.Expr, reuseCol)
+func (v *Vindex) AddColumn(ctx *plancontext.PlanningContext, expr sqlparser.Expr) (ops.Operator, error) {
+	_, err := addColumn(ctx, v, expr)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
-	return v, offset, nil
+	return v, nil
+}
+
+func (v *Vindex) GetOffsetFor(ctx *plancontext.PlanningContext, expr sqlparser.Expr) (int, error) {
+	return addColumn(ctx, v, expr)
 }
 
 func colNameToExpr(c *sqlparser.ColName) sqlparser.Expr { return c }

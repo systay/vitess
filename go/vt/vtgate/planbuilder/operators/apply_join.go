@@ -19,6 +19,7 @@ package operators
 import (
 	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
+	"vitess.io/vitess/go/slices2"
 
 	"vitess.io/vitess/go/vt/vtgate/planbuilder/operators/ops"
 
@@ -30,17 +31,8 @@ import (
 // ApplyJoin is a nested loop join - for each row on the LHS,
 // we'll execute the plan on the RHS, feeding data from left to right
 type ApplyJoin struct {
+	// Pre-Offset Binding - these fields are filled in before offset binding
 	LHS, RHS ops.Operator
-
-	// Columns stores the column indexes of the columns coming from the left and right side
-	// negative value comes from LHS and positive from RHS
-	Columns []int
-
-	// ColumnsAST keeps track of what AST expression is represented in the Columns array
-	ColumnsAST []sqlparser.Expr
-
-	// Vars are the arguments that need to be copied from the LHS to the RHS
-	Vars map[string]int
 
 	// LeftJoin will be true in the case of an outer join
 	LeftJoin bool
@@ -50,17 +42,38 @@ type ApplyJoin struct {
 	LHSColumns []*sqlparser.ColName
 
 	Predicate sqlparser.Expr
+
+	// VarsToExpr are the arguments that we need to copy from LHS to RHS
+	VarsToExpr map[string]sqlparser.Expr
+
+	// ColumnsAST keeps track of what AST expression is represented in the Columns array
+	ColumnsAST []JoinCol[sqlparser.Expr]
+
+	// Post Offset Binding - these fields will not contain anything until after offset-binding
+
+	// Columns stores the column indexes of the columns coming from the left and right side
+	// negative value comes from LHS and positive from RHS
+	Columns []int
+
+	// Vars are the arguments that need to be copied from the LHS to the RHS
+	Vars map[string]int
+}
+
+type JoinCol[K any] struct {
+	Left bool
+	Expr K
 }
 
 var _ ops.PhysicalOperator = (*ApplyJoin)(nil)
 
 func NewApplyJoin(lhs, rhs ops.Operator, predicate sqlparser.Expr, leftOuterJoin bool) *ApplyJoin {
 	return &ApplyJoin{
-		LHS:       lhs,
-		RHS:       rhs,
-		Vars:      map[string]int{},
-		Predicate: predicate,
-		LeftJoin:  leftOuterJoin,
+		LHS:        lhs,
+		RHS:        rhs,
+		Vars:       map[string]int{},
+		VarsToExpr: map[string]sqlparser.Expr{},
+		Predicate:  predicate,
+		LeftJoin:   leftOuterJoin,
 	}
 }
 
@@ -75,6 +88,7 @@ func (a *ApplyJoin) Clone(inputs []ops.Operator) ops.Operator {
 		Columns:    slices.Clone(a.Columns),
 		ColumnsAST: slices.Clone(a.ColumnsAST),
 		Vars:       maps.Clone(a.Vars),
+		VarsToExpr: maps.Clone(a.VarsToExpr),
 		LeftJoin:   a.LeftJoin,
 		Predicate:  sqlparser.CloneExpr(a.Predicate),
 		LHSColumns: slices.Clone(a.LHSColumns),
@@ -127,7 +141,7 @@ func (a *ApplyJoin) AddJoinPredicate(ctx *plancontext.PlanningContext, expr sqlp
 		return err
 	}
 	for i, col := range cols {
-		offset, err := a.pushColLeft(ctx, aeWrap(col))
+		offset, err := a.pushColLeft(ctx, col)
 		if err != nil {
 			return err
 		}
@@ -145,37 +159,43 @@ func (a *ApplyJoin) AddJoinPredicate(ctx *plancontext.PlanningContext, expr sqlp
 	return nil
 }
 
-func (a *ApplyJoin) pushColLeft(ctx *plancontext.PlanningContext, e *sqlparser.AliasedExpr) (int, error) {
-	newLHS, offset, err := a.LHS.AddColumn(ctx, e, true)
+func (a *ApplyJoin) pushColLeft(ctx *plancontext.PlanningContext, e sqlparser.Expr) error {
+	newSrc, err := a.LHS.AddColumn(ctx, e)
 	if err != nil {
-		return 0, err
+		return err
 	}
-	a.LHS = newLHS
-	return offset, nil
+	a.LHS = newSrc
+	return nil
 }
 
-func (a *ApplyJoin) pushColRight(ctx *plancontext.PlanningContext, e *sqlparser.AliasedExpr) (int, error) {
-	newRHS, offset, err := a.RHS.AddColumn(ctx, e, true)
+func (a *ApplyJoin) pushColRight(ctx *plancontext.PlanningContext, e sqlparser.Expr) error {
+	newSrc, err := a.RHS.AddColumn(ctx, e)
 	if err != nil {
-		return 0, err
+		return err
 	}
-	a.RHS = newRHS
-	return offset, nil
+	a.RHS = newSrc
+	return nil
 }
 
 func (a *ApplyJoin) GetColumns() ([]sqlparser.Expr, error) {
-	return a.ColumnsAST, nil
+	return a.expressions(), nil
 }
 
-func (a *ApplyJoin) AddColumn(ctx *plancontext.PlanningContext, expr *sqlparser.AliasedExpr, reuseCol bool) (ops.Operator, int, error) {
-	if offset, found := canReuseColumn(ctx, reuseCol, a.ColumnsAST, expr.Expr); found {
-		return a, offset, nil
+func (a *ApplyJoin) expressions() []sqlparser.Expr {
+	return slices2.Map(a.ColumnsAST, func(from JoinCol[sqlparser.Expr]) sqlparser.Expr {
+		return from.Expr
+	})
+}
+
+func (a *ApplyJoin) AddColumn(ctx *plancontext.PlanningContext, expr sqlparser.Expr) (ops.Operator, error) {
+	if _, found := canReuseColumn(ctx, a.expressions(), expr); found {
+		return a, nil
 	}
 
 	lhs := TableID(a.LHS)
 	rhs := TableID(a.RHS)
 	both := lhs.Merge(rhs)
-	deps := ctx.SemTable.RecursiveDeps(expr.Expr)
+	deps := ctx.SemTable.RecursiveDeps(expr)
 
 	// if we get here, it's a new expression we are dealing with.
 	// We need to decide if we can push it all on either side,
@@ -184,37 +204,55 @@ func (a *ApplyJoin) AddColumn(ctx *plancontext.PlanningContext, expr *sqlparser.
 	case deps.IsSolvedBy(lhs):
 		offset, err := a.pushColLeft(ctx, expr)
 		if err != nil {
-			return nil, 0, err
+			return nil, err
 		}
 		a.Columns = append(a.Columns, -offset-1)
-	case deps.IsSolvedBy(rhs):
-		offset, err := a.pushColRight(ctx, expr)
+		a.ColumnsAST = append(a.ColumnsAST, left(expr))
+	case deps.IsSolvedBy(both) && !deps.IsSolvedBy(rhs):
+		bvNames, lhsExprs, rhsExpr, err := BreakExpressionInLHSandRHS(ctx, expr, lhs)
 		if err != nil {
-			return nil, 0, err
-		}
-		a.Columns = append(a.Columns, offset+1)
-	case deps.IsSolvedBy(both):
-		bvNames, lhsExprs, rhsExpr, err := BreakExpressionInLHSandRHS(ctx, expr.Expr, lhs)
-		if err != nil {
-			return nil, 0, err
+			return nil, err
 		}
 		for i, lhsExpr := range lhsExprs {
-			offset, err := a.pushColLeft(ctx, aeWrap(lhsExpr))
+			offset, err := a.pushColLeft(ctx, lhsExpr)
 			if err != nil {
-				return nil, 0, err
+				return nil, err
 			}
 			a.Vars[bvNames[i]] = offset
 		}
-		offset, err := a.pushColRight(ctx, aeWrap(rhsExpr))
+		expr = rhsExpr
+		fallthrough // what remains of the expression is pushed on the RHS
+	case deps.IsSolvedBy(rhs):
+		offset, err := a.pushColRight(ctx, expr)
 		if err != nil {
-			return nil, 0, err
+			return nil, err
 		}
 		a.Columns = append(a.Columns, offset+1)
+		a.ColumnsAST = append(a.ColumnsAST, right(expr))
 	default:
-		return nil, 0, vterrors.VT13002(sqlparser.String(expr))
+		return nil, vterrors.VT13002(sqlparser.String(expr))
 	}
 
-	// the expression wasn't already there - let's add it
-	a.ColumnsAST = append(a.ColumnsAST, expr.Expr)
-	return a, len(a.Columns) - 1, nil
+	return a, nil
+}
+
+func (a *ApplyJoin) GetOffsetFor(ctx *plancontext.PlanningContext, expr sqlparser.Expr) (int, error) {
+	if offset, found := canReuseColumn(ctx, a.expressions(), expr); found {
+		return offset, nil
+	}
+	return 0, vterrors.VT13001("no new columns should be pushed during offset calculations")
+}
+
+func left(e sqlparser.Expr) JoinCol[sqlparser.Expr] {
+	return JoinCol[sqlparser.Expr]{
+		Left: true,
+		Expr: e,
+	}
+}
+
+func right(e sqlparser.Expr) JoinCol[sqlparser.Expr] {
+	return JoinCol[sqlparser.Expr]{
+		Left: false,
+		Expr: e,
+	}
 }

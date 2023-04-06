@@ -68,7 +68,10 @@ func PlanQuery(ctx *plancontext.PlanningContext, selStmt sqlparser.Statement) (o
 
 	backup := Clone(op)
 
-	op, err = planColumns(ctx, op)
+	op, err = pushOrExpandHorizon(ctx, op)
+	if err == nil {
+		op, err = planOffsets(ctx, op)
+	}
 	if err == errNotHorizonPlanned {
 		op = backup
 	} else if err != nil {
@@ -101,8 +104,12 @@ func (noInputs) SetInputs(ops []ops.Operator) {
 }
 
 // AddColumn implements the Operator interface
-func (noColumns) AddColumn(*plancontext.PlanningContext, *sqlparser.AliasedExpr, bool) (ops.Operator, int, error) {
-	return nil, 0, vterrors.VT13001("the noColumns operator cannot accept columns")
+func (noColumns) AddColumn(*plancontext.PlanningContext, sqlparser.Expr) (ops.Operator, error) {
+	return nil, vterrors.VT13001("the noColumns operator cannot accept columns")
+}
+
+func (noColumns) GetOffsetFor(ctx *plancontext.PlanningContext, expr sqlparser.Expr) (int, error) {
+	return 0, vterrors.VT13001("the noColumns operator cannot accept columns")
 }
 
 func (noColumns) GetColumns() ([]sqlparser.Expr, error) {

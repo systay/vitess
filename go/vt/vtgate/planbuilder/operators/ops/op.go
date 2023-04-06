@@ -45,7 +45,10 @@ type (
 
 		// AddColumn tells an operator to also output an additional column specified.
 		// The offset to the column is returned.
-		AddColumn(ctx *plancontext.PlanningContext, expr *sqlparser.AliasedExpr, reuseCol bool) (Operator, int, error)
+		AddColumn(ctx *plancontext.PlanningContext, expr sqlparser.Expr) (Operator, error)
+
+		// GetOffsetFor gets the offset in the incoming results for the value of the provided expression
+		GetOffsetFor(ctx *plancontext.PlanningContext, expr sqlparser.Expr) (int, error)
 
 		GetColumns() ([]sqlparser.Expr, error)
 	}
