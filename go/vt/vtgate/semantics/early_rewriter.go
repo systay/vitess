@@ -287,6 +287,22 @@ func rewriteOrFalse(orExpr sqlparser.OrExpr) sqlparser.Expr {
 	return nil
 }
 
+// rewriteJoinUsing rewrites SQL JOINs that use the USING clause to their equivalent JOINs
+// with the ON condition. This function finds all the tables that have the
+// specified columns in the USING clause, constructs an equality predicate for
+// each pair of tables, and adds the resulting predicates to the WHERE clause
+// of the outermost SELECT statement.
+//
+// For example, given the query:
+//
+//	SELECT * FROM t1 JOIN t2 USING (col1, col2)
+//
+// The rewriteJoinUsing function will rewrite the query to:
+//
+//	SELECT * FROM t1 JOIN t2 ON (t1.col1 = t2.col1 AND t1.col2 = t2.col2)
+//
+// This function returns an error if it encounters a non-authoritative table or
+// if it cannot find a WHERE clause in the outermost SELECT statement.
 func rewriteJoinUsing(
 	current *scope,
 	using sqlparser.Columns,
