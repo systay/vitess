@@ -375,10 +375,11 @@ func (r *earlyRewriter) expandTableColumns(
 	unknownTbl := true
 	starExpanded := true
 	state := &expanderState{
-		colNames:       []sqlparser.SelectExpr{},
-		needsQualifier: len(tables) > 1,
-		joinUsing:      joinUsing,
-		org:            org,
+		colNames:        []sqlparser.SelectExpr{},
+		needsQualifier:  len(tables) > 1,
+		joinUsing:       joinUsing,
+		org:             org,
+		expandedColumns: r.expandedColumns,
 	}
 
 	for _, tbl := range tables {
@@ -400,6 +401,7 @@ func (r *earlyRewriter) expandTableColumns(
 		// This will only happen for case when starExpr has qualifier.
 		return false, nil, vterrors.NewErrorf(vtrpcpb.Code_INVALID_ARGUMENT, vterrors.BadDb, "Unknown table '%s'", sqlparser.String(starExpr.TableName))
 	}
+
 	return starExpanded, state.colNames, nil
 }
 
@@ -452,10 +454,11 @@ outer:
 }
 
 type expanderState struct {
-	needsQualifier bool
-	colNames       sqlparser.SelectExprs
-	joinUsing      map[TableSet]map[string]TableSet
-	org            originable
+	needsQualifier  bool
+	colNames        sqlparser.SelectExprs
+	joinUsing       map[TableSet]map[string]TableSet
+	org             originable
+	expandedColumns map[sqlparser.TableName][]*sqlparser.ColName
 }
 
 // addColumn adds columns to the expander state. If we have vschema info about the query,
@@ -473,6 +476,7 @@ func (e *expanderState) addColumn(col ColumnInfo, tbl TableInfo, tblName sqlpars
 	if e.needsQualifier {
 		alias = sqlparser.NewIdentifierCI(col.Name)
 	}
+	e.expandedColumns[tblName] = append(e.expandedColumns[tblName], colName)
 	e.colNames = append(e.colNames, &sqlparser.AliasedExpr{Expr: colName, As: alias})
 }
 

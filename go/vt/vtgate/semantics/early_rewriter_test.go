@@ -184,10 +184,39 @@ func TestExpandStar(t *testing.T) {
 				require.NoError(t, st.NotUnshardedErr)
 				require.NoError(t, st.NotSingleRouteErr)
 				assert.Equal(t, tcase.expSQL, sqlparser.String(selectStatement))
+				assertExpandedColumns(t, selectStatement, st, tcase.colExpandedNumber)
 			} else {
 				require.EqualError(t, err, tcase.expErr)
 			}
 		})
+	}
+}
+
+func assertExpandedColumns(t *testing.T, selectStatement *sqlparser.Select, st *SemTable, colExpandedNumber int) {
+	t.Helper()
+	found := 0
+outer:
+	for _, selExpr := range selectStatement.SelectExprs {
+		aliasedExpr, isAliased := selExpr.(*sqlparser.AliasedExpr)
+		if !isAliased {
+			continue
+		}
+		for _, columns := range st.ExpandedColumns {
+			for _, col := range columns {
+				if sqlparser.Equals.Expr(aliasedExpr.Expr, col) {
+					found++
+					continue outer
+				}
+			}
+		}
+	}
+	if colExpandedNumber == 0 {
+		for _, columns := range st.ExpandedColumns {
+			found -= len(columns)
+		}
+		require.Zero(t, found)
+	} else {
+		require.Equal(t, colExpandedNumber, found)
 	}
 }
 
