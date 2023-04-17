@@ -379,7 +379,7 @@ func (r *earlyRewriter) expandTableColumns(
 		needsQualifier:  len(tables) > 1,
 		joinUsing:       joinUsing,
 		org:             org,
-		expandedColumns: r.expandedColumns,
+		expandedColumns: map[sqlparser.TableName][]*sqlparser.ColName{},
 	}
 
 	for _, tbl := range tables {
@@ -400,6 +400,12 @@ func (r *earlyRewriter) expandTableColumns(
 	if unknownTbl {
 		// This will only happen for case when starExpr has qualifier.
 		return false, nil, vterrors.NewErrorf(vtrpcpb.Code_INVALID_ARGUMENT, vterrors.BadDb, "Unknown table '%s'", sqlparser.String(starExpr.TableName))
+	}
+
+	if starExpanded {
+		for k, v := range state.expandedColumns {
+			r.expandedColumns[k] = v
+		}
 	}
 
 	return starExpanded, state.colNames, nil
