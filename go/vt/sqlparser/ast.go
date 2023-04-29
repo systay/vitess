@@ -2803,6 +2803,7 @@ type (
 	}
 
 	CountStar struct {
+		inner string // TODO: not sure, but it seems like this is needed. ask @vmg why
 	}
 
 	Avg struct {
