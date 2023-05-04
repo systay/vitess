@@ -19,8 +19,6 @@ package operators
 import (
 	"fmt"
 
-	"golang.org/x/exp/slices"
-
 	"vitess.io/vitess/go/vt/vtgate/semantics"
 
 	"vitess.io/vitess/go/vt/sqlparser"
@@ -53,37 +51,25 @@ func pushDownAggregationThroughRoute(aggregator *Aggregator, src *Route) (ops.Op
 	}
 
 	// Create a new aggregator to be placed below the route.
-	aggrBelowRoute := &Aggregator{
-		Source:        src.Source,
-		Columns:       slices.Clone(aggregator.Columns),
-		GroupingOrder: slices.Clone(aggregator.GroupingOrder),
-		Pushed:        false,
-	}
+	aggrBelowRoute := aggregator.Clone([]ops.Operator{src.Source}).(*Aggregator)
+	aggrBelowRoute.Pushed = false // this is a new aggregator which is not pushed
 
-	// Iterate through the aggregator columns, modifying them as needed.
-	for i, col := range aggregator.Columns {
-		param, isAggr := col.(*Aggr)
-		if !isAggr {
-			continue
-		}
+	// Iterate through the aggregations, modifying them as needed.
+	for _, aggr := range aggregator.Aggregations {
 		// Handle different aggregation operations when pushing down through a sharded route.
-		switch param.OpCode {
+		switch aggr.OpCode {
 		case opcode.AggregateCount, opcode.AggregateCountStar, opcode.AggregateCountDistinct:
 			// All count variations turn into SUM above the Route.
 			// Think of it as we are SUMming together a bunch of distributed COUNTs.
-			param.OriginalOpCode, param.OpCode = param.OpCode, opcode.AggregateSum
+			aggr.OriginalOpCode, aggr.OpCode = aggr.OpCode, opcode.AggregateSum
 		}
-		aggregator.Columns[i] = param
 	}
 
 	// Create an empty slice for ordering columns, if needed.
 	var ordering []ops.OrderBy
-	err := aggregator.VisitGroupBys(func(_, _ int, grpByCol *GroupBy) {
+	for _, gb := range aggregator.GroupingOrder {
 		// If there is a GROUP BY, add the corresponding order by column.
-		ordering = append(ordering, grpByCol.AsOrderBy())
-	})
-	if err != nil {
-		return nil, false, err
+		ordering = append(ordering, aggregator.generateOrderBy(gb.col))
 	}
 
 	// Set the source of the route to the new aggregator placed below the route.
@@ -188,11 +174,62 @@ func pushDownAggregationThroughJoin(ctx *plancontext.PlanningContext, aggregator
 	return aggregator, rewrite.NewTree, nil
 }
 
+type aggrColumns struct {
+	Columns      []*sqlparser.AliasedExpr
+	Aggregations []*Aggr
+	AggrIndex    []int
+}
+
+func splitAggrColumnsToLeftAndRight(
+	ctx *plancontext.PlanningContext,
+	aggregator *Aggregator,
+	join *ApplyJoin,
+) (lhs, rhs aggrColumns, joinColumns []JoinColumn, projections []ProjExpr, err error) {
+	lhsTS := TableID(join.LHS)
+	rhsTS := TableID(join.RHS)
+	if len(aggregator.GroupingOrder) > 0 {
+		err = errHorizonNotPlanned()
+		return
+	}
+
+	handleAggr := func(aggr *Aggr, colIdx int) error {
+		switch aggr.OpCode {
+		case opcode.AggregateCountStar:
+			l, r, j, p := splitCountStar(ctx, aggr, lhsTS, rhsTS)
+			lhs.Columns = append(lhs.Columns, l.Columns...)
+			lhs.AggrIndex = append(lhs.AggrIndex, l.AggrIndex...)
+			lhs.Aggregations = append(lhs.Aggregations, l.Aggregations...)
+
+			rhs.Columns = append(rhs.Columns, r.Columns...)
+			rhs.AggrIndex = append(rhs.AggrIndex, r.AggrIndex...)
+			rhs.Aggregations = append(rhs.Aggregations, r.Aggregations...)
+
+			joinColumns = append(joinColumns, j...)
+			projections = append(projections, p...)
+			return nil
+		default:
+			return errHorizonNotPlanned()
+		}
+	}
+
+	for _, colIdx := range aggregator.AggrIndex {
+		aggr := aggregator.Aggregations[colIdx]
+		err = handleAggr(aggr, colIdx)
+		if err != nil {
+			return
+		}
+	}
+
+	return
+}
+
+// splitCountStar takes a `count(*)` that was above a join and creates the information to
+// push it on both sides of the join.
 func splitCountStar(
 	ctx *plancontext.PlanningContext,
 	aggr *Aggr,
 	lhsTS, rhsTS semantics.TableSet,
-) (lhs, rhs []AggrColumn, joinColumns []JoinColumn, projections []ProjExpr) {
+) (lhs, rhs aggrColumns, joinColumns []JoinColumn, projections []ProjExpr) {
 	lhsAggr := aggr.Clone()
 	rhsAggr := aggr.Clone()
 	lhsExpr := sqlparser.CloneExpr(lhsAggr.Original.Expr)
@@ -205,8 +242,16 @@ func splitCountStar(
 	ctx.SemTable.Direct[rhsExpr] = rhsTS
 	ctx.SemTable.Recursive[lhsExpr] = lhsTS
 	ctx.SemTable.Recursive[rhsExpr] = rhsTS
-	lhs = []AggrColumn{lhsAggr}
-	rhs = []AggrColumn{rhsAggr}
+	lhs = aggrColumns{
+		Columns:      []*sqlparser.AliasedExpr{aggr.Original},
+		Aggregations: []*Aggr{aggr.Clone()},
+		AggrIndex:    []int{0},
+	}
+	rhs = aggrColumns{
+		Columns:      []*sqlparser.AliasedExpr{aggr.Original},
+		Aggregations: []*Aggr{aggr.Clone()},
+		AggrIndex:    []int{0},
+	}
 
 	joinColumns = []JoinColumn{{
 		Original: lhsAggr.Original,
@@ -235,43 +280,5 @@ func splitCountStar(
 	aggr.OriginalOpCode = opcode.AggregateCountStar
 	aggr.OpCode = opcode.AggregateSum
 
-	return
-}
-
-func splitAggrColumnsToLeftAndRight(
-	ctx *plancontext.PlanningContext,
-	aggregator *Aggregator,
-	join *ApplyJoin,
-) (lhs, rhs []AggrColumn, joinColumns []JoinColumn, projections []ProjExpr, err error) {
-	lhsTS := TableID(join.LHS)
-	rhsTS := TableID(join.RHS)
-
-	handleAggr := func(aggr *Aggr) {
-		switch aggr.OpCode {
-		case opcode.AggregateCountStar:
-			l, r, j, p := splitCountStar(ctx, aggr, lhsTS, rhsTS)
-			lhs = append(lhs, l...)
-			rhs = append(rhs, r...)
-			joinColumns = append(joinColumns, j...)
-			projections = append(projections, p...)
-			return
-		default:
-			err = errHorizonNotPlanned()
-			return
-		}
-	}
-
-	for _, col := range aggregator.Columns {
-		switch col := col.(type) {
-		case *Aggr:
-			handleAggr(col)
-			if err != nil {
-				return
-			}
-		case *GroupBy:
-			err = errHorizonNotPlanned()
-			return
-		}
-	}
 	return
 }

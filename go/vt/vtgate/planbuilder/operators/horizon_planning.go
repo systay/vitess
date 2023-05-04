@@ -101,16 +101,13 @@ func tryPushingDownOrdering(ctx *plancontext.PlanningContext, in *Ordering) (ops
 func pushOrderingUnderAggr(ctx *plancontext.PlanningContext, order *Ordering, aggregator *Aggregator) (ops.Operator, rewrite.ApplyResult, error) {
 	// Here we align the GROUP BY and ORDER BY.
 	// First step is to make sure that the GROUP BY is in the same order as the ORDER BY
-	var newGrouping []int
+	var newGrouping []*offsets
 	used := make([]bool, len(aggregator.GroupingOrder))
 	for _, orderExpr := range order.Order {
-		for grpIdx, colIdx := range aggregator.GroupingOrder {
-			groupingExpr, ok := aggregator.Columns[colIdx].(*GroupBy)
-			if !ok {
-				return nil, false, vterrors.VT13001("expected grouping here")
-			}
-			if !used[grpIdx] && ctx.SemTable.EqualsExpr(groupingExpr.WeightStrExpr, orderExpr.WeightStrExpr) {
-				newGrouping = append(newGrouping, colIdx)
+		for grpIdx, gb := range aggregator.GroupingOrder {
+			wsExpr := aggregator.QP.GetSimplifiedExpr(aggregator.Columns[gb.col].Expr)
+			if !used[grpIdx] && ctx.SemTable.EqualsExpr(wsExpr, orderExpr.WeightStrExpr) {
+				newGrouping = append(newGrouping, gb)
 				used[grpIdx] = true
 			}
 		}
@@ -121,15 +118,9 @@ func pushOrderingUnderAggr(ctx *plancontext.PlanningContext, order *Ordering, ag
 		// we are missing some groupings. We need to add them both to the new groupings list, but also to the ORDER BY
 		for i, added := range used {
 			if !added {
-				colIdx := aggregator.GroupingOrder[i]
-				groupBy, ok := aggregator.Columns[colIdx].(*GroupBy)
-
-				if !ok {
-					return nil, false, vterrors.VT13001("expected grouping here")
-				}
-
-				newGrouping = append(newGrouping, colIdx)
-				order.Order = append(order.Order, groupBy.AsOrderBy())
+				gb := aggregator.GroupingOrder[i]
+				newGrouping = append(newGrouping, gb)
+				order.Order = append(order.Order, aggregator.generateOrderBy(gb.col))
 			}
 		}
 	}
@@ -150,6 +141,17 @@ func pushOrderingUnderAggr(ctx *plancontext.PlanningContext, order *Ordering, ag
 		return aggregator, rewrite.NewTree, nil
 	}
 	return swap(order, aggregator)
+}
+
+func (a *Aggregator) generateOrderBy(colIdx int) ops.OrderBy {
+	groupBy := a.Columns[colIdx]
+	wsExpr := a.QP.GetSimplifiedExpr(groupBy.Expr)
+	return ops.OrderBy{
+		Inner: &sqlparser.Order{
+			Expr: groupBy.Expr,
+		},
+		WeightStrExpr: wsExpr,
+	}
 }
 
 func canPushLeft(ctx *plancontext.PlanningContext, aj *ApplyJoin, order []ops.OrderBy) bool {
@@ -552,21 +554,29 @@ func createProjectionFromSelect(ctx *plancontext.PlanningContext, horizon horizo
 		Original: true,
 		QP:       qp,
 	}
-	a.GroupingOrder = make([]int, len(grouping))
+	a.GroupingOrder = make([]*offsets, len(grouping))
 outer:
 	for colIdx, expr := range qp.SelectExprs {
 		for gbIdx, groupBy := range grouping {
 			if expr.Col == groupBy.GetOriginal() {
-				gb := groupBy
-				a.Columns = append(a.Columns, &gb)
-				a.GroupingOrder[gbIdx] = colIdx
+				aExpr, isAliasExpr := expr.Col.(*sqlparser.AliasedExpr)
+				if !isAliasExpr {
+					return nil, vterrors.VT13001("unexpected column type")
+				}
+				a.Columns = append(a.Columns, aExpr)
+				a.GroupingOrder[gbIdx] = &offsets{col: colIdx}
 				continue outer
 			}
 		}
 		for _, aggr := range aggregations {
 			if expr.Col == aggr.GetOriginal() {
-				clone := aggr
-				a.Columns = append(a.Columns, &clone)
+				aExpr, isAliasExpr := expr.Col.(*sqlparser.AliasedExpr)
+				if !isAliasExpr {
+					return nil, vterrors.VT13001("unexpected column type")
+				}
+				a.Columns = append(a.Columns, aExpr)
+				a.Aggregations = append(a.Aggregations, &aggr)
+				a.AggrIndex = append(a.AggrIndex, colIdx)
 				continue outer
 			}
 		}

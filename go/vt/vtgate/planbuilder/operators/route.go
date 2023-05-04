@@ -18,6 +18,9 @@ package operators
 
 import (
 	"fmt"
+	"strings"
+
+	"vitess.io/vitess/go/slices2"
 
 	"vitess.io/vitess/go/vt/sqlparser"
 	"vitess.io/vitess/go/vt/vterrors"
@@ -682,7 +685,15 @@ func (r *Route) ShortDescription() string {
 	if ks == nil {
 		return r.Routing.OpCode().String()
 	}
-	return fmt.Sprintf("%s on %s", r.Routing.OpCode().String(), ks.Name)
+	orderby, err := r.Source.GetOrdering()
+	if err != nil || len(orderby) == 0 {
+		return fmt.Sprintf("%s on %s", r.Routing.OpCode().String(), ks.Name)
+	}
+
+	ordering := slices2.Map(orderby, func(from ops.OrderBy) string {
+		return sqlparser.String(from.Inner)
+	})
+	return fmt.Sprintf("%s on %s order by %s", r.Routing.OpCode().String(), ks.Name, strings.Join(ordering, ","))
 }
 
 func (r *Route) setTruncateColumnCount(offset int) {

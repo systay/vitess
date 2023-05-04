@@ -94,7 +94,7 @@ func (o *Ordering) planOffsets(ctx *plancontext.PlanningContext) error {
 			continue
 		}
 
-		wsExpr := &sqlparser.WeightStringFuncExpr{Expr: order.WeightStrExpr}
+		wsExpr := weightStringFor(order.WeightStrExpr)
 		newSrc, offset, err = o.Source.AddColumn(ctx, aeWrap(wsExpr), true)
 		if err != nil {
 			return err

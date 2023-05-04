@@ -173,7 +173,7 @@ func CreateQPFromSelect(ctx *plancontext.PlanningContext, sel *sqlparser.Select)
 	}
 	for _, group := range sel.GroupBy {
 		selectExprIdx, aliasExpr := qp.FindSelectExprIndexForExpr(ctx, group)
-		expr, weightStrExpr, err := qp.GetSimplifiedExpr(group)
+		weightStrExpr := qp.GetSimplifiedExpr(group)
 		if err != nil {
 			return nil, err
 		}
@@ -182,7 +182,7 @@ func CreateQPFromSelect(ctx *plancontext.PlanningContext, sel *sqlparser.Select)
 			return nil, err
 		}
 
-		groupBy := NewGroupBy(expr, weightStrExpr, aliasExpr)
+		groupBy := NewGroupBy(group, weightStrExpr, aliasExpr)
 		groupBy.InnerIndex = selectExprIdx
 
 		qp.groupByExprs = append(qp.groupByExprs, groupBy)
@@ -306,17 +306,14 @@ func CreateQPFromUnion(union *sqlparser.Union) (*QueryProjection, error) {
 func (qp *QueryProjection) addOrderBy(orderBy sqlparser.OrderBy) error {
 	canPushDownSorting := true
 	for _, order := range orderBy {
-		expr, weightStrExpr, err := qp.GetSimplifiedExpr(order.Expr)
-		if err != nil {
-			return err
-		}
+		weightStrExpr := qp.GetSimplifiedExpr(order.Expr)
 		if sqlparser.IsNull(weightStrExpr) {
 			// ORDER BY null can safely be ignored
 			continue
 		}
 		qp.OrderExprs = append(qp.OrderExprs, ops.OrderBy{
 			Inner: &sqlparser.Order{
-				Expr:      expr,
+				Expr:      order.Expr,
 				Direction: order.Direction,
 			},
 			WeightStrExpr: weightStrExpr,
@@ -360,18 +357,18 @@ func (qp *QueryProjection) isExprInGroupByExprs(ctx *plancontext.PlanningContext
 }
 
 // GetSimplifiedExpr takes an expression used in ORDER BY or GROUP BY, and returns an expression that is simpler to evaluate
-func (qp *QueryProjection) GetSimplifiedExpr(e sqlparser.Expr) (expr sqlparser.Expr, weightStrExpr sqlparser.Expr, err error) {
+func (qp *QueryProjection) GetSimplifiedExpr(e sqlparser.Expr) (weightStrExpr sqlparser.Expr) {
 	// If the ORDER BY is against a column alias, we need to remember the expression
 	// behind the alias. The weightstring(.) calls needs to be done against that expression and not the alias.
 	// Eg - select music.foo as bar, weightstring(music.foo) from music order by bar
 
 	colExpr, isColName := e.(*sqlparser.ColName)
 	if !isColName {
-		return e, e, nil
+		return e
 	}
 
 	if sqlparser.IsNull(e) {
-		return e, nil, nil
+		return nil
 	}
 
 	if colExpr.Qualifier.IsEmpty() {
@@ -382,12 +379,12 @@ func (qp *QueryProjection) GetSimplifiedExpr(e sqlparser.Expr) (expr sqlparser.E
 			}
 			isAliasExpr := !aliasedExpr.As.IsEmpty()
 			if isAliasExpr && colExpr.Name.Equal(aliasedExpr.As) {
-				return e, aliasedExpr.Expr, nil
+				return aliasedExpr.Expr
 			}
 		}
 	}
 
-	return e, e, nil
+	return e
 }
 
 // toString should only be used for tests
