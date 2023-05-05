@@ -478,6 +478,266 @@
           ]
         }
       }
+    },
+    "gh": {
+      "sharded": true,
+      "vindexes": {
+        "hash": {
+          "type": "hash"
+        },
+        "deployment_statuses_id_ks_idx": {
+          "type": "lookup_unique",
+          "params": {
+            "from": "id",
+            "table": "deployment_statuses_id_ks_idx",
+            "to": "keyspace_id"
+          },
+          "owner": "deployment_statuses"
+        },
+        "deployments_id_ks_idx": {
+          "type": "lookup_unique",
+          "params": {
+            "from": "id",
+            "table": "deployments_id_ks_idx",
+            "to": "keyspace_id"
+          },
+          "owner": "deployments"
+        }
+      },
+      "tables": {
+        "deployment_statuses": {
+          "autoIncrement": {
+            "column": "id",
+            "sequence": "seq"
+          },
+          "columnVindexes": [
+            {
+              "name": "hash",
+              "columns": [
+                "repository_id"
+              ]
+            },
+            {
+              "name": "deployment_statuses_id_ks_idx",
+              "columns": [
+                "id"
+              ]
+            },
+            {
+              "name": "deployments_id_ks_idx",
+              "columns": [
+                "deployment_id"
+              ]
+            }
+          ],
+          "columns": [
+            {
+              "name": "id",
+              "type": "UINT64"
+            },
+            {
+              "name": "state",
+              "type": "VARCHAR"
+            },
+            {
+              "name": "description",
+              "type": "TEXT"
+            },
+            {
+              "name": "target_url",
+              "type": "VARBINARY"
+            },
+            {
+              "name": "deployment_id",
+              "type": "UINT64"
+            },
+            {
+              "name": "creator_id",
+              "type": "UINT64"
+            },
+            {
+              "name": "created_at",
+              "type": "DATETIME"
+            },
+            {
+              "name": "updated_at",
+              "type": "DATETIME"
+            },
+            {
+              "name": "environment_url",
+              "type": "TEXT"
+            },
+            {
+              "name": "performed_by_integration_id",
+              "type": "UINT64"
+            },
+            {
+              "name": "environment",
+              "type": "VARCHAR"
+            },
+            {
+              "name": "environment_id",
+              "type": "UINT64"
+            },
+            {
+              "name": "repository_id",
+              "type": "UINT64"
+            }
+          ],
+          "columnListAuthoritative": true
+        },
+        "deployment_statuses_id_ks_idx": {
+          "columnVindexes": [
+            {
+              "name": "hash",
+              "columns": [
+                "id"
+              ]
+            }
+          ],
+          "columns": [
+            {
+              "name": "id",
+              "type": "UINT64"
+            },
+            {
+              "name": "keyspace_id",
+              "type": "VARBINARY"
+            }
+          ],
+          "columnListAuthoritative": true
+        },
+        "deployments": {
+          "autoIncrement": {
+            "column": "id",
+            "sequence": "seq"
+          },
+          "columnVindexes": [
+            {
+              "name": "hash",
+              "columns": [
+                "repository_id"
+              ]
+            },
+            {
+              "name": "deployment_statuses_id_ks_idx",
+              "columns": [
+                "latest_deployment_status_id"
+              ]
+            },
+            {
+              "name": "deployments_id_ks_idx",
+              "columns": [
+                "id"
+              ]
+            }
+          ],
+          "columns": [
+            {
+              "name": "id",
+              "type": "INT32"
+            },
+            {
+              "name": "description",
+              "type": "BLOB"
+            },
+            {
+              "name": "payload",
+              "type": "BLOB"
+            },
+            {
+              "name": "sha",
+              "type": "VARCHAR"
+            },
+            {
+              "name": "repository_id",
+              "type": "INT32"
+            },
+            {
+              "name": "creator_id",
+              "type": "INT32"
+            },
+            {
+              "name": "created_at",
+              "type": "DATETIME"
+            },
+            {
+              "name": "updated_at",
+              "type": "DATETIME"
+            },
+            {
+              "name": "ref",
+              "type": "VARCHAR"
+            },
+            {
+              "name": "environment",
+              "type": "VARCHAR"
+            },
+            {
+              "name": "task",
+              "type": "VARCHAR"
+            },
+            {
+              "name": "transient_environment",
+              "type": "INT8"
+            },
+            {
+              "name": "production_environment",
+              "type": "INT8"
+            },
+            {
+              "name": "performed_by_integration_id",
+              "type": "INT32"
+            },
+            {
+              "name": "latest_deployment_status_id",
+              "type": "INT32"
+            },
+            {
+              "name": "latest_environment",
+              "type": "VARCHAR"
+            },
+            {
+              "name": "latest_status_state",
+              "type": "VARCHAR"
+            },
+            {
+              "name": "check_run_id",
+              "type": "INT64"
+            },
+            {
+              "name": "environment_id",
+              "type": "INT32"
+            },
+            {
+              "name": "latest_environment_id",
+              "type": "INT32"
+            }
+          ],
+          "columnListAuthoritative": true
+        },
+        "deployments_id_ks_idx": {
+          "columnVindexes": [
+            {
+              "name": "hash",
+              "columns": [
+                "id"
+              ]
+            }
+          ],
+          "columns": [
+            {
+              "name": "id",
+              "type": "INT32"
+            },
+            {
+              "name": "keyspace_id",
+              "type": "VARBINARY"
+            }
+          ],
+          "columnListAuthoritative": true
+        }
+      }
     }
   }
 }

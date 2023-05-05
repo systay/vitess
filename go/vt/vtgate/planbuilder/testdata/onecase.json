@@ -1,9 +1,8 @@
 [
   {
     "comment": "Add your test case here for debugging and run go test -run=One.",
-    "query": "",
+    "query": "SELECT `deployments`.* FROM `deployments` INNER JOIN `deployment_statuses` ON `deployment_statuses`.`deployment_id` = `deployments`.`id` WHERE `deployment_statuses`.`state` = 'success' AND `deployment_statuses`.`id` = ( SELECT MAX(`deployment_statuses`.`id`) FROM `deployment_statuses` WHERE `deployment_statuses`.`deployment_id` = `deployments`.`id` )",
     "plan": {
-
     }
   }
 ]
