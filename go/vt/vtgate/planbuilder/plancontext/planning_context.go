@@ -43,9 +43,18 @@ type PlanningContext struct {
 	// DelegateAggregation tells us when we are allowed to split an aggregation across vtgate and mysql
 	// We aggregate within a shard, and then at the vtgate level we aggregate the incoming shard aggregates
 	DelegateAggregation bool
+
+	// MinimalPlanning turns off most optimizations. Should only be used for testing
+	MinimalPlanning bool
 }
 
-func NewPlanningContext(reservedVars *sqlparser.ReservedVars, semTable *semantics.SemTable, vschema VSchema, version querypb.ExecuteOptions_PlannerVersion) *PlanningContext {
+func NewPlanningContext(
+	reservedVars *sqlparser.ReservedVars,
+	semTable *semantics.SemTable,
+	vschema VSchema,
+	version querypb.ExecuteOptions_PlannerVersion,
+	minimalPlanning bool,
+) *PlanningContext {
 	ctx := &PlanningContext{
 		ReservedVars:      reservedVars,
 		SemTable:          semTable,
@@ -54,6 +63,7 @@ func NewPlanningContext(reservedVars *sqlparser.ReservedVars, semTable *semantic
 		SkipPredicates:    map[sqlparser.Expr]any{},
 		PlannerVersion:    version,
 		ReservedArguments: map[sqlparser.Expr]string{},
+		MinimalPlanning:   minimalPlanning,
 	}
 	return ctx
 }
