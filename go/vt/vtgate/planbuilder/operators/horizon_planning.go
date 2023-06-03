@@ -131,7 +131,7 @@ func optimizeHorizonPlanning(ctx *plancontext.PlanningContext, root ops.Operator
 		case *Projection:
 			return tryPushingDownProjection(ctx, in)
 		case *Limit:
-			return tryPushingDownLimit(in)
+			return tryPushingDownLimit(ctx, in)
 		case *Ordering:
 			return tryPushingDownOrdering(ctx, in)
 		case *Aggregator:
@@ -226,12 +226,14 @@ func addOrderBysAndGroupBysForAggregations(ctx *plancontext.PlanningContext, roo
 	visitor := func(in ops.Operator, _ semantics.TableSet, isRoot bool) (ops.Operator, *rewrite.ApplyResult, error) {
 		switch in := in.(type) {
 		case *Aggregator:
-			// first we update the incoming columns, so we know about any new columns that have been added
-			columns, err := in.Source.GetColumns()
-			if err != nil {
-				return nil, nil, err
+			if in.Pushed {
+				// first we update the incoming columns, so we know about any new columns that have been added
+				columns, err := in.Source.GetColumns()
+				if err != nil {
+					return nil, nil, err
+				}
+				in.Columns = columns
 			}
-			in.Columns = columns
 
 			requireOrdering, err := needsOrdering(in, ctx)
 			if err != nil {
@@ -250,7 +252,7 @@ func addOrderBysAndGroupBysForAggregations(ctx *plancontext.PlanningContext, roo
 		case *ApplyJoin:
 			_ = rewrite.Visit(in.RHS, func(op ops.Operator) error {
 				aggr, isAggr := op.(*Aggregator)
-				if !isAggr {
+				if !isAggr || !aggr.Pushed {
 					return nil
 				}
 				if len(aggr.Grouping) == 0 {
@@ -286,6 +288,9 @@ func needsOrdering(in *Aggregator, ctx *plancontext.PlanningContext) (bool, erro
 }
 
 func tryPushingDownOrdering(ctx *plancontext.PlanningContext, in *Ordering) (ops.Operator, *rewrite.ApplyResult, error) {
+	if ctx.MinimalPlanning {
+		return in, rewrite.SameTree, nil
+	}
 	switch src := in.Source.(type) {
 	case *Route:
 		return rewrite.Swap(in, src, "push ordering under route")
@@ -399,6 +404,10 @@ func tryPushingDownProjection(
 	ctx *plancontext.PlanningContext,
 	p *Projection,
 ) (ops.Operator, *rewrite.ApplyResult, error) {
+	if ctx.MinimalPlanning {
+		return p, rewrite.SameTree, nil
+	}
+
 	switch src := p.Source.(type) {
 	case *Route:
 		return rewrite.Swap(p, src, "pushed projection under route")
@@ -605,7 +614,10 @@ func stopAtRoute(operator ops.Operator) rewrite.VisitRule {
 	return rewrite.VisitRule(!isRoute)
 }
 
-func tryPushingDownLimit(in *Limit) (ops.Operator, *rewrite.ApplyResult, error) {
+func tryPushingDownLimit(ctx *plancontext.PlanningContext, in *Limit) (ops.Operator, *rewrite.ApplyResult, error) {
+	if ctx.MinimalPlanning {
+		return in, rewrite.SameTree, nil
+	}
 	switch src := in.Source.(type) {
 	case *Route:
 		return tryPushingDownLimitInRoute(in, src)
@@ -660,6 +672,9 @@ func tryPushingDownLimitInRoute(in *Limit, src *Route) (ops.Operator, *rewrite.A
 }
 
 func pushOrExpandHorizon(ctx *plancontext.PlanningContext, in horizonLike) (ops.Operator, *rewrite.ApplyResult, error) {
+	if ctx.MinimalPlanning {
+		return expandHorizon(ctx, in)
+	}
 	if derived, ok := in.(*Derived); ok {
 		if len(derived.ColumnAliases) > 0 {
 			return nil, nil, errHorizonNotPlanned()

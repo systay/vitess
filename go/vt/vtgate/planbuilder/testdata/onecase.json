@@ -1,9 +1,63 @@
 [
   {
-    "comment": "Add your test case here for debugging and run go test -run=One.",
-    "query": "",
-    "plan": {
-
+    "comment": "count(*) spread across join",
+    "query": "select  /*vt+ MINIMAL_PLANNING */ count(*) from user join user_extra on user.foo = user_extra.bar",
+    "v3-plan": "VT12001: unsupported: cross-shard query with aggregates",
+    "gen4-plan": {
+      "QueryType": "SELECT",
+      "Original": "select count(*) from user join user_extra on user.foo = user_extra.bar",
+      "Instructions": {
+        "OperatorType": "Aggregate",
+        "Variant": "Scalar",
+        "Aggregates": "sum_count_star(0) AS count(*)",
+        "Inputs": [
+          {
+            "OperatorType": "Projection",
+            "Expressions": [
+              "[COLUMN 0] * [COLUMN 1] as count(*)"
+            ],
+            "Inputs": [
+              {
+                "OperatorType": "Join",
+                "Variant": "Join",
+                "JoinColumnIndexes": "L:0,R:0",
+                "JoinVars": {
+                  "user_foo": 1
+                },
+                "TableName": "`user`_user_extra",
+                "Inputs": [
+                  {
+                    "OperatorType": "Route",
+                    "Variant": "Scatter",
+                    "Keyspace": {
+                      "Name": "user",
+                      "Sharded": true
+                    },
+                    "FieldQuery": "select count(*), `user`.foo from `user` where 1 != 1 group by `user`.foo",
+                    "Query": "select count(*), `user`.foo from `user` group by `user`.foo",
+                    "Table": "`user`"
+                  },
+                  {
+                    "OperatorType": "Route",
+                    "Variant": "Scatter",
+                    "Keyspace": {
+                      "Name": "user",
+                      "Sharded": true
+                    },
+                    "FieldQuery": "select count(*) from user_extra where 1 != 1 group by .0",
+                    "Query": "select count(*) from user_extra where user_extra.bar = :user_foo group by .0",
+                    "Table": "user_extra"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "TablesUsed": [
+        "user.user",
+        "user.user_extra"
+      ]
     }
   }
 ]

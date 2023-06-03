@@ -60,6 +60,9 @@ const (
 	// DirectiveOldHorizonPlanner forces the planner to fall back on the v16 horizon planner
 	DirectiveOldHorizonPlanner = "OLD_HP"
 
+	// MinimalPlanning turns off most optimizations of the planner. Use only for testing
+	DirectiveMinimalPlanning = "MINIMAL_PLANNING"
+
 	// MaxPriorityValue specifies the maximum value allowed for the priority query directive. Valid priority values are
 	// between zero and MaxPriorityValue.
 	MaxPriorityValue = 100
@@ -460,4 +463,13 @@ func UseOldHorizonPlanner(statement Statement) bool {
 	}
 
 	return sel.GetParsedComments().Directives().IsSet(DirectiveOldHorizonPlanner)
+}
+
+func UseMinimalPlanning(statement Statement) bool {
+	sel, ok := statement.(SelectStatement)
+	if !ok {
+		return false
+	}
+
+	return sel.GetParsedComments().Directives().IsSet(DirectiveMinimalPlanning)
 }

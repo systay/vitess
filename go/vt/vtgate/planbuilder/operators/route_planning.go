@@ -99,7 +99,7 @@ func optimizeJoin(ctx *plancontext.PlanningContext, op *Join) (ops.Operator, *re
 func optimizeQueryGraph(ctx *plancontext.PlanningContext, op *QueryGraph) (result ops.Operator, changed *rewrite.ApplyResult, err error) {
 
 	switch {
-	case ctx.PlannerVersion == querypb.ExecuteOptions_Gen4Left2Right:
+	case ctx.PlannerVersion == querypb.ExecuteOptions_Gen4Left2Right || ctx.MinimalPlanning:
 		result, err = leftToRightSolve(ctx, op)
 	default:
 		result, err = greedySolve(ctx, op)
@@ -402,12 +402,14 @@ func requiresSwitchingSides(ctx *plancontext.PlanningContext, op ops.Operator) b
 }
 
 func mergeOrJoin(ctx *plancontext.PlanningContext, lhs, rhs ops.Operator, joinPredicates []sqlparser.Expr, inner bool) (ops.Operator, *rewrite.ApplyResult, error) {
-	newPlan, err := Merge(ctx, lhs, rhs, joinPredicates, newJoinMerge(ctx, joinPredicates, inner))
-	if err != nil {
-		return nil, nil, err
-	}
-	if newPlan != nil {
-		return newPlan, rewrite.NewTree("merge routes into single operator", newPlan), nil
+	if !ctx.MinimalPlanning {
+		newPlan, err := Merge(ctx, lhs, rhs, joinPredicates, newJoinMerge(ctx, joinPredicates, inner))
+		if err != nil {
+			return nil, nil, err
+		}
+		if newPlan != nil {
+			return newPlan, rewrite.NewTree("merge routes into single operator", newPlan), nil
+		}
 	}
 
 	if len(joinPredicates) > 0 && requiresSwitchingSides(ctx, rhs) {

@@ -40,7 +40,11 @@ type PlanningContext struct {
 	// we can continue using the same argument name
 	ReservedArguments map[sqlparser.Expr]string
 
+	// UseOldHorizonPlanner forces the use of the V16 horizon planner
 	UseOldHorizonPlanner bool
+
+	// MinimalPlanning turns off most optimizations. Should only be used for testing
+	MinimalPlanning bool
 }
 
 func NewPlanningContext(
@@ -49,6 +53,7 @@ func NewPlanningContext(
 	vschema VSchema,
 	version querypb.ExecuteOptions_PlannerVersion,
 	useOldHorizonPlanner bool,
+	minimalPlanning bool,
 ) *PlanningContext {
 	ctx := &PlanningContext{
 		ReservedVars:         reservedVars,
@@ -59,6 +64,7 @@ func NewPlanningContext(
 		PlannerVersion:       version,
 		ReservedArguments:    map[sqlparser.Expr]string{},
 		UseOldHorizonPlanner: useOldHorizonPlanner,
+		MinimalPlanning:      minimalPlanning,
 	}
 	return ctx
 }

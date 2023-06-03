@@ -29,7 +29,7 @@ import (
 )
 
 func tryPushingDownAggregator(ctx *plancontext.PlanningContext, aggregator *Aggregator) (output ops.Operator, applyResult *rewrite.ApplyResult, err error) {
-	if aggregator.Pushed {
+	if aggregator.Pushed || ctx.MinimalPlanning {
 		return aggregator, rewrite.SameTree, nil
 	}
 	aggregator.Pushed = true
@@ -608,6 +608,9 @@ func (p *joinPusher) addGrouping(ctx *plancontext.PlanningContext, gb GroupBy) s
 	if copyGB.ColOffset != -1 {
 		offset := p.useColumn(copyGB.ColOffset)
 		copyGB.ColOffset = offset
+	} else {
+		copyGB.ColOffset = len(p.pushed.Columns)
+		p.pushed.Columns = append(p.pushed.Columns, aeWrap(copyGB.Inner))
 	}
 	p.pushed.Grouping = append(p.pushed.Grouping, copyGB)
 	return expr
