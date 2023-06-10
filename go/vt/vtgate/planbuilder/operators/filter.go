@@ -114,26 +114,28 @@ func (f *Filter) Compact(*plancontext.PlanningContext) (ops.Operator, *rewrite.A
 }
 
 func (f *Filter) planOffsets(ctx *plancontext.PlanningContext) error {
-	resolveColumn := func(col *sqlparser.ColName) (int, error) {
-		newSrc, offset, err := f.Source.AddColumn(ctx, aeWrap(col), true, false)
-		if err != nil {
-			return 0, err
-		}
-		f.Source = newSrc
-		return offset, nil
-	}
-	cfg := &evalengine.Config{
-		ResolveType:   ctx.SemTable.TypeForExpr,
-		Collation:     ctx.SemTable.Collation,
-		ResolveColumn: resolveColumn,
+	// first step is to replace the expressions we expect to get from our input with the offsets for these
+	visitor, errCheck := offsetter(ctx,
+		func() ops.Operator { return f.Source },
+		func(o ops.Operator) { f.Source = o },
+	)
+	rewritten := sqlparser.CopyOnRewrite(sqlparser.AndExpressions(f.Predicates...), stopAtAggregations, visitor, nil).(sqlparser.Expr)
+	if err := errCheck(); err != nil {
+		return err
 	}
 
-	eexpr, err := evalengine.Translate(sqlparser.AndExpressions(f.Predicates...), cfg)
+	cfg := &evalengine.Config{
+		ResolveType: ctx.SemTable.TypeForExpr,
+		Collation:   ctx.SemTable.Collation,
+	}
+
+	eexpr, err := evalengine.Translate(rewritten, cfg)
 	if err != nil {
 		return err
 	}
 
 	f.FinalPredicate = eexpr
+	f.Predicates = sqlparser.SplitAndExpression(nil, rewritten)
 	return nil
 }
 

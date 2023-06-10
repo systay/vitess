@@ -98,7 +98,13 @@ func (a *Aggregator) addColumnWithoutPushing(expr *sqlparser.AliasedExpr, addToG
 		groupBy.ColOffset = offset
 		a.Grouping = append(a.Grouping, groupBy)
 	} else {
-		aggr := NewAggr(opcode.AggregateRandom, nil, expr, expr.As.String())
+		var aggr Aggr
+		switch e := expr.Expr.(type) {
+		case sqlparser.AggrFunc:
+			aggr = createAggrFromAggrFunc(e, expr)
+		default:
+			aggr = NewAggr(opcode.AggregateRandom, nil, expr, expr.As.String())
+		}
 		aggr.ColOffset = offset
 		a.Aggregations = append(a.Aggregations, aggr)
 	}
@@ -109,7 +115,7 @@ func (a *Aggregator) isDerived() bool {
 	return a.TableID != nil
 }
 
-func (a *Aggregator) AddColumn(ctx *plancontext.PlanningContext, expr *sqlparser.AliasedExpr, _, addToGroupBy bool) (ops.Operator, int, error) {
+func (a *Aggregator) AddColumn(ctx *plancontext.PlanningContext, expr *sqlparser.AliasedExpr, _, addToGroupBy bool) (op ops.Operator, idx int, err error) {
 	if addToGroupBy {
 		return nil, 0, vterrors.VT13001("did not expect to add group by here")
 	}
@@ -141,11 +147,24 @@ func (a *Aggregator) AddColumn(ctx *plancontext.PlanningContext, expr *sqlparser
 		}
 	}
 
-	if !addToGroupBy {
-		aggr := NewAggr(opcode.AggregateRandom, nil, expr, expr.As.String())
-		aggr.ColOffset = len(a.Columns)
-		a.Aggregations = append(a.Aggregations, aggr)
-	}
+	var aggr Aggr
+	//switch e := expr.Expr.(type) {
+	//case sqlparser.AggrFunc:
+	//	aggr = createAggrFromAggrFunc(e, expr)
+	//	if a.Original {
+	//		// we can only do this after adding the column and doing the offset planning, so we do it in the defer
+	//		defer func() {
+	//			if err == nil {
+	//				a.aggregateTheAggregates()
+	//			}
+	//		}()
+	//	}
+	//default:
+	aggr = NewAggr(opcode.AggregateRandom, nil, expr, expr.As.String())
+	//}
+
+	aggr.ColOffset = len(a.Columns)
+	a.Aggregations = append(a.Aggregations, aggr)
 	a.Columns = append(a.Columns, expr)
 	expectedOffset := len(a.Columns) - 1
 	newSrc, offset, err := a.Source.AddColumn(ctx, expr, false, addToGroupBy)

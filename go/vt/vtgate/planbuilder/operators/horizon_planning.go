@@ -17,7 +17,7 @@ limitations under the License.
 package operators
 
 import (
-	"fmt"
+	"golang.org/x/exp/slices"
 	"io"
 
 	"vitess.io/vitess/go/slices2"
@@ -152,20 +152,25 @@ func optimizeHorizonPlanning(ctx *plancontext.PlanningContext, root ops.Operator
 }
 
 func tryPushingDownFilter(ctx *plancontext.PlanningContext, in *Filter) (ops.Operator, *rewrite.ApplyResult, error) {
-	proj, ok := in.Source.(*Projection)
-	if !ok {
-		// we can only push filter under a projection
-		return in, rewrite.SameTree, nil
+	switch src := in.Source.(type) {
+	case *Projection:
+		return pushFilterUnderProjection(ctx, in, src)
+	case *Route:
+		return rewrite.Swap(in, src, "push filter into Route")
 	}
 
-	for _, p := range in.Predicates {
+	return in, rewrite.SameTree, nil
+}
+
+func pushFilterUnderProjection(ctx *plancontext.PlanningContext, filter *Filter, projection *Projection) (ops.Operator, *rewrite.ApplyResult, error) {
+	for _, p := range filter.Predicates {
 		cantPushDown := false
 		_ = sqlparser.Walk(func(node sqlparser.SQLNode) (kontinue bool, err error) {
-			if !fetchByOffset(node) {
+			if !offsettable(node) {
 				return true, nil
 			}
 
-			if proj.needsEvaluation(ctx, node.(sqlparser.Expr)) {
+			if projection.needsEvaluation(ctx, node.(sqlparser.Expr)) {
 				cantPushDown = true
 				return false, io.EOF
 			}
@@ -174,11 +179,11 @@ func tryPushingDownFilter(ctx *plancontext.PlanningContext, in *Filter) (ops.Ope
 		}, p)
 
 		if cantPushDown {
-			return in, rewrite.SameTree, nil
+			return filter, rewrite.SameTree, nil
 		}
 	}
+	return rewrite.Swap(filter, projection, "push filter under projection")
 
-	return rewrite.Swap(in, proj, "push filter under projection")
 }
 
 func tryPushingDownDistinct(in *Distinct) (ops.Operator, *rewrite.ApplyResult, error) {
@@ -257,6 +262,49 @@ func addOrderBysAndGroupBysForAggregations(ctx *plancontext.PlanningContext, roo
 				}
 				return nil
 			})
+		case *Filter:
+			columns, err := in.GetColumns()
+			if err != nil {
+				return nil, nil, vterrors.Wrap(err, "while planning filter")
+			}
+			proj, areOnTopOfProj := in.Source.(selectExpressions)
+			if !areOnTopOfProj {
+				// not much we can do here
+				return in, rewrite.SameTree, nil
+			}
+			addedColumns := false
+			for _, expr := range in.Predicates {
+				sqlparser.Rewrite(expr, func(cursor *sqlparser.Cursor) bool {
+					e, ok := cursor.Node().(sqlparser.Expr)
+					if !ok {
+						return true
+					}
+					offset := slices.IndexFunc(columns, func(expr *sqlparser.AliasedExpr) bool {
+						return ctx.SemTable.EqualsExprWithDeps(expr.Expr, e)
+					})
+
+					if offset >= 0 {
+						// this expression can be fetched from the input - we can stop here
+						return false
+					}
+
+					if offsettable(e) {
+						// this expression has to be fetched from the input, but we didn't find it in the input. let's add it
+						_, addToGroupBy := e.(*sqlparser.ColName)
+						proj.addColumnWithoutPushing(aeWrap(e), addToGroupBy)
+						addedColumns = true
+						columns, err = proj.GetColumns()
+						if err != nil {
+							panic("this should not happen")
+						}
+						return false
+					}
+					return true
+				}, nil)
+			}
+			if addedColumns {
+				return in, rewrite.NewTree("added columns because filter needs it", in), nil
+			}
 		}
 		return in, rewrite.SameTree, nil
 	}
@@ -301,7 +349,7 @@ func tryPushingDownOrdering(ctx *plancontext.PlanningContext, in *Ordering) (ops
 	case *Projection:
 		// we can move ordering under a projection if it's not introducing a column we're sorting by
 		for _, by := range in.Order {
-			if !fetchByOffset(by.SimplifiedExpr) {
+			if !offsettable(by.SimplifiedExpr) {
 				return in, rewrite.SameTree, nil
 			}
 		}
@@ -688,177 +736,6 @@ func pushOrExpandHorizon(ctx *plancontext.PlanningContext, in horizonLike) (ops.
 	return expandHorizon(ctx, in)
 }
 
-func expandHorizon(ctx *plancontext.PlanningContext, horizon horizonLike) (ops.Operator, *rewrite.ApplyResult, error) {
-	sel, isSel := horizon.selectStatement().(*sqlparser.Select)
-	if !isSel {
-		return nil, nil, errHorizonNotPlanned()
-	}
-
-	if sel.Having != nil {
-		return nil, nil, errHorizonNotPlanned()
-	}
-
-	op, err := createProjectionFromSelect(ctx, horizon)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	qp, err := horizon.getQP(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if qp.NeedsDistinct() {
-		op = &Distinct{
-			Source: op,
-			QP:     qp,
-		}
-	}
-
-	if len(qp.OrderExprs) > 0 {
-		op = &Ordering{
-			Source: op,
-			Order:  qp.OrderExprs,
-		}
-	}
-
-	if sel.Limit != nil {
-		op = &Limit{
-			Source: op,
-			AST:    sel.Limit,
-		}
-	}
-
-	return op, rewrite.NewTree("expand horizon into smaller components", op), nil
-}
-
-func checkInvalid(aggregations []Aggr, horizon horizonLike) error {
-	for _, aggregation := range aggregations {
-		if aggregation.Distinct {
-			return errHorizonNotPlanned()
-		}
-	}
-	if _, isDerived := horizon.(*Derived); isDerived {
-		return errHorizonNotPlanned()
-	}
-	return nil
-}
-
-func createProjectionFromSelect(ctx *plancontext.PlanningContext, horizon horizonLike) (out ops.Operator, err error) {
-	qp, err := horizon.getQP(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	if !qp.NeedsAggregation() {
-		projX, err := createProjectionWithoutAggr(qp, horizon.src())
-		if err != nil {
-			return nil, err
-		}
-		if derived, isDerived := horizon.(*Derived); isDerived {
-			id := derived.TableId
-			projX.TableID = &id
-			projX.Alias = derived.Alias
-		}
-		out = projX
-
-		return out, nil
-	}
-
-	err = checkAggregationSupported(horizon)
-	if err != nil {
-		return nil, err
-	}
-
-	aggregations, err := qp.AggregationExpressions(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := checkInvalid(aggregations, horizon); err != nil {
-		return nil, err
-	}
-
-	a := &Aggregator{
-		Source:       horizon.src(),
-		Original:     true,
-		QP:           qp,
-		Grouping:     qp.GetGrouping(),
-		Aggregations: aggregations,
-	}
-
-	if derived, isDerived := horizon.(*Derived); isDerived {
-		id := derived.TableId
-		a.TableID = &id
-		a.Alias = derived.Alias
-	}
-
-outer:
-	for colIdx, expr := range qp.SelectExprs {
-		ae, err := expr.GetAliasedExpr()
-		if err != nil {
-			return nil, err
-		}
-		addedToCol := false
-		for idx, groupBy := range a.Grouping {
-			if ctx.SemTable.EqualsExprWithDeps(groupBy.SimplifiedExpr, ae.Expr) {
-				if !addedToCol {
-					a.Columns = append(a.Columns, ae)
-					addedToCol = true
-				}
-				if groupBy.ColOffset < 0 {
-					a.Grouping[idx].ColOffset = colIdx
-				}
-			}
-		}
-		if addedToCol {
-			continue
-		}
-		for idx, aggr := range a.Aggregations {
-			if ctx.SemTable.EqualsExprWithDeps(aggr.Original.Expr, ae.Expr) && aggr.ColOffset < 0 {
-				a.Columns = append(a.Columns, ae)
-				a.Aggregations[idx].ColOffset = colIdx
-				continue outer
-			}
-		}
-		return nil, vterrors.VT13001(fmt.Sprintf("Could not find the %s in aggregation in the original query", sqlparser.String(ae)))
-	}
-
-	return a, nil
-}
-
-func createProjectionWithoutAggr(qp *QueryProjection, src ops.Operator) (*Projection, error) {
-	proj := &Projection{
-		Source: src,
-	}
-
-	for _, e := range qp.SelectExprs {
-		if _, isStar := e.Col.(*sqlparser.StarExpr); isStar {
-			return nil, errHorizonNotPlanned()
-		}
-		ae, err := e.GetAliasedExpr()
-
-		if err != nil {
-			return nil, err
-		}
-		expr := ae.Expr
-		if sqlparser.ContainsAggregation(expr) {
-			aggr, ok := expr.(sqlparser.AggrFunc)
-			if !ok {
-				// need to add logic to extract aggregations and pushed them to the top level
-				return nil, errHorizonNotPlanned()
-			}
-			expr = aggr.GetArg()
-			if expr == nil {
-				expr = sqlparser.NewIntLiteral("1")
-			}
-		}
-
-		proj.addUnexploredExpr(ae, expr)
-	}
-	return proj, nil
-}
-
 func aeWrap(e sqlparser.Expr) *sqlparser.AliasedExpr {
 	return &sqlparser.AliasedExpr{Expr: e}
 }
@@ -888,11 +765,8 @@ func makeSureOutputIsCorrect(ctx *plancontext.PlanningContext, oldHorizon ops.Op
 	if err != nil {
 		return nil, err
 	}
-	proj, err := createProjectionWithoutAggr(qp, output)
-	if err != nil {
-		return nil, err
-	}
-	err = proj.passThroughAllColumns(ctx)
+
+	proj, err := createSimpleProjection(ctx, qp, output)
 	if err != nil {
 		return nil, err
 	}
