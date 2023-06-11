@@ -17,6 +17,7 @@ limitations under the License.
 package operators
 
 import (
+	"golang.org/x/exp/slices"
 	"io"
 
 	"vitess.io/vitess/go/slices2"
@@ -228,6 +229,49 @@ func addOrderBysAndGroupBysForAggregations(ctx *plancontext.PlanningContext, roo
 			return addOrderingForAggregation(ctx, in)
 		case *ApplyJoin:
 			return addLiteralGroupingToRHS(in)
+		case *Filter:
+			columns, err := in.GetColumns()
+			if err != nil {
+				return nil, nil, vterrors.Wrap(err, "while planning filter")
+			}
+			proj, areOnTopOfProj := in.Source.(selectExpressions)
+			if !areOnTopOfProj {
+				// not much we can do here
+				return in, rewrite.SameTree, nil
+			}
+			addedColumns := false
+			for _, expr := range in.Predicates {
+				sqlparser.Rewrite(expr, func(cursor *sqlparser.Cursor) bool {
+					e, ok := cursor.Node().(sqlparser.Expr)
+					if !ok {
+						return true
+					}
+					offset := slices.IndexFunc(columns, func(expr *sqlparser.AliasedExpr) bool {
+						return ctx.SemTable.EqualsExprWithDeps(expr.Expr, e)
+					})
+
+					if offset >= 0 {
+						// this expression can be fetched from the input - we can stop here
+						return false
+					}
+
+					if fetchByOffset(e) {
+						// this expression has to be fetched from the input, but we didn't find it in the input. let's add it
+						_, addToGroupBy := e.(*sqlparser.ColName)
+						proj.addColumnWithoutPushing(aeWrap(e), addToGroupBy)
+						addedColumns = true
+						columns, err = proj.GetColumns()
+						if err != nil {
+							panic("this should not happen")
+						}
+						return false
+					}
+					return true
+				}, nil)
+			}
+			if addedColumns {
+				return in, rewrite.NewTree("added columns because filter needs it", in), nil
+			}
 		}
 		return in, rewrite.SameTree, nil
 	}
@@ -252,12 +296,14 @@ func addLiteralGroupingToRHS(in *ApplyJoin) (ops.Operator, *rewrite.ApplyResult,
 
 func addOrderingForAggregation(ctx *plancontext.PlanningContext, in *Aggregator) (ops.Operator, *rewrite.ApplyResult, error) {
 	if in.Pushed {
-		// we update the incoming columns, so we know about any new columns that have been added
 		columns, err := in.Source.GetColumns()
 		if err != nil {
 			return nil, nil, err
 		}
-		in.Columns = columns
+		// if this operator is producing more columns than expected, we want to know about it
+		if len(columns) > len(in.Columns) {
+			in.Columns = append(in.Columns, columns[len(in.Columns):]...)
+		}
 	}
 
 	requireOrdering, err := needsOrdering(in, ctx)
