@@ -55,17 +55,22 @@ func createOperatorFromAST(ctx *plancontext.PlanningContext, selStmt sqlparser.S
 
 // createOperatorFromSelect creates an operator tree that represents the input SELECT query
 func createOperatorFromSelect(ctx *plancontext.PlanningContext, sel *sqlparser.Select) (ops.Operator, error) {
-	subq, err := createSubqueryFromStatement(ctx, sel)
+	subq, sj, err := createSubqueryFromStatement(ctx, sel)
 	if err != nil {
 		return nil, err
 	}
+
 	op, err := crossJoin(ctx, sel.From)
 	if err != nil {
 		return nil, err
 	}
+
 	if sel.Where != nil {
 		exprs := sqlparser.SplitAndExpression(nil, sel.Where.Expr)
 		for _, expr := range exprs {
+			if _, isSubq := expr.(*sqlparser.ExtractedSubquery); isSubq {
+				continue
+			}
 			sqlparser.RemoveKeyspaceFromColName(expr)
 			op, err = op.AddPredicate(ctx, expr)
 			if err != nil {
@@ -74,17 +79,23 @@ func createOperatorFromSelect(ctx *plancontext.PlanningContext, sel *sqlparser.S
 			addColumnEquality(ctx, expr)
 		}
 	}
-	if subq == nil {
-		return &Horizon{
-			Source: op,
-			Select: sel,
-		}, nil
+
+	if sj != nil {
+		sj.LHS = op
+		op = sj
 	}
-	subq.Outer = op
-	return &Horizon{
-		Source: subq,
+
+	if subq != nil {
+		subq.Outer = op
+		op = subq
+	}
+
+	op = &Horizon{
+		Source: op,
 		Select: sel,
-	}, nil
+	}
+
+	return op, nil
 }
 
 func createOperatorFromUnion(ctx *plancontext.PlanningContext, node *sqlparser.Union) (ops.Operator, error) {
@@ -160,7 +171,7 @@ func createOperatorFromUpdate(ctx *plancontext.PlanningContext, updStmt *sqlpars
 		Routing: routing,
 	}
 
-	subq, err := createSubqueryFromStatement(ctx, updStmt)
+	subq, _, err := createSubqueryFromStatement(ctx, updStmt)
 	if err != nil {
 		return nil, err
 	}
@@ -227,7 +238,7 @@ func createOperatorFromDelete(ctx *plancontext.PlanningContext, deleteStmt *sqlp
 		return nil, vterrors.VT12001("multi shard DELETE with LIMIT")
 	}
 
-	subq, err := createSubqueryFromStatement(ctx, deleteStmt)
+	subq, _, err := createSubqueryFromStatement(ctx, deleteStmt)
 	if err != nil {
 		return nil, err
 	}

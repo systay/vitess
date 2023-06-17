@@ -44,6 +44,9 @@ type (
 )
 
 func errHorizonNotPlanned() error {
+	if rewrite.DebugOperatorTree {
+		panic(_errHorizonNotPlanned)
+	}
 	return _errHorizonNotPlanned
 }
 
@@ -67,8 +70,7 @@ func tryHorizonPlanning(ctx *plancontext.PlanningContext, root ops.Operator) (ou
 
 	_, ok := root.(*Horizon)
 
-	if !ok || len(ctx.SemTable.SubqueryMap) > 0 || len(ctx.SemTable.SubqueryRef) > 0 {
-		// we are not ready to deal with subqueries yet
+	if !ok {
 		return root, errHorizonNotPlanned()
 	}
 

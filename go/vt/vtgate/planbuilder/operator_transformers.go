@@ -67,9 +67,25 @@ func transformToLogicalPlan(ctx *plancontext.PlanningContext, op ops.Operator, i
 		return transformAggregator(ctx, op)
 	case *operators.Distinct:
 		return transformDistinct(ctx, op)
+	case *operators.SemiJoin:
+		return transformSemiJoin(ctx, op)
 	}
 
 	return nil, vterrors.VT13001(fmt.Sprintf("unknown type encountered: %T (transformToLogicalPlan)", op))
+}
+
+func transformSemiJoin(ctx *plancontext.PlanningContext, op *operators.SemiJoin) (logicalPlan, error) {
+	lhs, err := transformToLogicalPlan(ctx, op.LHS, false)
+	if err != nil {
+		return nil, err
+	}
+	rhs, err := transformToLogicalPlan(ctx, op.RHS, false)
+	if err != nil {
+		return nil, err
+	}
+
+	sj := newSemiJoin(lhs, rhs, op.Vars, nil)
+	return sj, nil
 }
 
 func transformAggregator(ctx *plancontext.PlanningContext, op *operators.Aggregator) (logicalPlan, error) {

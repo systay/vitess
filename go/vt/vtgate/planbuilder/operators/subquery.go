@@ -134,3 +134,51 @@ func (s *SubQuery) ShortDescription() string {
 func (s *SubQueryInner) ShortDescription() string {
 	return ""
 }
+
+/*
+func createSubqueryFromStatement(ctx *plancontext.PlanningContext, stmt sqlparser.Statement) (*SubQuery, *SemiJoin, error) {
+	if len(ctx.SemTable.SubqueryMap[stmt]) == 0 {
+		return nil, nil, nil
+	}
+	var subq *SubQuery
+	var sj *SemiJoin
+	for _, sq := range ctx.SemTable.SubqueryMap[stmt] {
+		opInner, err := createOperatorFromAST(ctx, sq.Subquery.Select)
+		if err != nil {
+			return nil, nil, err
+		}
+		horizon, isHorizon := opInner.(*Horizon)
+
+		switch sq.OpCode {
+		case opcode.PulloutIn:
+			selectExpr := sq.Subquery.Select.GetColumns()[0]
+			rhsExpr, ok := selectExpr.(*sqlparser.AliasedExpr)
+			if !ok {
+				return nil, nil, vterrors.VT12001(fmt.Sprintf("IN subquery with unexpected expression type %s", sqlparser.String(selectExpr)))
+			}
+			newOp := &SemiJoin{
+				LHS:     sj,
+				RHS:     opInner,
+				LHSExpr: []sqlparser.Expr{sq.OtherSide},
+				RHSExpr: []sqlparser.Expr{rhsExpr.Expr},
+			}
+
+			sj = newOp
+
+		default:
+			if isHorizon {
+				opInner = horizon.Source
+			}
+			if subq == nil {
+				subq = &SubQuery{}
+			}
+
+			subq.Inner = append(subq.Inner, &SubQueryInner{
+				ExtractedSubquery: sq,
+				Inner:             opInner,
+			})
+		}
+	}
+	return subq, sj, nil
+}
+*/
