@@ -28,14 +28,15 @@ import (
 // While doing this, it will also find the types for columns and
 // store these in the typer:s expression map
 type binder struct {
-	recursive   ExprDependencies
-	direct      ExprDependencies
-	scoper      *scoper
-	tc          *tableCollector
-	org         originable
-	typer       *typer
-	subqueryMap map[sqlparser.Statement][]*sqlparser.ExtractedSubquery
-	subqueryRef map[*sqlparser.Subquery]*sqlparser.ExtractedSubquery
+	recursive        ExprDependencies
+	direct           ExprDependencies
+	scoper           *scoper
+	tc               *tableCollector
+	org              originable
+	typer            *typer
+	subqueryMap      map[sqlparser.Statement][]*sqlparser.ExtractedSubquery
+	subqueryRef      map[*sqlparser.Subquery]*sqlparser.ExtractedSubquery
+	columnEqualities ColumnEqualities
 
 	// every table will have an entry in the outer map. it will point to a map with all the columns
 	// that this map is joined with using USING.
@@ -45,15 +46,16 @@ type binder struct {
 
 func newBinder(scoper *scoper, org originable, tc *tableCollector, typer *typer) *binder {
 	return &binder{
-		recursive:     map[sqlparser.Expr]TableSet{},
-		direct:        map[sqlparser.Expr]TableSet{},
-		scoper:        scoper,
-		org:           org,
-		tc:            tc,
-		typer:         typer,
-		subqueryMap:   map[sqlparser.Statement][]*sqlparser.ExtractedSubquery{},
-		subqueryRef:   map[*sqlparser.Subquery]*sqlparser.ExtractedSubquery{},
-		usingJoinInfo: map[TableSet]map[string]TableSet{},
+		recursive:        map[sqlparser.Expr]TableSet{},
+		direct:           map[sqlparser.Expr]TableSet{},
+		scoper:           scoper,
+		org:              org,
+		tc:               tc,
+		typer:            typer,
+		subqueryMap:      map[sqlparser.Statement][]*sqlparser.ExtractedSubquery{},
+		subqueryRef:      map[*sqlparser.Subquery]*sqlparser.ExtractedSubquery{},
+		usingJoinInfo:    map[TableSet]map[string]TableSet{},
+		columnEqualities: make(ColumnEqualities),
 	}
 }
 
@@ -108,6 +110,9 @@ func (b *binder) up(cursor *sqlparser.Cursor) error {
 			if err != nil {
 				return err
 			}
+		}
+		if deps.original != nil {
+			b.columnEqualities.addColumnEquality(deps.direct, node, deps.original)
 		}
 		b.recursive[node] = deps.recursive
 		b.direct[node] = deps.direct

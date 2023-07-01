@@ -19,6 +19,7 @@ package semantics
 import (
 	querypb "vitess.io/vitess/go/vt/proto/query"
 	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
+	"vitess.io/vitess/go/vt/sqlparser"
 	"vitess.io/vitess/go/vt/vterrors"
 )
 
@@ -34,6 +35,9 @@ type (
 		direct    TableSet
 		recursive TableSet
 		typ       *Type
+
+		// if this colName is an aliases column from a derived table, we'll find the original expression here
+		original sqlparser.Expr
 	}
 	nothing struct{}
 	certain struct {
