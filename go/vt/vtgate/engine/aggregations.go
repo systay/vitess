@@ -40,7 +40,9 @@ type AggregateParams struct {
 	Opcode AggregateOpcode
 	Col    int
 
-	// These are used only for distinct opcodes.
+	// These are used only for aggregations that need comparisons
+	// KeyCol is the column that will be checked. If it contains incomparable data,
+	// we will instead fall back on the WCol value, since it will point to the weightstring value
 	KeyCol      int
 	WCol        int
 	CollationID collations.ID

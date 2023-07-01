@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"vitess.io/vitess/go/slices2"
 
 	"vitess.io/vitess/go/mysql/collations"
 	"vitess.io/vitess/go/sqltypes"
@@ -115,6 +116,97 @@ func (oa *OrderedAggregate) TryExecute(ctx context.Context, vcursor VCursor, bin
 	return qr.Truncate(oa.TruncateColumnCount), nil
 }
 
+type runtimeAggr struct {
+	fields           []*querypb.Field
+	aggregates       []*AggregateParams
+	aggregateKeyCols []int
+
+	accumulator  sqltypes.Row
+	currDistinct sqltypes.Row
+	grouping     []*GroupByParams
+	groupingCols []int
+}
+
+func createAggregations(inFields []*querypb.Field, aggregates []*AggregateParams, grouping []*GroupByParams) *runtimeAggr {
+	fields := convertFields(inFields, aggregates)
+	keycols := slices2.Map(aggregates, func(f *AggregateParams) int {
+		return f.Col
+	})
+	groupingCols := slices2.Map(grouping, func(f *GroupByParams) int {
+		return f.KeyCol
+	})
+	return &runtimeAggr{
+		fields:           fields,
+		aggregates:       aggregates,
+		aggregateKeyCols: keycols,
+		grouping:         grouping,
+		groupingCols:     groupingCols,
+	}
+}
+
+func (ra *runtimeAggr) addRow(row sqltypes.Row) (sqltypes.Row, error) {
+	if ra.accumulator == nil {
+		ra.initAccumulator(row)
+		return nil, nil
+	}
+
+	equal, err := ra.groupingIsEqual(row)
+	if err != nil {
+		return nil, err
+	}
+
+	if equal {
+		current, curDistincts, err := merge(ra.fields, ra.accumulator, row, ra.currDistinct, ra.aggregates)
+		if err != nil {
+			return nil, err
+		}
+		ra.accumulator = current
+		ra.currDistinct = curDistincts
+		return nil, nil
+	}
+
+	result := ra.accumulator
+	ra.initAccumulator(row)
+	return result, nil
+}
+
+func (ra *runtimeAggr) initAccumulator(row sqltypes.Row) {
+	current, curDistincts := convertRow(ra.fields, row, ra.aggregates)
+	ra.accumulator = current
+	ra.currDistinct = curDistincts
+}
+func (ra *runtimeAggr) groupingIsEqual(row sqltypes.Row) (bool, error) {
+	for offset, grpIdx := range ra.groupingCols {
+		gb := ra.grouping[grpIdx]
+		cmp, err := evalengine.NullsafeCompare(ra.currDistinct[offset], row[offset], gb.CollationID)
+		if err != nil {
+			_, isComparisonErr := err.(evalengine.UnsupportedComparisonError)
+			_, isCollationErr := err.(evalengine.UnsupportedCollationError)
+			if !isComparisonErr && !isCollationErr || gb.WeightStringCol == -1 || offset == gb.WeightStringCol {
+				return false, err
+			}
+			ra.groupingCols[grpIdx] = gb.WeightStringCol
+			cmp, err = evalengine.NullsafeCompare(ra.currDistinct[gb.WeightStringCol], row[gb.WeightStringCol], gb.CollationID)
+			if err != nil {
+				return false, err
+			}
+		}
+		if cmp != 0 {
+			return false, nil
+		}
+	}
+
+	return true, nil
+}
+
+func (ra *runtimeAggr) remaining() (sqltypes.Row, error) {
+	if ra.accumulator == nil {
+		return nil, nil
+	}
+
+	return convertFinal(ra.accumulator, ra.aggregates)
+}
+
 func (oa *OrderedAggregate) execute(ctx context.Context, vcursor VCursor, bindVars map[string]*querypb.BindVariable) (*sqltypes.Result, error) {
 	result, err := vcursor.ExecutePrimitive(
 		ctx,
@@ -125,50 +217,32 @@ func (oa *OrderedAggregate) execute(ctx context.Context, vcursor VCursor, bindVa
 	if err != nil {
 		return nil, err
 	}
-	fields := convertFields(result.Fields, oa.Aggregates)
+	aggregations := createAggregations(result.Fields, oa.Aggregates, oa.GroupByKeys)
 	out := &sqltypes.Result{
-		Fields: fields,
+		Fields: aggregations.fields,
 		Rows:   make([][]sqltypes.Value, 0, len(result.Rows)),
 	}
 
 	// This code is similar to the one in StreamExecute.
-	var current []sqltypes.Value
-	var curDistincts []sqltypes.Value
 	for _, row := range result.Rows {
-		// this is the first row. set up everything
-		if current == nil {
-			current, curDistincts = convertRow(fields, row, oa.Aggregates)
-			continue
-		}
-
-		// not the first row. are we still in the old group, or is this a new grouping?=
-		equal, err := oa.keysEqual(current, row)
+		res, err := aggregations.addRow(row)
 		if err != nil {
 			return nil, err
 		}
-
-		if equal {
-			// we are continuing to add values to the current grouping
-			current, curDistincts, err = merge(fields, current, row, curDistincts, oa.Aggregates)
-			if err != nil {
-				return nil, err
-			}
-			continue
+		if res != nil {
+			out.Rows = append(out.Rows, res)
 		}
-
-		// this is a new grouping. let's yield the old one, and start a new
-		out.Rows = append(out.Rows, current)
-		current, curDistincts = convertRow(fields, row, oa.Aggregates)
-		continue
 	}
 
-	if current != nil {
-		final, err := convertFinal(current, oa.Aggregates)
-		if err != nil {
-			return nil, err
-		}
-		out.Rows = append(out.Rows, final)
+	remaining, err := aggregations.remaining()
+	if err != nil {
+		return nil, err
 	}
+
+	if remaining != nil {
+		out.Rows = append(out.Rows, remaining)
+	}
+
 	return out, nil
 }
 
