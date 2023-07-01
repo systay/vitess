@@ -113,7 +113,7 @@ func (a *analyzer) newSemTable(statement sqlparser.Statement, coll collations.ID
 		Comments:          comments,
 		SubqueryMap:       a.binder.subqueryMap,
 		SubqueryRef:       a.binder.subqueryRef,
-		ColumnEqualities:  map[columnName][]sqlparser.Expr{},
+		ColumnEqualities:  a.binder.columnEqualities,
 		Collation:         coll,
 		ExpandedColumns:   a.rewriter.expandedColumns,
 	}

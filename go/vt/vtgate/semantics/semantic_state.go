@@ -105,7 +105,7 @@ type (
 		SubqueryRef map[*sqlparser.Subquery]*sqlparser.ExtractedSubquery
 
 		// ColumnEqualities is used for transitive closures (e.g., if a == b and b == c, then a == c).
-		ColumnEqualities map[columnName][]sqlparser.Expr
+		ColumnEqualities ColumnEqualities
 
 		// ExpandedColumns is a map of all the added columns for a given table.
 		// The columns were added because of the use of `*` in the query
@@ -124,7 +124,20 @@ type (
 		FindTableOrVindex(tablename sqlparser.TableName) (*vindexes.Table, vindexes.Vindex, string, topodatapb.TabletType, key.Destination, error)
 		ConnCollation() collations.ID
 	}
+
+	ColumnEqualities map[columnName][]sqlparser.Expr
 )
+
+// AddColumnEquality adds a relation of the given colName to the ColumnEqualities map
+func (ce ColumnEqualities) addColumnEquality(deps TableSet, colName *sqlparser.ColName, expr sqlparser.Expr) {
+	columnName := columnName{
+		Table:      deps,
+		ColumnName: colName.Name.String(),
+	}
+	elem := ce[columnName]
+	elem = append(elem, expr)
+	ce[columnName] = elem
+}
 
 var (
 	// ErrNotSingleTable refers to an error happening when something should be used only for single tables
@@ -220,13 +233,7 @@ func (st *SemTable) DirectDeps(expr sqlparser.Expr) TableSet {
 // AddColumnEquality adds a relation of the given colName to the ColumnEqualities map
 func (st *SemTable) AddColumnEquality(colName *sqlparser.ColName, expr sqlparser.Expr) {
 	ts := st.Direct.dependencies(colName)
-	columnName := columnName{
-		Table:      ts,
-		ColumnName: colName.Name.String(),
-	}
-	elem := st.ColumnEqualities[columnName]
-	elem = append(elem, expr)
-	st.ColumnEqualities[columnName] = elem
+	st.ColumnEqualities.addColumnEquality(ts, colName, expr)
 }
 
 // GetExprAndEqualities returns a slice containing the given expression, and it's known equalities if any
@@ -452,15 +459,40 @@ func (st *SemTable) EqualsExpr(a, b sqlparser.Expr) bool {
 // if dependency information exists for both expressions. If it does, the dependencies
 // must match. If we are missing dependency information for either
 func (st *SemTable) EqualsExprWithDeps(a, b sqlparser.Expr) bool {
-	eq := st.ASTEquals().Expr(a, b)
+	eq := st.equal(a, b)
 	if !eq {
 		return false
 	}
+
+	// if we are dealing with a colName, we don't have to check dependencies
+	_, isCol := a.(*sqlparser.ColName)
+	if isCol {
+		return true
+	}
+	_, isCol = b.(*sqlparser.ColName)
+	if isCol {
+		return true
+	}
+
 	adeps := st.DirectDeps(a)
 	bdeps := st.DirectDeps(b)
 	if adeps.IsEmpty() || bdeps.IsEmpty() || adeps == bdeps {
 		return true
 	}
+	return false
+}
+
+func (st *SemTable) equal(a, b sqlparser.Expr) bool {
+	aexprs := st.GetExprAndEqualities(a)
+	bexprs := st.GetExprAndEqualities(b)
+	for _, aexpr := range aexprs {
+		for _, bexpr := range bexprs {
+			if st.ASTEquals().Expr(aexpr, bexpr) {
+				return true
+			}
+		}
+	}
+
 	return false
 }
 

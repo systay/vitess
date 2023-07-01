@@ -75,9 +75,11 @@ func (dt *DerivedTable) dependencies(colName string, org originable) (dependenci
 		if !strings.EqualFold(name, colName) {
 			continue
 		}
-		_, recursiveDeps, qt := org.depsForExpr(dt.cols[i])
-
-		return createCertain(directDeps, recursiveDeps, qt), nil
+		original := dt.cols[i]
+		_, recursiveDeps, qt := org.depsForExpr(original)
+		c := createCertain(directDeps, recursiveDeps, qt)
+		c.original = original
+		return c, nil
 	}
 
 	if !dt.hasStar() {

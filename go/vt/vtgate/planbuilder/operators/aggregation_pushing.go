@@ -34,22 +34,19 @@ func tryPushingDownAggregator(ctx *plancontext.PlanningContext, aggregator *Aggr
 	}
 	switch src := aggregator.Source.(type) {
 	case *Route:
-		// if we have a single sharded route, we can push it down
 		output, applyResult, err = pushDownAggregationThroughRoute(ctx, aggregator, src)
 	case *ApplyJoin:
 		if ctx.DelegateAggregation {
 			output, applyResult, err = pushDownAggregationThroughJoin(ctx, aggregator, src)
-			if applyResult != rewrite.SameTree && aggregator.Original {
-				aggregator.aggregateTheAggregates()
-			}
 		}
 	case *Filter:
 		if ctx.DelegateAggregation {
 			output, applyResult, err = pushDownAggregationThroughFilter(ctx, aggregator, src)
-			if applyResult != rewrite.SameTree && aggregator.Original {
-				aggregator.aggregateTheAggregates()
-			}
 		}
+	case *Aggregator:
+		output = aggregator
+		// we stick a projection between the two aggregations to make sure that the columns line up
+		aggregator.Source = &Projection{Source: src}
 	default:
 		return aggregator, rewrite.SameTree, nil
 	}
@@ -177,6 +174,10 @@ withNextColumn:
 
 	// Set the source of the filter to the new aggregator placed below the route.
 	filter.Source = pushedAggr
+
+	if aggregator.Original {
+		aggregator.aggregateTheAggregates()
+	}
 
 	if !aggregator.Original {
 		// we only keep the root aggregation, if this aggregator was created
@@ -324,6 +325,10 @@ func pushDownAggregationThroughJoin(ctx *plancontext.PlanningContext, rootAggr *
 
 	join.LHS, join.RHS = lhs.pushed, rhs.pushed
 	join.ColumnsAST = joinColumns
+
+	if rootAggr.Original {
+		rootAggr.aggregateTheAggregates()
+	}
 
 	if !rootAggr.Original {
 		// we only keep the root aggregation, if this aggregator was created
