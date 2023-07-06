@@ -104,7 +104,7 @@ func (to *Table) TablesUsed() []string {
 func addColumn(ctx *plancontext.PlanningContext, op ColNameColumns, e sqlparser.Expr) (int, error) {
 	col, ok := e.(*sqlparser.ColName)
 	if !ok {
-		return 0, vterrors.VT13001("cannot push this expression to a table/vindex: %s", sqlparser.String(e))
+		return 0, vterrors.VT12001("expression on results of a vindex function")
 	}
 	sqlparser.RemoveKeyspaceFromColName(col)
 	cols := op.GetColNames()

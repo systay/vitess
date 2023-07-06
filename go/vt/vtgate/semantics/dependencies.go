@@ -29,6 +29,7 @@ type (
 		empty() bool
 		get() (dependency, error)
 		merge(other dependencies, allowMulti bool) dependencies
+		updateType(t Type)
 	}
 	dependency struct {
 		direct    TableSet
@@ -85,6 +86,10 @@ func (u *uncertain) get() (dependency, error) {
 	return u.dependency, nil
 }
 
+func (u *uncertain) updateType(t Type) {
+	u.typ = &t
+}
+
 func (u *uncertain) merge(d dependencies, _ bool) dependencies {
 	switch d := d.(type) {
 	case *uncertain:
@@ -105,6 +110,10 @@ func (c *certain) empty() bool {
 
 func (c *certain) get() (dependency, error) {
 	return c.dependency, c.err
+}
+
+func (c *certain) updateType(t Type) {
+	c.typ = &t
 }
 
 func (c *certain) merge(d dependencies, allowMulti bool) dependencies {
@@ -132,6 +141,8 @@ func (n *nothing) empty() bool {
 func (n *nothing) get() (dependency, error) {
 	return dependency{}, nil
 }
+
+func (n *nothing) updateType(t Type) {}
 
 func (n *nothing) merge(d dependencies, _ bool) dependencies {
 	return d

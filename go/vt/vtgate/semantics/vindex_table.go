@@ -17,6 +17,8 @@ limitations under the License.
 package semantics
 
 import (
+	"vitess.io/vitess/go/mysql/collations"
+	"vitess.io/vitess/go/sqltypes"
 	"vitess.io/vitess/go/vt/sqlparser"
 	"vitess.io/vitess/go/vt/vtgate/vindexes"
 )
@@ -33,7 +35,17 @@ var _ TableInfo = (*VindexTable)(nil)
 
 // dependencies implements the TableInfo interface
 func (v *VindexTable) dependencies(colName string, org originable) (dependencies, error) {
-	return v.Table.dependencies(colName, org)
+	d, err := v.Table.dependencies(colName, org)
+	if err != nil {
+		return nil, err
+	}
+
+	d.updateType(Type{
+		Type:      sqltypes.VarBinary,
+		Collation: collations.CollationBinaryID,
+	})
+
+	return d, nil
 }
 
 // GetTables implements the TableInfo interface
