@@ -584,7 +584,6 @@ type selectExpressions interface {
 	ops.Operator
 	addColumnWithoutPushing(expr *sqlparser.AliasedExpr, addToGroupBy bool) int
 	isDerived() bool
-	findCol(ctx *plancontext.PlanningContext, expr sqlparser.Expr) (int, error)
 }
 
 // addColumnToInput adds a column to an operator without pushing it down.
@@ -633,6 +632,10 @@ func addColumnToInput(ctx *plancontext.PlanningContext, operator ops.Operator, e
 	default:
 		return op, false, 0
 	}
+}
+
+func (r *Route) FindCol(ctx *plancontext.PlanningContext, expr sqlparser.Expr) (int, error) {
+	return r.Source.FindCol(ctx, expr)
 }
 
 func (r *Route) GetColumns(ctx *plancontext.PlanningContext) ([]*sqlparser.AliasedExpr, error) {
