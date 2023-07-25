@@ -73,6 +73,10 @@ func (o *Ordering) AddColumn(ctx *plancontext.PlanningContext, expr *sqlparser.A
 	return o, offset, nil
 }
 
+func (o *Ordering) AddColumns(ctx *plancontext.PlanningContext, reuse bool, addToGroupBy []bool, exprs []*sqlparser.AliasedExpr) ([]int, error) {
+	return o.Source.AddColumns(ctx, reuse, addToGroupBy, exprs)
+}
+
 func (o *Ordering) FindCol(ctx *plancontext.PlanningContext, expr sqlparser.Expr) (int, error) {
 	return o.Source.FindCol(ctx, expr)
 }

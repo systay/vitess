@@ -96,6 +96,10 @@ func (f *Filter) AddColumn(ctx *plancontext.PlanningContext, expr *sqlparser.Ali
 	return f, offset, nil
 }
 
+func (f *Filter) AddColumns(ctx *plancontext.PlanningContext, reuse bool, addToGroupBy []bool, exprs []*sqlparser.AliasedExpr) ([]int, error) {
+	return f.Source.AddColumns(ctx, reuse, addToGroupBy, exprs)
+}
+
 func (f *Filter) FindCol(ctx *plancontext.PlanningContext, expr sqlparser.Expr) (int, error) {
 	return f.Source.FindCol(ctx, expr)
 }

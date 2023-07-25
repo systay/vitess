@@ -48,6 +48,8 @@ type (
 		// The offset to the column is returned.
 		AddColumn(ctx *plancontext.PlanningContext, expr *sqlparser.AliasedExpr, reuseExisting, addToGroupBy bool) (Operator, int, error)
 
+		AddColumns(ctx *plancontext.PlanningContext, reuseExisting bool, addToGroupBy []bool, exprs []*sqlparser.AliasedExpr) ([]int, error)
+
 		FindCol(ctx *plancontext.PlanningContext, expr sqlparser.Expr) (int, error)
 
 		GetColumns(ctx *plancontext.PlanningContext) ([]*sqlparser.AliasedExpr, error)

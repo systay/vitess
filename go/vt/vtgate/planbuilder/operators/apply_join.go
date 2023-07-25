@@ -252,6 +252,36 @@ func (a *ApplyJoin) AddColumn(ctx *plancontext.PlanningContext, expr *sqlparser.
 	return a, len(a.ColumnsAST) - 1, nil
 }
 
+func (a *ApplyJoin) AddColumns(
+	ctx *plancontext.PlanningContext,
+	reuse bool,
+	addToGroupBy []bool,
+	exprs []*sqlparser.AliasedExpr,
+) (offsets []int, err error) {
+	offsets = make([]int, len(exprs))
+	for i, expr := range exprs {
+		if reuse {
+			offset, err := a.FindCol(ctx, expr.Expr)
+			if err != nil {
+				return nil, err
+			}
+			if offset != -1 {
+				offsets[i] = offset
+				continue
+			}
+		}
+
+		col, err := a.getJoinColumnFor(ctx, expr, addToGroupBy[i])
+		if err != nil {
+			return nil, err
+		}
+
+		offsets[i] = len(a.ColumnsAST)
+		a.ColumnsAST = append(a.ColumnsAST, col)
+	}
+	return
+}
+
 func (a *ApplyJoin) planOffsets(ctx *plancontext.PlanningContext) (err error) {
 	for _, col := range a.ColumnsAST {
 		// Read the type description for JoinColumn to understand the following code
