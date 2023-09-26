@@ -27,7 +27,6 @@ import (
 	"vitess.io/vitess/go/vt/vtgate/planbuilder/operators/ops"
 	"vitess.io/vitess/go/vt/vtgate/planbuilder/operators/rewrite"
 	"vitess.io/vitess/go/vt/vtgate/planbuilder/plancontext"
-	"vitess.io/vitess/go/vt/vtgate/semantics"
 )
 
 func expandHorizon(ctx *plancontext.PlanningContext, horizon *Horizon) (ops.Operator, *rewrite.ApplyResult, error) {
@@ -263,11 +262,10 @@ func createProjectionWithoutAggr(ctx *plancontext.PlanningContext, qp *QueryProj
 
 	proj := newAliasedProjection(nil)
 	sqc := &SubQueryContainer{}
-	outerID := TableID(src)
 	for _, ae := range aes {
 		org := sqlparser.CloneRefOfAliasedExpr(ae)
 		expr := ae.Expr
-		newExpr, subqs, err := sqc.pullOutValueSubqueries(ctx, expr, outerID, false)
+		newExpr, subqs, err := sqc.pullOutValueSubqueries(ctx, expr, false)
 		if err != nil {
 			return nil, err
 		}
@@ -305,7 +303,6 @@ type subqueryExtraction struct {
 func (sqc *SubQueryContainer) pullOutValueSubqueries(
 	ctx *plancontext.PlanningContext,
 	expr sqlparser.Expr,
-	outerID semantics.TableSet,
 	isDML bool,
 ) (sqlparser.Expr, []*SubQuery, error) {
 	original := sqlparser.CloneExpr(expr)
@@ -316,7 +313,7 @@ func (sqc *SubQueryContainer) pullOutValueSubqueries(
 	var newSubqs []*SubQuery
 
 	for idx, subq := range sqe.subq {
-		sqInner, err := createSubquery(ctx, original, subq, outerID, original, sqe.cols[idx], sqe.pullOutCode[idx], true)
+		sqInner, err := createSubquery(ctx, original, subq, original, sqe.cols[idx], sqe.pullOutCode[idx], true)
 		if err != nil {
 			return nil, nil, err
 		}

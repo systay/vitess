@@ -149,7 +149,7 @@ func (aj *ApplyJoin) IsInner() bool {
 func (aj *ApplyJoin) AddJoinPredicate(ctx *plancontext.PlanningContext, expr sqlparser.Expr) error {
 	aj.Predicate = ctx.SemTable.AndExpressions(expr, aj.Predicate)
 
-	col, err := BreakExpressionInLHSandRHS(ctx, expr, TableID(aj.LHS))
+	col, err := ExtractExpForTable(ctx, expr, TableID(aj.RHS))
 	if err != nil {
 		return err
 	}
@@ -215,7 +215,7 @@ func (aj *ApplyJoin) getJoinColumnFor(ctx *plancontext.PlanningContext, orig *sq
 	case deps.IsSolvedBy(rhs):
 		col.RHSExpr = e
 	case deps.IsSolvedBy(both):
-		col, err = BreakExpressionInLHSandRHS(ctx, e, TableID(aj.LHS))
+		col, err = ExtractExpForTable(ctx, e, TableID(aj.RHS))
 		if err != nil {
 			return JoinColumn{}, err
 		}

@@ -17,6 +17,7 @@ limitations under the License.
 package operators
 
 import (
+	"fmt"
 	"io"
 
 	"golang.org/x/exp/slices"
@@ -242,10 +243,25 @@ func tryPushDownSubQueryInJoin(ctx *plancontext.PlanningContext, inner *SubQuery
 		// we can rewrite the predicate to not use the values from the lhs,
 		// and instead use arguments for these dependencies.
 		// this way we can push the subquery into the RHS of this join
-		err := inner.mapExpr(extractLHSExpr(ctx, outer, lhs))
+		exprRewrite := extractLHSExpr(ctx, outer, lhs)
+		err := inner.mapExpr(exprRewrite)
 		if err != nil {
 			return nil, nil, err
 		}
+		var newPredicates []sqlparser.Expr
+		for _, pred := range inner.Predicates {
+			newExpr, err := exprRewrite(pred)
+			if err != nil {
+				return nil, nil, err
+			}
+			// outerID := TableID(outer)
+			innerID := TableID(inner.Subquery)
+			deps := ctx.SemTable.RecursiveDeps(newExpr)
+			if deps != innerID {
+				newPredicates = append(newPredicates, pred)
+			}
+		}
+		inner.Predicates = newPredicates
 
 		outer.RHS = addSubQuery(outer.RHS, inner)
 		return outer, rewrite.NewTree("push subquery into RHS of join rewriting predicates", inner), nil
@@ -506,9 +522,6 @@ func tryMergeSubqueryWithOuter(ctx *plancontext.PlanningContext, subQuery *SubQu
 	if op == nil {
 		return outer, rewrite.SameTree, nil
 	}
-	if !subQuery.IsProjection {
-		op.Source = &Filter{Source: outer.Source, Predicates: []sqlparser.Expr{subQuery.Original}}
-	}
 	ctx.MergedSubqueries = append(ctx.MergedSubqueries, subQuery.originalSubquery)
 	return op, rewrite.NewTree("merged subquery with outer", subQuery), nil
 }
@@ -545,7 +558,8 @@ func (s *subqueryRouteMerger) mergeShardedRouting(ctx *plancontext.PlanningConte
 		SeenPredicates: append(r1.SeenPredicates, r2.SeenPredicates...),
 	}
 
-	tr.SeenPredicates = slice.Filter(tr.SeenPredicates, func(expr sqlparser.Expr) bool {
+	filtered := slice.Filter(tr.SeenPredicates, func(expr sqlparser.Expr) bool {
+		ss := sqlparser.String(expr)
 		// There are two cases we can have - we can have predicates in the outer
 		// that are no longer valid, and predicates in the inner that are no longer valid
 		// For the case WHERE exists(select 1 from user where user.id = ue.user_id)
@@ -559,9 +573,6 @@ func (s *subqueryRouteMerger) mergeShardedRouting(ctx *plancontext.PlanningConte
 		// We only keep SeenPredicates that are not bind variables in the join columns.
 		// We have to remove the outer predicate since we merge both routes, and no one
 		// is producing the bind variable anymore.
-		if exprFromSubQ := ctx.SemTable.RecursiveDeps(expr).IsOverlapping(TableID(s.subq.Subquery)); !exprFromSubQ {
-			return true
-		}
 		var argFound bool
 		_ = sqlparser.Walk(func(node sqlparser.SQLNode) (kontinue bool, err error) {
 			arg, ok := node.(*sqlparser.Argument)
@@ -577,9 +588,12 @@ func (s *subqueryRouteMerger) mergeShardedRouting(ctx *plancontext.PlanningConte
 			}
 			return true, nil
 		}, expr)
+		fmt.Printf("%s %v\n", ss, argFound)
 
 		return !argFound
 	})
+	fmt.Printf("%s <filtered to> %s\n", sqlparser.String(sqlparser.Exprs(tr.SeenPredicates)), sqlparser.String(sqlparser.Exprs(filtered)))
+	tr.SeenPredicates = filtered
 
 	routing, err := tr.resetRoutingLogic(ctx)
 	if err != nil {
@@ -588,16 +602,64 @@ func (s *subqueryRouteMerger) mergeShardedRouting(ctx *plancontext.PlanningConte
 	return s.merge(ctx, old1, old2, routing)
 }
 
-func (s *subqueryRouteMerger) merge(_ *plancontext.PlanningContext, old1, old2 *Route, r Routing) (*Route, error) {
-	mergedWith := append(old1.MergedWith, old1, old2)
-	mergedWith = append(mergedWith, old2.MergedWith...)
+func (s *subqueryRouteMerger) merge(ctx *plancontext.PlanningContext, inner, outer *Route, r Routing) (*Route, error) {
+	mergedWith := append(inner.MergedWith, inner, outer)
+	mergedWith = append(mergedWith, outer.MergedWith...)
 	src := s.outer.Source
-	if !s.subq.IsProjection {
+
+	stmt, _, err := ToSQL(ctx, inner.Source)
+	if err != nil {
+		return nil, err
+	}
+	subqStmt, ok := stmt.(sqlparser.SelectStatement)
+	if !ok {
+		return nil, vterrors.VT13001("subqueries should only be select statement")
+	}
+	subqID := TableID(s.subq.Subquery)
+	subqStmt = sqlparser.CopyOnRewrite(subqStmt, nil, func(cursor *sqlparser.CopyOnWriteCursor) {
+		arg, ok := cursor.Node().(*sqlparser.Argument)
+		if !ok {
+			return
+		}
+		var exprFound sqlparser.Expr
+		for expr, argName := range ctx.ReservedArguments {
+			if arg.Name == argName {
+				exprFound = expr
+			}
+		}
+		if exprFound == nil {
+			return
+		}
+		deps := ctx.SemTable.RecursiveDeps(exprFound)
+		if deps.IsEmpty() {
+			err = vterrors.VT13001("found colname that we dont have deps for")
+			cursor.StopTreeWalk()
+			return
+		}
+		if !deps.IsSolvedBy(subqID) {
+			cursor.Replace(exprFound)
+		}
+	}, nil).(sqlparser.SelectStatement)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.subq.IsProjection {
+		ctx.SemTable.CopySemanticInfo(s.subq.originalSubquery.Select, subqStmt)
+		s.subq.originalSubquery.Select = subqStmt
+	} else {
+		sQuery := sqlparser.CopyOnRewrite(s.original, dontEnterSubqueries, func(cursor *sqlparser.CopyOnWriteCursor) {
+			if subq, ok := cursor.Node().(*sqlparser.Subquery); ok {
+				subq.Select = subqStmt
+				cursor.Replace(subq)
+			}
+		}, ctx.SemTable.CopySemanticInfo).(sqlparser.Expr)
 		src = &Filter{
 			Source:     s.outer.Source,
-			Predicates: []sqlparser.Expr{s.original},
+			Predicates: []sqlparser.Expr{sQuery},
 		}
 	}
+
 	return &Route{
 		Source:        src,
 		MergedWith:    mergedWith,

@@ -115,12 +115,11 @@ func createJoin(ctx *plancontext.PlanningContext, LHS, RHS ops.Operator) ops.Ope
 func createInnerJoin(ctx *plancontext.PlanningContext, tableExpr *sqlparser.JoinTableExpr, lhs, rhs ops.Operator) (ops.Operator, error) {
 	op := createJoin(ctx, lhs, rhs)
 	sqc := &SubQueryContainer{}
-	outerID := TableID(op)
 	joinPredicate := tableExpr.Condition.On
 	sqlparser.RemoveKeyspaceFromColName(joinPredicate)
 	exprs := sqlparser.SplitAndExpression(nil, joinPredicate)
 	for _, pred := range exprs {
-		subq, err := sqc.handleSubquery(ctx, pred, outerID)
+		subq, err := sqc.handleSubquery(ctx, pred)
 		if err != nil {
 			return nil, err
 		}

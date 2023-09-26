@@ -156,7 +156,7 @@ func createDeleteOperator(
 
 	sqc := &SubQueryContainer{}
 	for _, predicate := range qt.Predicates {
-		if subq, err := sqc.handleSubquery(ctx, predicate, qt.ID); err != nil {
+		if subq, err := sqc.handleSubquery(ctx, predicate); err != nil {
 			return nil, err
 		} else if subq != nil {
 			continue

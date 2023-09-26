@@ -29,13 +29,37 @@ func BreakExpressionInLHSandRHS(
 	expr sqlparser.Expr,
 	lhs semantics.TableSet,
 ) (col JoinColumn, err error) {
+	extract := func(deps semantics.TableSet) bool {
+		return deps.IsSolvedBy(lhs)
+	}
+
+	return extractColNamesFrom(ctx, expr, extract)
+}
+
+// ExtractExpForTable takes an expression and extracts any ColName:s that are
+// coming from the table identified by the provided TableSet.
+// All these ColNames will be replaced with arguments.
+// The resulting JoinColumn contains the information needed to gather the necessary
+// arguments to evaluate the remaining expression.
+func ExtractExpForTable(
+	ctx *plancontext.PlanningContext,
+	expr sqlparser.Expr,
+	tableToKeep semantics.TableSet,
+) (col JoinColumn, err error) {
+	extract := func(deps semantics.TableSet) bool {
+		return !deps.IsSolvedBy(tableToKeep)
+	}
+
+	return extractColNamesFrom(ctx, expr, extract)
+}
+
+func extractColNamesFrom(ctx *plancontext.PlanningContext, expr sqlparser.Expr, extract func(semantics.TableSet) bool) (col JoinColumn, err error) {
 	rewrittenExpr := sqlparser.CopyOnRewrite(expr, nil, func(cursor *sqlparser.CopyOnWriteCursor) {
 		nodeExpr := shouldExtract(cursor.Node())
 		if nodeExpr == nil {
 			return
 		}
-		deps := ctx.SemTable.RecursiveDeps(nodeExpr)
-		if !deps.IsSolvedBy(lhs) {
+		if !extract(ctx.SemTable.RecursiveDeps(nodeExpr)) {
 			return
 		}
 
@@ -57,17 +81,6 @@ func BreakExpressionInLHSandRHS(
 	ctx.JoinPredicates[expr] = append(ctx.JoinPredicates[expr], rewrittenExpr)
 	col.RHSExpr = rewrittenExpr
 	return
-}
-
-func getReservedBVName(node sqlparser.SQLNode) string {
-	switch node := node.(type) {
-	case *sqlparser.ColName:
-		node.Qualifier.Qualifier = sqlparser.NewIdentifierCS("")
-		return node.CompliantName()
-	case sqlparser.AggrFunc:
-		return sqlparser.CompliantString(node)
-	}
-	return ""
 }
 
 func shouldExtract(node sqlparser.SQLNode) sqlparser.Expr {

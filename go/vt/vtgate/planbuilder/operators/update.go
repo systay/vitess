@@ -141,7 +141,7 @@ func createUpdateOperator(ctx *plancontext.PlanningContext, updStmt *sqlparser.U
 	sqc := &SubQueryContainer{}
 	assignments := make([]SetExpr, len(updStmt.Exprs))
 	for idx, updExpr := range updStmt.Exprs {
-		expr, subqs, err := sqc.pullOutValueSubqueries(ctx, updExpr.Expr, qt.ID, true)
+		expr, subqs, err := sqc.pullOutValueSubqueries(ctx, updExpr.Expr, true)
 		if err != nil {
 			return nil, err
 		}
@@ -159,7 +159,7 @@ func createUpdateOperator(ctx *plancontext.PlanningContext, updStmt *sqlparser.U
 	}
 
 	for _, predicate := range qt.Predicates {
-		if subq, err := sqc.handleSubquery(ctx, predicate, qt.ID); err != nil {
+		if subq, err := sqc.handleSubquery(ctx, predicate); err != nil {
 			return nil, err
 		} else if subq != nil {
 			continue

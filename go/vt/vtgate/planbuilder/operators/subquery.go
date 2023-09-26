@@ -27,7 +27,6 @@ import (
 	"vitess.io/vitess/go/vt/vtgate/engine/opcode"
 	"vitess.io/vitess/go/vt/vtgate/planbuilder/operators/ops"
 	"vitess.io/vitess/go/vt/vtgate/planbuilder/plancontext"
-	"vitess.io/vitess/go/vt/vtgate/semantics"
 )
 
 // SubQuery represents a subquery used for filtering rows in an
@@ -48,8 +47,7 @@ type SubQuery struct {
 	HasValuesName     string               // Argument name passed to the subquery (uncorrelated queries).
 
 	// Fields related to correlated subqueries:
-	Vars    map[string]int // Arguments copied from outer to inner, set during offset planning.
-	outerID semantics.TableSet
+	Vars map[string]int // Arguments copied from outer to inner, set during offset planning.
 
 	IsProjection bool
 }
@@ -93,15 +91,9 @@ func (sq *SubQuery) GetJoinColumns(ctx *plancontext.PlanningContext, outer ops.O
 	if outer == nil {
 		return nil, vterrors.VT13001("outer operator cannot be nil")
 	}
-	outerID := TableID(outer)
-	if sq.JoinColumns != nil {
-		if sq.outerID == outerID {
-			return sq.JoinColumns, nil
-		}
-	}
-	sq.outerID = outerID
+	outerID := TableID(sq.Subquery)
 	mapper := func(in sqlparser.Expr) (JoinColumn, error) {
-		return BreakExpressionInLHSandRHS(ctx, in, outerID)
+		return ExtractExpForTable(ctx, in, outerID)
 	}
 	joinPredicates, err := slice.MapWithError(sq.Predicates, mapper)
 	if err != nil {
@@ -164,7 +156,7 @@ func (sq *SubQuery) ShortDescription() string {
 	}
 	var pred string
 	if len(sq.Predicates) > 0 {
-		pred = " WHERE " + sqlparser.String(sq.Predicates)
+		pred = " MERGE " + sqlparser.String(sq.Predicates)
 	}
 	return fmt.Sprintf("%s %v%s", typ, sq.FilterType.String(), pred)
 }
@@ -283,13 +275,7 @@ func (sq *SubQuery) isMerged(ctx *plancontext.PlanningContext) bool {
 }
 
 // mapExpr rewrites all expressions according to the provided function
-func (sq *SubQuery) mapExpr(f func(expr sqlparser.Expr) (sqlparser.Expr, error)) error {
-	newPredicates, err := slice.MapWithError(sq.Predicates, f)
-	if err != nil {
-		return err
-	}
-	sq.Predicates = newPredicates
-
+func (sq *SubQuery) mapExpr(f func(expr sqlparser.Expr) (sqlparser.Expr, error)) (err error) {
 	sq.Original, err = f(sq.Original)
 	if err != nil {
 		return err

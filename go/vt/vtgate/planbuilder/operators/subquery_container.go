@@ -31,9 +31,7 @@ type (
 		Outer ops.Operator
 		Inner []*SubQuery
 
-		totalID,
-		subqID,
-		outerID semantics.TableSet
+		subqID semantics.TableSet
 	}
 )
 

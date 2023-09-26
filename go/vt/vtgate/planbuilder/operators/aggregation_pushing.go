@@ -464,7 +464,7 @@ func splitGroupingToLeftAndRight(ctx *plancontext.PlanningContext, rootAggr *Agg
 				RHSExpr:  expr,
 			})
 		case deps.IsSolvedBy(lhs.tableID.Merge(rhs.tableID)):
-			jc, err := BreakExpressionInLHSandRHS(ctx, groupBy.SimplifiedExpr, lhs.tableID)
+			jc, err := ExtractExpForTable(ctx, groupBy.SimplifiedExpr, rhs.tableID)
 			if err != nil {
 				return nil, err
 			}

@@ -18,7 +18,6 @@ package operators
 
 import (
 	"fmt"
-
 	"vitess.io/vitess/go/vt/sqlparser"
 	"vitess.io/vitess/go/vt/vterrors"
 	"vitess.io/vitess/go/vt/vtgate/engine/opcode"
@@ -81,11 +80,10 @@ func createOperatorFromSelect(ctx *plancontext.PlanningContext, sel *sqlparser.S
 
 func addWherePredicates(ctx *plancontext.PlanningContext, expr sqlparser.Expr, op ops.Operator) (ops.Operator, error) {
 	sqc := &SubQueryContainer{}
-	outerID := TableID(op)
 	exprs := sqlparser.SplitAndExpression(nil, expr)
 	for _, expr := range exprs {
 		sqlparser.RemoveKeyspaceFromColName(expr)
-		subq, err := sqc.handleSubquery(ctx, expr, outerID)
+		subq, err := sqc.handleSubquery(ctx, expr)
 		if err != nil {
 			return nil, err
 		}
@@ -104,14 +102,13 @@ func addWherePredicates(ctx *plancontext.PlanningContext, expr sqlparser.Expr, o
 func (sqc *SubQueryContainer) handleSubquery(
 	ctx *plancontext.PlanningContext,
 	expr sqlparser.Expr,
-	outerID semantics.TableSet,
 ) (*SubQuery, error) {
 	subq, parentExpr := getSubQuery(expr)
 	if subq == nil {
 		return nil, nil
 	}
 	argName := ctx.GetReservedArgumentFor(subq)
-	sqInner, err := createSubqueryOp(ctx, parentExpr, expr, subq, outerID, argName)
+	sqInner, err := createSubqueryOp(ctx, parentExpr, expr, subq, argName)
 	if err != nil {
 		return nil, err
 	}
@@ -158,23 +155,22 @@ func createSubqueryOp(
 	ctx *plancontext.PlanningContext,
 	parent, original sqlparser.Expr,
 	subq *sqlparser.Subquery,
-	outerID semantics.TableSet,
 	name string,
 ) (*SubQuery, error) {
 	switch parent := parent.(type) {
 	case *sqlparser.NotExpr:
 		switch parent.Expr.(type) {
 		case *sqlparser.ExistsExpr:
-			return createSubquery(ctx, original, subq, outerID, parent, name, opcode.PulloutNotExists, false)
+			return createSubquery(ctx, original, subq, parent, name, opcode.PulloutNotExists, false)
 		case *sqlparser.ComparisonExpr:
 			panic("should have been rewritten")
 		}
 	case *sqlparser.ExistsExpr:
-		return createSubquery(ctx, original, subq, outerID, parent, name, opcode.PulloutExists, false)
+		return createSubquery(ctx, original, subq, parent, name, opcode.PulloutExists, false)
 	case *sqlparser.ComparisonExpr:
-		return createComparisonSubQuery(ctx, parent, original, subq, outerID, name)
+		return createComparisonSubQuery(ctx, parent, original, subq, name)
 	}
-	return createSubquery(ctx, original, subq, outerID, parent, name, opcode.PulloutValue, false)
+	return createSubquery(ctx, original, subq, parent, name, opcode.PulloutValue, false)
 }
 
 // cloneASTAndSemState clones the AST and the semantic state of the input node.
@@ -256,7 +252,6 @@ func createSubquery(
 	ctx *plancontext.PlanningContext,
 	original sqlparser.Expr,
 	subq *sqlparser.Subquery,
-	outerID semantics.TableSet,
 	parent sqlparser.Expr,
 	argName string,
 	filterType opcode.PulloutOpcode,
@@ -266,8 +261,7 @@ func createSubquery(
 	original = cloneASTAndSemState(ctx, original)
 	originalSq := cloneASTAndSemState(ctx, subq)
 	subqID := findTablesContained(ctx, subq.Select)
-	totalID := subqID.Merge(outerID)
-	sqc := &SubQueryContainer{totalID: totalID, subqID: subqID, outerID: outerID}
+	sqc := &SubQueryContainer{subqID: subqID}
 
 	predicates, joinCols, err := inspectWherePredicatesStatement(ctx, sqc, subq.Select)
 	if err != nil {
@@ -327,13 +321,11 @@ func (sqc *SubQueryContainer) inspectInnerPredicates(
 		return nil, nil, nil, nil
 	}
 	jpc := &joinPredicateCollector{
-		totalID: sqc.totalID,
-		subqID:  sqc.subqID,
-		outerID: sqc.outerID,
+		subqID: sqc.subqID,
 	}
 	for _, predicate := range sqlparser.SplitAndExpression(nil, in.Expr) {
 		sqlparser.RemoveKeyspaceFromColName(predicate)
-		subq, err := sqc.handleSubquery(ctx, predicate, sqc.totalID)
+		subq, err := sqc.handleSubquery(ctx, predicate)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -366,13 +358,11 @@ func (sqc *SubQueryContainer) inspectOnConditions(
 			}
 
 			jpc := &joinPredicateCollector{
-				totalID: sqc.totalID,
-				subqID:  sqc.subqID,
-				outerID: sqc.outerID,
+				subqID: sqc.subqID,
 			}
 
 			for _, pred := range sqlparser.SplitAndExpression(nil, cond.On) {
-				subq, innerErr := sqc.handleSubquery(ctx, pred, sqc.totalID)
+				subq, innerErr := sqc.handleSubquery(ctx, pred)
 				if err != nil {
 					err = innerErr
 					cursor.StopTreeWalk()
@@ -408,7 +398,6 @@ func createComparisonSubQuery(
 	parent *sqlparser.ComparisonExpr,
 	original sqlparser.Expr,
 	subFromOutside *sqlparser.Subquery,
-	outerID semantics.TableSet,
 	name string,
 ) (*SubQuery, error) {
 	subq, outside := semantics.GetSubqueryAndOtherSide(parent)
@@ -424,7 +413,7 @@ func createComparisonSubQuery(
 		filterType = opcode.PulloutNotIn
 	}
 
-	subquery, err := createSubquery(ctx, original, subq, outerID, parent, name, filterType, false)
+	subquery, err := createSubquery(ctx, original, subq, parent, name, filterType, false)
 	if err != nil {
 		return nil, err
 	}
@@ -447,9 +436,7 @@ type joinPredicateCollector struct {
 	remainingPredicates sqlparser.Exprs
 	joinColumns         []JoinColumn
 
-	totalID,
-	subqID,
-	outerID semantics.TableSet
+	subqID semantics.TableSet
 }
 
 func (jpc *joinPredicateCollector) inspectPredicate(
@@ -460,9 +447,9 @@ func (jpc *joinPredicateCollector) inspectPredicate(
 	deps := ctx.SemTable.RecursiveDeps(predicate)
 	// if the subquery is not enough, but together we have all we need,
 	// then we can use this predicate to connect the subquery to the outer query
-	if !deps.IsSolvedBy(jpc.subqID) && deps.IsSolvedBy(jpc.totalID) {
+	if !deps.IsSolvedBy(jpc.subqID) && !deps.IsEmpty() {
 		jpc.predicates = append(jpc.predicates, predicate)
-		jc, err := BreakExpressionInLHSandRHS(ctx, predicate, jpc.outerID)
+		jc, err := ExtractExpForTable(ctx, predicate, jpc.subqID)
 		if err != nil {
 			return err
 		}

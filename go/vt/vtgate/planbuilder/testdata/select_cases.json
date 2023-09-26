@@ -2681,7 +2681,7 @@
           "Sharded": false
         },
         "FieldQuery": "select 1 from dual where 1 != 1",
-        "Query": "select 1 from dual where exists(select 1 from information_schema.`TABLES` where `TABLES`.TABLE_NAME = 'proc' and `TABLES`.TABLE_SCHEMA = 'mysql')",
+        "Query": "select 1 from dual where exists(select 1 from information_schema.`TABLES` where `TABLES`.TABLE_NAME = :TABLES_TABLE_NAME /* VARCHAR */ and `TABLES`.TABLE_SCHEMA = :__vtschemaname /* VARCHAR */)",
         "SysTableTableName": "[TABLES_TABLE_NAME:VARCHAR(\"proc\")]",
         "SysTableTableSchema": "[VARCHAR(\"mysql\")]",
         "Table": "dual"
@@ -3332,7 +3332,7 @@
           "Sharded": true
         },
         "FieldQuery": "select music.id from music where 1 != 1",
-        "Query": "select music.id from music where music.id in (select music.id from music where music.user_id in (1, 2, 3))",
+        "Query": "select music.id from music where music.id in (select music.id from music where music.user_id in ::__vals)",
         "Table": "music",
         "Values": [
           "(INT64(1), INT64(2), INT64(3))"
@@ -3358,7 +3358,7 @@
           "Sharded": true
         },
         "FieldQuery": "select music.id from music where 1 != 1",
-        "Query": "select music.id from music where music.id in (select _inner.id from (select music.id from music where music.user_id in (1, 2, 3)) as _inner)",
+        "Query": "select music.id from music where music.id in (select _inner.id from (select music.id from music where music.user_id in ::__vals) as _inner)",
         "Table": "music",
         "Values": [
           "(INT64(1), INT64(2), INT64(3))"
@@ -4381,8 +4381,8 @@
           "Name": "user",
           "Sharded": true
         },
-        "FieldQuery": "select (select 1 from `user` as u1 join `user` as u2 on u1.id = u2.id and u1.id = u3.id where 1 != 1) as subquery from `user` as u3 where 1 != 1",
-        "Query": "select (select 1 from `user` as u1 join `user` as u2 on u1.id = u2.id and u1.id = u3.id) as subquery from `user` as u3 where u3.id = 1",
+        "FieldQuery": "select (select 1 from `user` as u1, `user` as u2 where 1 != 1) as subquery from `user` as u3 where 1 != 1",
+        "Query": "select (select 1 from `user` as u1, `user` as u2 where u1.id = u3.id and u1.id = u2.id) as subquery from `user` as u3 where u3.id = 1",
         "Table": "`user`",
         "Values": [
           "INT64(1)"
