@@ -24,7 +24,6 @@ import (
 	"testing"
 
 	"vitess.io/vitess/go/sqltypes"
-
 	querypb "vitess.io/vitess/go/vt/proto/query"
 )
 
@@ -119,6 +118,7 @@ func (f *fakePrimitive) TryStreamExecute(ctx context.Context, vcursor VCursor, b
 
 	return nil
 }
+
 func (f *fakePrimitive) GetFields(ctx context.Context, vcursor VCursor, bindVars map[string]*querypb.BindVariable) (*sqltypes.Result, error) {
 	f.log = append(f.log, fmt.Sprintf("GetFields %v", printBindVars(bindVars)))
 	return f.TryExecute(ctx, vcursor, bindVars, true /* wantfields */)

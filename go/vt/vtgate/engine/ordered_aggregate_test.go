@@ -22,8 +22,6 @@ import (
 	"fmt"
 	"testing"
 
-	"vitess.io/vitess/go/vt/vtgate/evalengine"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -34,6 +32,7 @@ import (
 	querypb "vitess.io/vitess/go/vt/proto/query"
 	"vitess.io/vitess/go/vt/servenv"
 	. "vitess.io/vitess/go/vt/vtgate/engine/opcode"
+	"vitess.io/vitess/go/vt/vtgate/evalengine"
 )
 
 var collationEnv *collations.Environment

@@ -23,12 +23,11 @@ import (
 	"strings"
 	"testing"
 
-	"vitess.io/vitess/go/test/utils"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"vitess.io/vitess/go/sqltypes"
+	"vitess.io/vitess/go/test/utils"
 )
 
 func r(names, types string, rows ...string) *sqltypes.Result {

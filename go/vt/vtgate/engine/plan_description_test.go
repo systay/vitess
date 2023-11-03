@@ -19,12 +19,10 @@ package engine
 import (
 	"testing"
 
+	"vitess.io/vitess/go/test/utils"
+	"vitess.io/vitess/go/vt/key"
 	"vitess.io/vitess/go/vt/sqlparser"
 	"vitess.io/vitess/go/vt/vtgate/evalengine"
-
-	"vitess.io/vitess/go/test/utils"
-
-	"vitess.io/vitess/go/vt/key"
 	"vitess.io/vitess/go/vt/vtgate/vindexes"
 )
 

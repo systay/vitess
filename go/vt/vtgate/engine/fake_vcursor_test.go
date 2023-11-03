@@ -34,20 +34,21 @@ import (
 	"vitess.io/vitess/go/sqltypes"
 	"vitess.io/vitess/go/test/utils"
 	"vitess.io/vitess/go/vt/key"
-	"vitess.io/vitess/go/vt/sqlparser"
-	"vitess.io/vitess/go/vt/srvtopo"
-	"vitess.io/vitess/go/vt/vtgate/vindexes"
-
 	binlogdatapb "vitess.io/vitess/go/vt/proto/binlogdata"
 	querypb "vitess.io/vitess/go/vt/proto/query"
 	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
 	vtgatepb "vitess.io/vitess/go/vt/proto/vtgate"
+	"vitess.io/vitess/go/vt/sqlparser"
+	"vitess.io/vitess/go/vt/srvtopo"
+	"vitess.io/vitess/go/vt/vtgate/vindexes"
 )
 
 var testMaxMemoryRows = 100
+
 var testIgnoreMaxMemoryRows = false
 
 var _ VCursor = (*noopVCursor)(nil)
+
 var _ SessionActions = (*noopVCursor)(nil)
 
 // noopVCursor is used to build other vcursors.
@@ -369,6 +370,7 @@ func (t *noopVCursor) GetDBDDLPluginName() string {
 }
 
 var _ VCursor = (*loggingVCursor)(nil)
+
 var _ SessionActions = (*loggingVCursor)(nil)
 
 // loggingVCursor logs requests and allows you to verify
@@ -801,10 +803,13 @@ func (f *loggingVCursor) CanUseSetVar() bool {
 }
 
 func (t *noopVCursor) VExplainLogging() {}
-func (t *noopVCursor) DisableLogging()  {}
+
+func (t *noopVCursor) DisableLogging() {}
+
 func (t *noopVCursor) GetVExplainLogs() []ExecuteEntry {
 	return nil
 }
+
 func (t *noopVCursor) GetLogs() ([]ExecuteEntry, error) {
 	return nil, nil
 }

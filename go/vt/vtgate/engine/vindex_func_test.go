@@ -23,22 +23,24 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"vitess.io/vitess/go/vt/vtgate/evalengine"
-
 	"vitess.io/vitess/go/sqltypes"
 	"vitess.io/vitess/go/vt/key"
-	"vitess.io/vitess/go/vt/vtgate/vindexes"
-
 	topodatapb "vitess.io/vitess/go/vt/proto/topodata"
+	"vitess.io/vitess/go/vt/vtgate/evalengine"
+	"vitess.io/vitess/go/vt/vtgate/vindexes"
 )
 
 // uvindex is Unique.
 type uvindex struct{ matchid, matchkr bool }
 
-func (*uvindex) String() string     { return "uvindex" }
-func (*uvindex) Cost() int          { return 1 }
-func (*uvindex) IsUnique() bool     { return true }
+func (*uvindex) String() string { return "uvindex" }
+
+func (*uvindex) Cost() int { return 1 }
+
+func (*uvindex) IsUnique() bool { return true }
+
 func (*uvindex) NeedsVCursor() bool { return false }
+
 func (*uvindex) Verify(context.Context, vindexes.VCursor, []sqltypes.Value, [][]byte) ([]bool, error) {
 	panic("unimplemented")
 }
@@ -67,10 +69,14 @@ func (v *uvindex) Map(ctx context.Context, vcursor vindexes.VCursor, ids []sqlty
 // nvindex is NonUnique.
 type nvindex struct{ matchid, matchkr bool }
 
-func (*nvindex) String() string     { return "nvindex" }
-func (*nvindex) Cost() int          { return 1 }
-func (*nvindex) IsUnique() bool     { return false }
+func (*nvindex) String() string { return "nvindex" }
+
+func (*nvindex) Cost() int { return 1 }
+
+func (*nvindex) IsUnique() bool { return false }
+
 func (*nvindex) NeedsVCursor() bool { return false }
+
 func (*nvindex) Verify(context.Context, vindexes.VCursor, []sqltypes.Value, [][]byte) ([]bool, error) {
 	panic("unimplemented")
 }

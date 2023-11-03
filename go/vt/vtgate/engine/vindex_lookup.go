@@ -19,14 +19,12 @@ package engine
 import (
 	"context"
 
-	vtgatepb "vitess.io/vitess/go/vt/proto/vtgate"
-	"vitess.io/vitess/go/vt/sqlparser"
-
-	"vitess.io/vitess/go/vt/key"
-
 	"vitess.io/vitess/go/sqltypes"
+	"vitess.io/vitess/go/vt/key"
 	querypb "vitess.io/vitess/go/vt/proto/query"
+	vtgatepb "vitess.io/vitess/go/vt/proto/vtgate"
 	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
+	"vitess.io/vitess/go/vt/sqlparser"
 	"vitess.io/vitess/go/vt/vterrors"
 	"vitess.io/vitess/go/vt/vtgate/evalengine"
 	"vitess.io/vitess/go/vt/vtgate/vindexes"
