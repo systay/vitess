@@ -86,7 +86,7 @@ type (
 		//
 		// This is a clear violation of the SQL semantics since it means the statement
 		// is not atomic in the presence of PK conflicts on one shard and not another.
-		// However some application use cases would prefer that the statement partially
+		// However, some application use cases would prefer that the statement partially
 		// succeed in order to get the performance benefits of autocommit.
 		MultiShardAutocommit bool
 
@@ -504,12 +504,17 @@ func shouldGenerate(v sqltypes.Value) bool {
 
 	// Unless the NO_AUTO_VALUE_ON_ZERO sql mode is active in mysql, it also
 	// treats 0 as a value that should generate a new sequence.
-	n, err := v.ToCastUint64()
-	if err == nil && n == 0 {
-		return true
+	value, err := evalengine.CoerceTo(v, sqltypes.Uint64)
+	if err != nil {
+		return false
 	}
 
-	return false
+	id, err := value.ToCastUint64()
+	if err != nil {
+		return false
+	}
+
+	return id == 0
 }
 
 // processGenerateFromValues generates new values using a sequence if necessary.
@@ -589,8 +594,8 @@ func (ins *Insert) processGenerateFromSelect(
 	offset := ins.Generate.Offset
 	genColPresent := offset < len(rows[0])
 	if genColPresent {
-		for _, val := range rows {
-			if val[offset].IsNull() {
+		for _, row := range rows {
+			if shouldGenerate(row[offset]) {
 				count++
 			}
 		}
@@ -625,7 +630,7 @@ func (ins *Insert) processGenerateFromSelect(
 	used := insertID
 	for idx, val := range rows {
 		if genColPresent {
-			if val[offset].IsNull() {
+			if shouldGenerate(val[offset]) {
 				val[offset] = sqltypes.NewInt64(used)
 				used++
 			}
