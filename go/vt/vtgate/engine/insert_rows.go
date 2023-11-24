@@ -18,6 +18,7 @@ package engine
 
 import (
 	"context"
+	"vitess.io/vitess/go/vt/vtgate/evalengine"
 
 	"vitess.io/vitess/go/sqltypes"
 	querypb "vitess.io/vitess/go/vt/proto/query"
@@ -83,4 +84,25 @@ func (ir *InsertRows) execSelectStreaming(
 	callback func(result *sqltypes.Result) error,
 ) error {
 	return vcursor.StreamExecutePrimitiveStandalone(ctx, ir.RowsFromSelect, bindVars, false, callback)
+}
+
+// shouldGenerate determines if a sequence value should be generated for a given value
+func shouldGenerate(v sqltypes.Value) bool {
+	if v.IsNull() {
+		return true
+	}
+
+	// Unless the NO_AUTO_VALUE_ON_ZERO sql mode is active in mysql, it also
+	// treats 0 as a value that should generate a new sequence.
+	value, err := evalengine.CoerceTo(v, sqltypes.Uint64)
+	if err != nil {
+		return false
+	}
+
+	id, err := value.ToCastUint64()
+	if err != nil {
+		return false
+	}
+
+	return id == 0
 }

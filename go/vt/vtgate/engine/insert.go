@@ -496,27 +496,6 @@ func (ins *Insert) execInsertFromSelect(ctx context.Context, vcursor VCursor, bi
 	return qr, err
 }
 
-// shouldGenerate determines if a sequence value should be generated for a given value
-func shouldGenerate(v sqltypes.Value) bool {
-	if v.IsNull() {
-		return true
-	}
-
-	// Unless the NO_AUTO_VALUE_ON_ZERO sql mode is active in mysql, it also
-	// treats 0 as a value that should generate a new sequence.
-	value, err := evalengine.CoerceTo(v, sqltypes.Uint64)
-	if err != nil {
-		return false
-	}
-
-	id, err := value.ToCastUint64()
-	if err != nil {
-		return false
-	}
-
-	return id == 0
-}
-
 // processGenerateFromValues generates new values using a sequence if necessary.
 // If no value was generated, it returns 0. Values are generated only
 // for cases where none are supplied.
