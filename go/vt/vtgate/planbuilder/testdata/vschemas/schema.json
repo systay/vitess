@@ -43,7 +43,9 @@
       },
       {
         "from_table": "user.rerouted_ref",
-        "to_tables": ["user.ref"]
+        "to_tables": [
+          "user.ref"
+        ]
       }
     ]
   },
@@ -147,25 +149,25 @@
           "type": "xxhash"
         },
         "unq_lkp_bf_vdx": {
-            "type": "unq_lkp_test",
-            "owner": "customer",
-            "params": {
-              "table": "unq_lkp_idx",
-              "from": " ",
-              "to": "keyspace_id",
-              "cost": "100",
-              "write_only": "true"
-            }
+          "type": "unq_lkp_test",
+          "owner": "customer",
+          "params": {
+            "table": "unq_lkp_idx",
+            "from": " ",
+            "to": "keyspace_id",
+            "cost": "100",
+            "write_only": "true"
+          }
         },
         "unq_lkp_vdx": {
-            "type": "unq_lkp_test",
-            "owner": "customer",
-            "params": {
-              "table": "unq_lkp_idx",
-              "from": "unq_key",
-              "to": "keyspace_id",
-              "cost": "300"
-            }
+          "type": "unq_lkp_test",
+          "owner": "customer",
+          "params": {
+            "table": "unq_lkp_idx",
+            "from": "unq_key",
+            "to": "keyspace_id",
+            "cost": "300"
+          }
         }
       },
       "tables": {
@@ -470,8 +472,8 @@
               "name": "shard_index"
             },
             {
-                "column": "email",
-                "name": "unq_lkp_vdx"
+              "column": "email",
+              "name": "unq_lkp_vdx"
             },
             {
               "column": "phone",
@@ -830,14 +832,225 @@
               "name": "col9",
               "type": "VARCHAR"
             },
-            {"name": "foo"},
-            {"name": "bar", "default": "1"}
+            {
+              "name": "foo"
+            },
+            {
+              "name": "bar",
+              "default": "1"
+            }
           ]
         },
         "u_tbl": {},
         "u_multicol_tbl1": {},
         "u_multicol_tbl2": {},
         "u_multicol_tbl3": {}
+      }
+    },
+    "apa": {
+      "sharded": true,
+      "vindexes": {
+        "binary_md5": {
+          "type": "binary_md5"
+        },
+        "hash": {
+          "type": "hash"
+        },
+        "unicode_loose_md5": {
+          "type": "unicode_loose_md5"
+        },
+        "unicode_loose_xxhash": {
+          "type": "unicode_loose_xxhash"
+        },
+        "xxhash": {
+          "type": "xxhash"
+        }
+      },
+      "tables": {
+        "bet_log_unsettles": {
+          "columnVindexes": [
+            {
+              "column": "merchant_game_id",
+              "name": "xxhash"
+            }
+          ]
+        },
+        "bet_logs": {
+          "columnVindexes": [
+            {
+              "column": "merchant_game_id",
+              "name": "xxhash"
+            }
+          ]
+        },
+        "bet_logs_220505": {
+          "columnVindexes": [
+            {
+              "column": "merchant_game_id",
+              "name": "xxhash"
+            }
+          ]
+        },
+        "bet_logs_tmp": {
+          "columnVindexes": [
+            {
+              "column": "merchant_game_id",
+              "name": "xxhash"
+            }
+          ]
+        },
+        "bonus_logs": {
+          "columnVindexes": [
+            {
+              "column": "merchant_game_id",
+              "name": "xxhash"
+            }
+          ]
+        },
+        "etl_trackers": {
+          "columnVindexes": [
+            {
+              "column": "merchant_game_id",
+              "name": "xxhash"
+            }
+          ]
+        },
+        "game_keys": {
+          "columnVindexes": [
+            {
+              "column": "merchant_game_id",
+              "name": "xxhash"
+            }
+          ]
+        },
+        "game_orders": {
+          "columnVindexes": [
+            {
+              "column": "merchant_game_id",
+              "name": "xxhash"
+            }
+          ]
+        },
+        "game_orders_2304": {
+          "columnVindexes": [
+            {
+              "column": "merchant_game_id",
+              "name": "xxhash"
+            }
+          ]
+        },
+        "game_orders_2305": {
+          "columnVindexes": [
+            {
+              "column": "merchant_game_id",
+              "name": "xxhash"
+            }
+          ]
+        },
+        "merchant_game_lists": {
+          "columnVindexes": [
+            {
+              "column": "merchant_game_id",
+              "name": "xxhash"
+            }
+          ]
+        },
+        "merchant_games": {
+          "columnVindexes": [
+            {
+              "column": "id",
+              "name": "xxhash"
+            }
+          ]
+        },
+        "single_wallet_details": {
+          "columnVindexes": [
+            {
+              "column": "merchant_game_id",
+              "name": "xxhash"
+            }
+          ]
+        },
+        "single_wallet_details_2205": {
+          "columnVindexes": [
+            {
+              "column": "merchant_game_id",
+              "name": "xxhash"
+            }
+          ]
+        },
+        "single_wallet_details_2206": {
+          "columnVindexes": [
+            {
+              "column": "merchant_game_id",
+              "name": "xxhash"
+            }
+          ]
+        },
+        "single_wallet_details_2207": {
+          "columnVindexes": [
+            {
+              "column": "merchant_game_id",
+              "name": "xxhash"
+            }
+          ]
+        },
+        "single_wallet_transfers": {
+          "columnVindexes": [
+            {
+              "column": "merchant_game_id",
+              "name": "xxhash"
+            }
+          ]
+        },
+        "single_wallet_transfers_2207": {
+          "columnVindexes": [
+            {
+              "column": "merchant_game_id",
+              "name": "xxhash"
+            }
+          ]
+        },
+        "sw_bet_logs": {
+          "columnVindexes": [
+            {
+              "column": "merchant_game_id",
+              "name": "xxhash"
+            }
+          ]
+        },
+        "sw_bet_logs_bckp": {
+          "columnVindexes": [
+            {
+              "column": "merchant_game_id",
+              "name": "xxhash"
+            }
+          ]
+        },
+        "swt_merchants": {
+          "columnVindexes": [
+            {
+              "column": "merchant_game_id",
+              "name": "xxhash"
+            }
+          ]
+        },
+        "swt_transfers": {
+          "columnVindexes": [
+            {
+              "column": "merchant_game_id",
+              "name": "xxhash"
+            }
+          ]
+        },
+        "users": {
+          "columnVindexes": [
+            {
+              "column": "merchant_game_id",
+              "name": "xxhash"
+            }
+          ]
+        }
       }
     }
   }

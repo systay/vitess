@@ -1,9 +1,8 @@
 [
   {
     "comment": "Add your test case here for debugging and run go test -run=One.",
-    "query": "",
+    "query": "SELECT CAST(DATE_FORMAT(b. `bet_at`, '%y%m%d%H') AS SIGNED) AS `time_slug`, CAST(DATE_FORMAT(b. `created_at`, '%y%m%d%H') AS SIGNED) AS `time_mark`, mg. `merchant_id` AS `merchant_id`, b. `game_id`, b. `category`, b. `user_id`, b. `user_account`, COUNT(b. `id`) AS `bet_count`, SUM(b. `bet_amount`) AS `bet_amount`, SUM(b. `valid_amount`) AS `valid_amount`, SUM(b. `net_income`) AS `net_income` FROM `bet_logs` AS b USE INDEX (PRIMARY) JOIN `merchant_games` AS mg ON b. `merchant_game_id` = mg. `id` JOIN ( SELECT MIN(bb. `id`) AS min_id, MAX(bb. `id`) AS max_id FROM `bet_logs` AS bb FORCE INDEX (index_bet_logs_on_merchant_game_id_and_created_at) WHERE bb. `merchant_game_id` IN(528, 529, 530, 532, 533, 534, 535, 536, 537, 538, 540, 541, 542, 543, 544, 546, 547, 549, 551, 627, 636, 643, 690, 696, 870, 909, 923, 932, 933, 944, 991, 1026, 1074, 1165, 1212, 1401, 1544, 1646, 1692) AND bb. `created_at` BETWEEN '2023-10-24 12:00:00.000000' AND '2023-10-25 12:59:59.999999') AS range_ids WHERE b. `merchant_game_id` IN(528, 529, 530, 532, 533, 534, 535, 536, 537, 538, 540, 541, 542, 543, 544, 546, 547, 549, 551, 627, 636, 643, 690, 696, 870, 909, 923, 932, 933, 944, 991, 1026, 1074, 1165, 1212, 1401, 1544, 1646, 1692) AND b. `id` BETWEEN range_ids.min_id AND range_ids.max_id AND b. `created_at` BETWEEN '2023-10-24 12:00:00.000000' AND '2023-10-24 12:30:00.000000' GROUP BY b. `merchant_game_id`, b. `user_id`, `category`, `time_slug`, `time_mark`",
     "plan": {
-
     }
   }
 ]
