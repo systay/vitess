@@ -772,7 +772,7 @@ func (st *SemTable) SingleUnshardedKeyspace() (ks *vindexes.Keyspace, tables []*
 func (st *SemTable) EqualsExpr(a, b sqlparser.Expr) bool {
 	// If there is no SemTable, then we cannot compare the expressions.
 	if st == nil {
-		return false
+		return sqlparser.Equals.Expr(a, b)
 	}
 	return st.ASTEquals().Expr(a, b)
 }
