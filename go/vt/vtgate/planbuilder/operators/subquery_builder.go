@@ -161,6 +161,8 @@ func createSubquery(
 	filterType opcode.PulloutOpcode,
 	isProjection bool,
 ) *SubQuery {
+	// ctx.SemTable.Known(subq)
+
 	topLevel := ctx.SemTable.EqualsExpr(original, parent)
 	original = cloneASTAndSemState(ctx, original)
 	originalSq := cloneASTAndSemState(ctx, subq)
@@ -339,7 +341,7 @@ func getOpCodeFromParent(parent sqlparser.SQLNode) *opcode.PulloutOpcode {
 
 func extractSubQueries(ctx *plancontext.PlanningContext, expr sqlparser.Expr, isDML bool) *subqueryExtraction {
 	sqe := &subqueryExtraction{}
-	replaceWithArg := func(cursor *sqlparser.Cursor, sq *sqlparser.Subquery, t opcode.PulloutOpcode) {
+	replaceWithArg := func(cursor *sqlparser.CopyOnWriteCursor, sq *sqlparser.Subquery, t opcode.PulloutOpcode) {
 		sqName := ctx.GetReservedArgumentFor(sq)
 		sqe.cols = append(sqe.cols, sqName)
 		if isDML {
@@ -354,12 +356,12 @@ func extractSubQueries(ctx *plancontext.PlanningContext, expr sqlparser.Expr, is
 		sqe.subq = append(sqe.subq, sq)
 	}
 
-	expr = sqlparser.Rewrite(expr, nil, func(cursor *sqlparser.Cursor) bool {
+	post := func(cursor *sqlparser.CopyOnWriteCursor) {
 		switch node := cursor.Node().(type) {
 		case *sqlparser.Subquery:
 			t := getOpCodeFromParent(cursor.Parent())
 			if t == nil {
-				return true
+				return
 			}
 			replaceWithArg(cursor, node, *t)
 			sqe.pullOutCode = append(sqe.pullOutCode, *t)
@@ -367,8 +369,9 @@ func extractSubQueries(ctx *plancontext.PlanningContext, expr sqlparser.Expr, is
 			replaceWithArg(cursor, node.Subquery, opcode.PulloutExists)
 			sqe.pullOutCode = append(sqe.pullOutCode, opcode.PulloutExists)
 		}
-		return true
-	}).(sqlparser.Expr)
+	}
+	expr = sqlparser.CopyOnRewrite(expr, nil, post, ctx.SemTable.CopySemanticInfo).(sqlparser.Expr)
+
 	if len(sqe.subq) == 0 {
 		return nil
 	}

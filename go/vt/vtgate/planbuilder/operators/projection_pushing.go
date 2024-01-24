@@ -33,8 +33,21 @@ type (
 		columnAliases         []string
 		explicitColumnAliases bool
 		tableName             sqlparser.TableName
+		tableID               semantics.TableSet
+		sqc                   *SubQueryBuilder
 	}
 )
+
+func newProjector(src Operator) *projector {
+	return &projector{
+		columns:               nil,
+		columnAliases:         nil,
+		explicitColumnAliases: false,
+		tableName:             sqlparser.TableName{},
+		tableID:               TableID(src),
+		sqc:                   &SubQueryBuilder{},
+	}
+}
 
 // add introduces a new projection with the specified alias to the projector.
 func (p *projector) add(pe *ProjExpr, alias string) {
@@ -58,9 +71,26 @@ func (p *projector) get(ctx *plancontext.PlanningContext, expr sqlparser.Expr) s
 		}
 	}
 
+	// ctx.SemTable.Known(expr)
+
 	// we could not find the expression, so we add it
+	newExpr, subqs := p.sqc.pullOutValueSubqueries(ctx, expr, p.tableID, false)
+	if newExpr == nil {
+		alias := sqlparser.UnescapedString(expr)
+		pe := newProjExpr(sqlparser.NewAliasedExpr(expr, alias))
+		p.columns = append(p.columns, pe)
+		p.columnAliases = append(p.columnAliases, alias)
+
+		out := sqlparser.NewColName(alias)
+		out.Qualifier = p.tableName
+
+		ctx.SemTable.CopySemanticInfo(expr, out)
+		return out
+	}
+
+	pe := newProjExprWithInner(aeWrap(expr), newExpr)
+	pe.Info = SubQueryExpression(subqs)
 	alias := sqlparser.UnescapedString(expr)
-	pe := newProjExpr(sqlparser.NewAliasedExpr(expr, alias))
 	p.columns = append(p.columns, pe)
 	p.columnAliases = append(p.columnAliases, alias)
 
@@ -68,7 +98,6 @@ func (p *projector) get(ctx *plancontext.PlanningContext, expr sqlparser.Expr) s
 	out.Qualifier = p.tableName
 
 	ctx.SemTable.CopySemanticInfo(expr, out)
-
 	return out
 }
 
@@ -217,7 +246,7 @@ func pushProjectionInApplyJoin(
 		// we can't push down expression evaluation to the rhs if we are not sure if it will even be executed
 		return p, NoRewrite
 	}
-	lhs, rhs := &projector{}, &projector{}
+	lhs, rhs := newProjector(src.LHS), newProjector(src.RHS)
 	if p.DT != nil && len(p.DT.Columns) > 0 {
 		lhs.explicitColumnAliases = true
 		rhs.explicitColumnAliases = true
@@ -336,14 +365,14 @@ func rewriteColumnsForJoin(
 	exposeRHS bool, // we only want to expose the returned columns from the RHS.
 	// For predicates, we don't need to expose the RHS columns
 ) {
-	for colIdx, predicate := range columns {
-		for lhsIdx, bve := range predicate.LHSExprs {
+	for colIdx, column := range columns {
+		for lhsIdx, bve := range column.LHSExprs {
 			// since this is on the LHSExprs, we know that dependencies are from that side of the join
 			col := lhs.get(ctx, bve.Expr)
-			predicate.LHSExprs[lhsIdx].Expr = col
+			column.LHSExprs[lhsIdx].Expr = col
 		}
 
-		// now we need to go over the predicate and find
+		// now we need to go over the column and find
 		var rewriteTo sqlparser.Expr
 
 		pre := func(node, _ sqlparser.SQLNode) bool {
@@ -376,10 +405,10 @@ func rewriteColumnsForJoin(
 				return
 			}
 		}
-		newOriginal := sqlparser.CopyOnRewrite(predicate.Original, pre, post, ctx.SemTable.CopySemanticInfo).(sqlparser.Expr)
-		predicate.Original = newOriginal
+		newOriginal := sqlparser.CopyOnRewrite(column.Original, pre, post, ctx.SemTable.CopySemanticInfo).(sqlparser.Expr)
+		column.Original = newOriginal
 
-		columns[colIdx] = predicate
+		columns[colIdx] = column
 	}
 }
 

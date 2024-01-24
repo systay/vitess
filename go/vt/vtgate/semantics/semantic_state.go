@@ -527,6 +527,23 @@ func (st *SemTable) TableSetFor(t *sqlparser.AliasedTableExpr) TableSet {
 	return EmptyTableSet()
 }
 
+func (st *SemTable) Known(e sqlparser.Expr) {
+	_ = sqlparser.Walk(func(node sqlparser.SQLNode) (kontinue bool, err error) {
+		switch node := node.(type) {
+		case *sqlparser.AliasedTableExpr:
+			if st.TableSetFor(node) == EmptyTableSet() {
+				panic("unknown")
+			}
+		case *sqlparser.ColName:
+			if st.DirectDeps(node) == EmptyTableSet() {
+				panic("unknown")
+			}
+		}
+		return true, nil
+	}, e)
+	return
+}
+
 // ReplaceTableSetFor replaces the given single TabletSet with the new *sqlparser.AliasedTableExpr
 func (st *SemTable) ReplaceTableSetFor(id TableSet, t *sqlparser.AliasedTableExpr) {
 	if st == nil {
