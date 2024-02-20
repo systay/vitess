@@ -74,6 +74,7 @@ func (a *analyzer) lateInit() {
 		expandedColumns: map[sqlparser.TableName][]*sqlparser.ColName{},
 		env:             a.si.Environment(),
 		aliasMapCache:   map[*sqlparser.Select]map[string]exprContainer{},
+		typer:           a.typer,
 	}
 }
 
@@ -243,14 +244,14 @@ func (a *analyzer) analyzeUp(cursor *sqlparser.Cursor) bool {
 		return true
 	}
 
-	if err := a.typer.up(cursor); err != nil {
-		a.setError(err)
-		return false
-	}
-
 	if err := a.rewriter.up(cursor); err != nil {
 		a.setError(err)
 		return true
+	}
+
+	if err := a.typer.up(cursor); err != nil {
+		a.setError(err)
+		return false
 	}
 
 	if err := a.scoper.up(cursor); err != nil {

@@ -19,7 +19,6 @@ package semantics
 import (
 	"fmt"
 	"strconv"
-
 	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
 	"vitess.io/vitess/go/vt/sqlparser"
 	"vitess.io/vitess/go/vt/vtenv"
@@ -29,6 +28,7 @@ import (
 
 type earlyRewriter struct {
 	binder          *binder
+	typer           *typer
 	scoper          *scoper
 	clause          string
 	warning         string
@@ -66,6 +66,26 @@ func (r *earlyRewriter) down(cursor *sqlparser.Cursor) error {
 		return r.handleAliasedTable(node)
 	case *sqlparser.Delete:
 		return handleDelete(node)
+	}
+	return nil
+}
+
+func (r *earlyRewriter) up(cursor *sqlparser.Cursor) error {
+	switch node := cursor.Node().(type) {
+	case *sqlparser.JoinTableExpr:
+		return r.handleJoinTableExprUp(node)
+	case *sqlparser.AliasedTableExpr:
+		// this rewriting is done in the `up` phase, because we need the vindex hints to have been
+		// processed while collecting the tables.
+		return removeVindexHints(node)
+	case sqlparser.OrderBy:
+		r.clause = "order clause"
+		iter := &orderByIterator{
+			node: node,
+			idx:  -1,
+			r:    r,
+		}
+		return r.handleOrderBy(cursor.Parent(), iter)
 	}
 	return nil
 }
@@ -135,26 +155,6 @@ func rewriteNotExpr(cursor *sqlparser.Cursor, node *sqlparser.NotExpr) {
 	}
 	cmp.Operator = sqlparser.Inverse(cmp.Operator)
 	cursor.Replace(cmp)
-}
-
-func (r *earlyRewriter) up(cursor *sqlparser.Cursor) error {
-	switch node := cursor.Node().(type) {
-	case *sqlparser.JoinTableExpr:
-		return r.handleJoinTableExprUp(node)
-	case *sqlparser.AliasedTableExpr:
-		// this rewriting is done in the `up` phase, because we need the vindex hints to have been
-		// processed while collecting the tables.
-		return removeVindexHints(node)
-	case sqlparser.OrderBy:
-		r.clause = "order clause"
-		iter := &orderByIterator{
-			node: node,
-			idx:  -1,
-			r:    r,
-		}
-		return r.handleOrderBy(cursor.Parent(), iter)
-	}
-	return nil
 }
 
 func (r *earlyRewriter) handleJoinTableExprUp(join *sqlparser.JoinTableExpr) error {
@@ -257,11 +257,6 @@ func (it *orderByIterator) replace(e sqlparser.Expr) (err error) {
 	}
 	it.node[it.idx].Expr = e
 
-	sqlparser.Rewrite(e, nil, func(cursor *sqlparser.Cursor) bool {
-		err = it.r.binder.up(cursor)
-		return true
-	})
-
 	return nil
 }
 
@@ -293,7 +288,7 @@ type iterator interface {
 	replace(e sqlparser.Expr) error
 }
 
-func (r *earlyRewriter) replaceLiteralsInOrderByGroupBy(e sqlparser.Expr, iter iterator) (bool, error) {
+func (r *earlyRewriter) replaceLiteralsInGroupBy(e sqlparser.Expr, iter iterator) (bool, error) {
 	lit := getIntLiteral(e)
 	if lit == nil {
 		return false, nil
@@ -328,6 +323,40 @@ func (r *earlyRewriter) replaceLiteralsInOrderByGroupBy(e sqlparser.Expr, iter i
 	return true, err
 }
 
+func (r *earlyRewriter) replaceLiteralsInOrderBy(e sqlparser.Expr) (sqlparser.Expr, error) {
+	lit := getIntLiteral(e)
+	if lit == nil {
+		return nil, nil
+	}
+
+	newExpr, err := r.rewriteOrderByExpr(lit)
+	if err != nil {
+		return nil, err
+	}
+
+	if getIntLiteral(newExpr) == nil {
+		coll, ok := e.(*sqlparser.CollateExpr)
+		if ok {
+			coll.Expr = newExpr
+			return coll, nil
+		}
+	} else {
+		// the expression is still a literal int. that means that we don't really need to sort by it.
+		// we'll just replace the number with a string instead, just like mysql would do in this situation
+		// mysql> explain select 1 as foo from user group by 1;
+		// <snip>
+		// 	mysql> show warnings;
+		// 	+-------+------+-----------------------------------------------------------------+
+		// 	| Level | Code | Message                                                         |
+		// 	+-------+------+-----------------------------------------------------------------+
+		// 	| Note  | 1003 | /* select#1 */ select 1 AS `foo` from `test`.`user` group by '' |
+		// 	+-------+------+-----------------------------------------------------------------+
+		return sqlparser.NewStrLiteral(""), nil
+	}
+
+	return newExpr, err
+}
+
 func getIntLiteral(e sqlparser.Expr) *sqlparser.Literal {
 	var lit *sqlparser.Literal
 	switch node := e.(type) {
@@ -357,12 +386,12 @@ func (r *earlyRewriter) handleOrderBy(parent sqlparser.SQLNode, iter iterator) e
 
 	sel := sqlparser.GetFirstSelect(stmt)
 	for e := iter.next(); e != nil; e = iter.next() {
-		lit, err := r.replaceLiteralsInOrderByGroupBy(e, iter)
+		lit, err := r.replaceLiteralsInOrderBy(e)
 		if err != nil {
 			return err
 		}
-		if lit {
-			continue
+		if lit != nil {
+
 		}
 		expr, err := r.rewriteAliasesInOrderBy(e, sel)
 		if err != nil {
@@ -372,6 +401,17 @@ func (r *earlyRewriter) handleOrderBy(parent sqlparser.SQLNode, iter iterator) e
 		if err != nil {
 			return err
 		}
+		// if we had to replace anything, we need to let the binder and typer see the new constructs
+		sqlparser.Rewrite(e, nil, func(cursor *sqlparser.Cursor) bool {
+			err = r.binder.up(cursor)
+			if err != nil {
+				return false
+			}
+			err = r.typer.up(cursor)
+
+			return err == nil
+		})
+
 	}
 
 	return nil
@@ -386,7 +426,7 @@ func (r *earlyRewriter) handleGroupBy(parent sqlparser.SQLNode, iter iterator) e
 
 	sel := sqlparser.GetFirstSelect(stmt)
 	for e := iter.next(); e != nil; e = iter.next() {
-		lit, err := r.replaceLiteralsInOrderByGroupBy(e, iter)
+		lit, err := r.replaceLiteralsInGroupBy(e, iter)
 		if err != nil {
 			return err
 		}
@@ -653,13 +693,15 @@ func (r *earlyRewriter) rewriteOrderByExpr(node *sqlparser.Literal) (sqlparser.E
 	}
 
 	if scope.isUnion {
-		col, isCol := aliasedExpr.Expr.(*sqlparser.ColName)
-
-		if aliasedExpr.As.IsEmpty() && isCol {
-			return sqlparser.NewColName(col.Name.String()), nil
+		colName := sqlparser.NewColName(aliasedExpr.ColumnName())
+		deps, err := r.binder.resolveColumn(colName, scope, false, true)
+		if err != nil {
+			return nil, err
 		}
+		r.binder.recursive[colName] = deps.recursive
+		r.binder.direct[colName] = deps.direct
 
-		return sqlparser.NewColName(aliasedExpr.ColumnName()), nil
+		return colName, nil
 	}
 
 	return realCloneOfColNames(aliasedExpr.Expr, false), nil
