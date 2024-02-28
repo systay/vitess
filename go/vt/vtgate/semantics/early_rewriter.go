@@ -569,27 +569,28 @@ func (r *earlyRewriter) rewriteAliasesInOrderByAndHaving(
 			return
 		}
 
-		item, found := aliases[col.Name.Lowered()]
+		var item exprContainer
+		var found bool
+
+		item, found = aliases[col.Name.Lowered()]
 		if !found {
 			// if there is no matching alias, there is no rewriting needed
 			return
 		}
 		isColumnOnTable, sure := r.isColumnOnTable(col, currentScope)
 		if found && isColumnOnTable && sure {
-			clause := "order by statement"
-			if !orderBy {
-				clause = "having clause"
+			if orderBy {
+				r.warning = fmt.Sprintf("Column '%s' in order by statement is ambiguous", sqlparser.String(col))
 			}
-			r.warning = fmt.Sprintf("Column '%s' in %s is ambiguous", sqlparser.String(col), clause)
 		}
 
 		topLevel := col == node
-		if isColumnOnTable && sure && (!orderBy || (orderBy && !topLevel)) {
+		if isColumnOnTable && sure && (orderBy && !topLevel) {
 			// we only want to replace columns that are not coming from the table
 			return
 		}
 
-		if !sure {
+		if !sure && orderBy {
 			r.warning = "Missing table info, so not binding to anything on the FROM clause"
 		}
 

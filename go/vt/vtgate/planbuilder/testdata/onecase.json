@@ -1,7 +1,7 @@
 [
   {
     "comment": "Add your test case here for debugging and run go test -run=One.",
-    "query": "",
+    "query": "select sum(x) col from user where x > 0 having col = 2",
     "plan": {
 
     }

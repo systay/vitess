@@ -574,6 +574,10 @@ func TestHavingColumnName(t *testing.T) {
 		sql:     "select count(*) from emp having ename = 10",
 		expSQL:  "select count(*) from emp having ename = 10",
 		expDeps: TS0,
+	}, {
+		sql:     "select sum(sal) empno from emp where ename > 0 having empno = 2",
+		expSQL:  "select sum(sal) as empno from emp where ename > 0 having sum(emp.sal) = 2",
+		expDeps: TS0,
 	}}
 
 	for _, tcase := range tcases {
@@ -586,7 +590,7 @@ func TestHavingColumnName(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, tcase.expSQL, sqlparser.String(selectStatement))
 				assert.Equal(t, tcase.expDeps, semTbl.RecursiveDeps(selectStatement.Having.Expr))
-				assert.Equal(t, tcase.warning, semTbl.Warning)
+				assert.Equal(t, tcase.warning, semTbl.Warning, "warning")
 			} else {
 				require.EqualError(t, err, tcase.expErr)
 			}
