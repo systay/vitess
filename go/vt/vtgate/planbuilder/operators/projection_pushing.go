@@ -281,7 +281,7 @@ func splitSubqueryExpression(
 	alias string,
 ) applyJoinColumn {
 	col := join.getJoinColumnFor(ctx, pe.Original, pe.ColExpr, false)
-	return pushDownSplitJoinCol(col, lhs, pe, alias, rhs)
+	return pushDownSplitJoinCol(col, lhs, pe, alias, rhs, nil)
 }
 
 func splitUnexploredExpression(
@@ -295,24 +295,33 @@ func splitUnexploredExpression(
 	original := sqlparser.CloneRefOfAliasedExpr(pe.Original)
 	expr := pe.ColExpr
 
-	if dt != nil {
+	// Get a applyJoinColumn for the current expression.
+	col := join.getJoinColumnFor(ctx, original, expr, false)
+
+	return pushDownSplitJoinCol(ctx, col, lhs, pe, alias, rhs, dt)
+}
+
+func pushDownSplitJoinCol(
+	ctx *plancontext.PlanningContext,
+	col applyJoinColumn,
+	lhs *projector,
+	pe *ProjExpr,
+	alias string,
+	rhs *projector,
+	dt *DerivedTable,
+) applyJoinColumn {
+	if !col.IsMixedLeftAndRight() && dt != nil {
 		if !pe.isSameInAndOut(ctx) {
 			panic("not sure what to do here")
 		}
 		colName := pe.Original.ColumnName()
 		newExpr := sqlparser.NewColNameWithQualifier(colName, sqlparser.NewTableName(dt.Alias))
-		ctx.SemTable.CopySemanticInfo(expr, newExpr)
-		original.Expr = newExpr
-		expr = newExpr
+		ctx.SemTable.CopySemanticInfo(pe.EvalExpr, newExpr)
+		col.Original = newExpr
+		pe.ColExpr = newExpr
+		pe.EvalExpr = newExpr
 	}
 
-	// Get a applyJoinColumn for the current expression.
-	col := join.getJoinColumnFor(ctx, original, expr, false)
-
-	return pushDownSplitJoinCol(col, lhs, pe, alias, rhs)
-}
-
-func pushDownSplitJoinCol(col applyJoinColumn, lhs *projector, pe *ProjExpr, alias string, rhs *projector) applyJoinColumn {
 	// Update the left and right child columns and names based on the applyJoinColumn type.
 	switch {
 	case col.IsPureLeft():
