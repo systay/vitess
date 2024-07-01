@@ -520,11 +520,13 @@ orderBy:
 	for _, orderExpr := range qp.OrderExprs {
 		orderExpr := orderExpr.SimplifiedExpr
 		for _, expr := range qp.SelectExprs {
-			col, ok := expr.Col.(*sqlparser.AliasedExpr)
+			ae, ok := expr.Col.(*sqlparser.AliasedExpr)
 			if !ok {
 				continue
 			}
-			if ctx.SemTable.EqualsExprWithDeps(col.Expr, orderExpr) {
+			colName, isCol := orderExpr.(*sqlparser.ColName)
+			if (isCol && colName.Qualifier.IsEmpty() && ae.As.NotEmpty() && colName.Name.Equal(ae.As)) || // we are looking for the alias
+				ctx.SemTable.EqualsExprWithDeps(ae.Expr, orderExpr) { // we are looking for the expression
 				continue orderBy // we found the expression we were looking for!
 			}
 		}

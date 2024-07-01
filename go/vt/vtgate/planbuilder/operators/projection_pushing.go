@@ -337,6 +337,7 @@ func splitUnexploredExpression(
 		}
 		colName = sqlparser.NewColNameWithQualifier(pe.Original.ColumnName(), sqlparser.NewTableName(dt.Alias))
 		ctx.SemTable.CopySemanticInfo(expr, colName)
+		ctx.SemTable.Direct[colName] = dt.TableID
 	}
 
 	// Get a applyJoinColumn for the current expression.

@@ -71,11 +71,15 @@ type (
 	//     so they can be used for the result of this expression that is using data from both sides.
 	//     All fields will be used for these
 	applyJoinColumn struct {
-		Original  sqlparser.Expr     // this is the original expression being passed through
-		LHSExprs  []BindVarExpr      // These are the expressions we are pushing to the left hand side which we'll receive as bind variables
-		RHSExpr   sqlparser.Expr     // This the expression that we'll evaluate on the right hand side. This is nil, if the right hand side has nothing.
-		DTColName *sqlparser.ColName // This is the output column name that the parent of JOIN will be seeing. If this is unset, then the colname is the String(Original). We set this when we push Projections with derived tables underneath a Join.
-		GroupBy   bool               // if this is true, we need to push this down to our inputs with addToGroupBy set to true
+		Original sqlparser.Expr // this is the original expression being passed through
+		LHSExprs []BindVarExpr  // These are the expressions we are pushing to the left hand side which we'll receive as bind variables
+		RHSExpr  sqlparser.Expr // This the expression that we'll evaluate on the right hand side. This is nil, if the right hand side has nothing.
+		GroupBy  bool           // if this is true, we need to push this down to our inputs with addToGroupBy set to true
+
+		// This is the output column name that the parent of JOIN will be seeing.
+		// If this is unset, then the colname is the String(Original).
+		// We set this when we push Projections with derived tables underneath a Join.
+		DTColName *sqlparser.ColName
 	}
 
 	// BindVarExpr is an expression needed from one side of a join/subquery, and the argument name for it.
@@ -202,10 +206,6 @@ func (aj *ApplyJoin) GetOrdering(ctx *plancontext.PlanningContext) []OrderBy {
 	return aj.LHS.GetOrdering(ctx)
 }
 
-func joinColumnToExpr(column applyJoinColumn) sqlparser.Expr {
-	return column.Original
-}
-
 func (aj *ApplyJoin) getJoinColumnFor(ctx *plancontext.PlanningContext, orig *sqlparser.AliasedExpr, e sqlparser.Expr, addToGroupBy bool) (col applyJoinColumn) {
 	defer func() {
 		col.Original = orig.Expr
@@ -213,17 +213,22 @@ func (aj *ApplyJoin) getJoinColumnFor(ctx *plancontext.PlanningContext, orig *sq
 	lhs := TableID(aj.LHS)
 	rhs := TableID(aj.RHS)
 	both := lhs.Merge(rhs)
-	deps := ctx.SemTable.RecursiveDeps(e)
+	recursive := ctx.SemTable.RecursiveDeps(e)
+	direct := ctx.SemTable.DirectDeps(e)
 	col.GroupBy = addToGroupBy
+	recursive = recursive.Remove(direct)
 
 	switch {
-	case deps.IsSolvedBy(lhs):
+	case recursive.IsSolvedBy(lhs):
 		col.LHSExprs = []BindVarExpr{{Expr: e}}
-	case deps.IsSolvedBy(rhs):
+	case recursive.IsSolvedBy(rhs):
 		col.RHSExpr = e
-	case deps.IsSolvedBy(both):
+	case recursive.IsSolvedBy(both):
 		col = breakExpressionInLHSandRHS(ctx, e, TableID(aj.LHS))
 	default:
+		fmt.Println(lhs.Constituents())
+		fmt.Println(rhs.Constituents())
+		fmt.Println(recursive.Constituents())
 		panic(vterrors.VT13002(sqlparser.String(e)))
 	}
 

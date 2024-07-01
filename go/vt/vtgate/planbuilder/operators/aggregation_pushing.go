@@ -205,9 +205,10 @@ func pushAggregations(ctx *plancontext.PlanningContext, aggregator *Aggregator, 
 	}
 }
 
-func checkIfWeCanPush(ctx *plancontext.PlanningContext, aggregator *Aggregator) (bool, sqlparser.Exprs) {
-	canPush := true
-	var distinctExprs sqlparser.Exprs
+// checkIfWeCanPush checks if we can push the aggregation down to the route.
+// we can send it down if it either is not distinct, or if it is distinct, that it is on a unique vindex
+func checkIfWeCanPush(ctx *plancontext.PlanningContext, aggregator *Aggregator) (canPush bool, distinctExprs sqlparser.Exprs) {
+	canPush = true
 	var differentExpr *sqlparser.AliasedExpr
 
 	for _, aggr := range aggregator.Aggregations {
@@ -241,7 +242,7 @@ func checkIfWeCanPush(ctx *plancontext.PlanningContext, aggregator *Aggregator) 
 		panic(vterrors.VT12001(fmt.Sprintf("only one DISTINCT aggregation is allowed in a SELECT: %s", sqlparser.String(differentExpr))))
 	}
 
-	return canPush, distinctExprs
+	return
 }
 
 func pushAggregationThroughFilter(
@@ -367,6 +368,11 @@ func pushAggregationThroughApplyJoin(ctx *plancontext.PlanningContext, rootAggr 
 	lhs := createJoinPusher(rootAggr, join.LHS)
 	rhs := createJoinPusher(rootAggr, join.RHS)
 
+	if !isPossibleToPushThroughJoin(join) {
+		// if we can't push through the join, we just abort the splitting
+		return nil, nil
+	}
+
 	columns := &applyJoinColumns{}
 	output, err := splitAggrColumnsToLeftAndRight(ctx, rootAggr, join, !join.JoinType.IsInner(), columns, lhs, rhs)
 	join.JoinColumns = columns
@@ -395,6 +401,15 @@ func pushAggregationThroughApplyJoin(ctx *plancontext.PlanningContext, rootAggr 
 	rootAggr.aggregateTheAggregates()
 	rootAggr.Source = output
 	return rootAggr, Rewrote("push Aggregation under join")
+}
+
+func isPossibleToPushThroughJoin(join *ApplyJoin) bool {
+	for _, column := range join.JoinColumns.columns {
+		if column.DTColName != nil {
+			return false
+		}
+	}
+	return true
 }
 
 // pushAggregationThroughHashJoin pushes aggregation through a hash-join in a similar way to pushAggregationThroughApplyJoin
