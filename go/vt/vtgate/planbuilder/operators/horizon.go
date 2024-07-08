@@ -219,3 +219,7 @@ func (h *Horizon) introducesTableID() semantics.TableSet {
 func (h *Horizon) IsDerived() bool {
 	return h.TableId != nil
 }
+
+func (h *Horizon) isDerivedWithOrderByLimit() bool {
+	return h.TableId != nil && len(h.Query.GetOrderBy()) > 0 && h.Query.GetLimit() != nil
+}

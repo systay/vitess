@@ -75,7 +75,7 @@ func expandUnionHorizon(ctx *plancontext.PlanningContext, horizon *Horizon, unio
 }
 
 func expandSelectHorizon(ctx *plancontext.PlanningContext, horizon *Horizon, sel *sqlparser.Select) (Operator, *ApplyResult) {
-	op := createProjectionFromSelect(ctx, horizon)
+	op := createProjectionFromSelect(ctx, horizon, horizon.Source)
 	qp := horizon.getQP(ctx)
 	var extracted []string
 	if qp.HasAggr {
@@ -158,7 +158,7 @@ func expandOrderBy(ctx *plancontext.PlanningContext, op Operator, qp *QueryProje
 	}
 }
 
-func createProjectionFromSelect(ctx *plancontext.PlanningContext, horizon *Horizon) Operator {
+func createProjectionFromSelect(ctx *plancontext.PlanningContext, horizon *Horizon, src Operator) Operator {
 	qp := horizon.getQP(ctx)
 
 	var dt *DerivedTable
@@ -172,10 +172,10 @@ func createProjectionFromSelect(ctx *plancontext.PlanningContext, horizon *Horiz
 	}
 
 	if qp.NeedsAggregation() {
-		return createProjectionWithAggr(ctx, qp, dt, horizon.src())
+		return createProjectionWithAggr(ctx, qp, dt, src)
 	}
 
-	projX := createProjectionWithoutAggr(ctx, qp, horizon.src())
+	projX := createProjectionWithoutAggr(ctx, qp, src)
 	projX.DT = dt
 	return projX
 }
