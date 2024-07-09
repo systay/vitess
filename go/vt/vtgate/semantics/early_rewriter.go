@@ -62,8 +62,21 @@ func (r *earlyRewriter) down(cursor *sqlparser.Cursor) error {
 		return r.handleAliasedTable(node)
 	case *sqlparser.Delete:
 		return handleDelete(node)
+	case *sqlparser.DerivedTable:
+		r.handleDerivedTable(node)
 	}
 	return nil
+}
+
+func (r *earlyRewriter) handleDerivedTable(dt *sqlparser.DerivedTable) {
+	sel, ok := dt.Select.(*sqlparser.Select)
+	if !ok {
+		return
+	}
+	if len(sel.OrderBy) > 0 && sel.Limit == nil {
+		// inside derived tables, we can safely remove ORDER BY clauses if there is no LIMIT clause
+		sel.OrderBy = nil
+	}
 }
 
 func (r *earlyRewriter) up(cursor *sqlparser.Cursor) error {
