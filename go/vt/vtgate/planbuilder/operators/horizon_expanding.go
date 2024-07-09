@@ -75,9 +75,19 @@ func expandUnionHorizon(ctx *plancontext.PlanningContext, horizon *Horizon, unio
 }
 
 func expandSelectHorizon(ctx *plancontext.PlanningContext, horizon *Horizon, sel *sqlparser.Select) (Operator, *ApplyResult) {
-	op := createProjectionFromSelect(ctx, horizon, horizon.Source)
+	source := horizon.Source
 	qp := horizon.getQP(ctx)
 	var extracted []string
+	if horizon.isDerivedWithOrderByLimit() {
+		source = &Limit{
+			Source: expandOrderBy(ctx, source, qp),
+			AST:    sel.Limit,
+			Top:    true,
+		}
+		extracted = append(extracted, "Ordering", "Limit")
+	}
+
+	op := createProjectionFromSelect(ctx, horizon, source)
 	if qp.HasAggr {
 		extracted = append(extracted, "Aggregation")
 	} else {
@@ -98,18 +108,20 @@ func expandSelectHorizon(ctx *plancontext.PlanningContext, horizon *Horizon, sel
 		extracted = append(extracted, "Filter")
 	}
 
-	if len(qp.OrderExprs) > 0 {
-		op = expandOrderBy(ctx, op, qp)
-		extracted = append(extracted, "Ordering")
-	}
-
-	if sel.Limit != nil {
-		op = &Limit{
-			Source: op,
-			AST:    sel.Limit,
-			Top:    true,
+	if !horizon.isDerivedWithOrderByLimit() {
+		if len(qp.OrderExprs) > 0 {
+			op = expandOrderBy(ctx, op, qp)
+			extracted = append(extracted, "Ordering")
 		}
-		extracted = append(extracted, "Limit")
+
+		if sel.Limit != nil {
+			op = &Limit{
+				Source: op,
+				AST:    sel.Limit,
+				Top:    true,
+			}
+			extracted = append(extracted, "Limit")
+		}
 	}
 
 	return op, Rewrote(fmt.Sprintf("expand SELECT horizon into (%s)", strings.Join(extracted, ", ")))
