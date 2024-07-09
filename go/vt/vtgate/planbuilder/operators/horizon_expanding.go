@@ -85,6 +85,9 @@ func expandSelectHorizon(ctx *plancontext.PlanningContext, horizon *Horizon, sel
 			Top:    true,
 		}
 		extracted = append(extracted, "Ordering", "Limit")
+		for _, order := range horizon.Query.GetOrderBy() {
+			qp.addColumn(ctx, order.Expr)
+		}
 	}
 
 	op := createProjectionFromSelect(ctx, horizon, source)
