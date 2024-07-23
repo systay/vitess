@@ -34,16 +34,20 @@ type RecurseCTE struct {
 	// ColumnOffsets is the list of column offsets that are sent between the two parts of the recursive CTE
 	Offsets []int
 
+	// Predicates is the list of predicates that are applied to the tail part of the recursive CTE
+	Predicates []applyJoinColumn
+
 	Init, Tail Operator
 }
 
 var _ Operator = (*RecurseCTE)(nil)
 
-func newRecurse(name string, init, tail Operator) *RecurseCTE {
+func newRecurse(name string, init, tail Operator, predicates []applyJoinColumn) *RecurseCTE {
 	return &RecurseCTE{
-		Name: name,
-		Init: init,
-		Tail: tail,
+		Name:       name,
+		Init:       init,
+		Tail:       tail,
+		Predicates: predicates,
 	}
 }
 
@@ -96,4 +100,8 @@ func (r *RecurseCTE) ShortDescription() string { return "" }
 func (r *RecurseCTE) GetOrdering(*plancontext.PlanningContext) []OrderBy {
 	// RecurseCTE is a special case. It never guarantees any ordering.
 	return nil
+}
+
+func (r *RecurseCTE) planOffsets(ctx *plancontext.PlanningContext) Operator {
+	return r
 }

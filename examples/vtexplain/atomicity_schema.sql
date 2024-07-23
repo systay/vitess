@@ -1,5 +1,1 @@
-CREATE TABLE IF NOT EXISTS `t1` (
-  `c1` bigint unsigned NOT NULL,
-  PRIMARY KEY (`c1`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
+WITH RECURSIVE UserHierarchy AS ( SELECT id, name, manager_id, 1 AS level FROM user WHERE manager_id IS NULL UNION ALL SELECT e.id, e.name, e.manager_id, eh.level + 1 AS level FROM user e INNER JOIN UserHierarchy eh ON e.manager_id = eh.id ) SELECT * FROM UserHierarchy

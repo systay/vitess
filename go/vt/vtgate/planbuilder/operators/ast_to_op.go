@@ -18,6 +18,7 @@ package operators
 
 import (
 	"fmt"
+	"vitess.io/vitess/go/slice"
 
 	"vitess.io/vitess/go/vt/sqlparser"
 	"vitess.io/vitess/go/vt/vterrors"
@@ -316,11 +317,23 @@ func createRecursiveCTE(ctx *plancontext.PlanningContext, def *semantics.CTETabl
 
 	// Push the CTE definition to the stack so that it can be used in the recursive part of the query
 	ctx.PushCTE(def)
-	tail := translateQueryToOp(ctx, union.Right)
+	rightSel, ok := union.Right.(*sqlparser.Select)
+	if !ok {
+		panic(vterrors.VT12001("expected SELECT on the RHS of the UNION in recursive CTE"))
+	}
+	predicates := rightSel.Where
+	if predicates == nil {
+		panic(vterrors.VT12001("expected SELECT on the RHS of the UNION in recursive CTE to have a WHERE clause"))
+	}
+	preds := sqlparser.SplitAndExpression(nil, predicates.Expr)
+	cols := slice.Map(preds, func(i sqlparser.Expr) applyJoinColumn {
+		return breakExpressionInLHSandRHS(ctx, i, TableID(init))
+	})
+	tail := createOperatorFromSelect(ctx, rightSel)
 	if err := ctx.PopCTE(); err != nil {
 		panic(err)
 	}
-	return newRecurse(def.TableName, init, tail)
+	return newRecurse(def.TableName, init, tail, cols)
 }
 
 func crossJoin(ctx *plancontext.PlanningContext, exprs sqlparser.TableExprs) Operator {
