@@ -44,6 +44,7 @@ type PrimitiveDescription struct {
 	// this is only used in conjunction with TargetDestination
 	TargetTabletType topodatapb.TabletType
 	Other            map[string]any
+	Stats            *PrimitiveStats
 
 	ID        PrimitiveID
 	InputName string
@@ -100,6 +101,15 @@ func (pd PrimitiveDescription) MarshalJSON() ([]byte, error) {
 	err := addMap(pd.Other, buf)
 	if err != nil {
 		return nil, err
+	}
+
+	if pd.Stats != nil {
+		if err := marshalAdd(prepend, buf, "NoOfCalls", len(pd.Stats.Rows)); err != nil {
+			return nil, err
+		}
+		if err := marshalAdd(prepend, buf, "Rows", pd.Stats.Rows); err != nil {
+			return nil, err
+		}
 	}
 
 	if len(pd.Inputs) > 0 {
@@ -164,7 +174,7 @@ func GraphViz(p Primitive) (*graphviz.Graph, error) {
 func addMap(input map[string]any, buf *bytes.Buffer) error {
 	var mk []string
 	for k, v := range input {
-		if v == "" || v == nil || v == 0 || v == false {
+		if v == "" || v == nil {
 			continue
 		}
 		mk = append(mk, k)

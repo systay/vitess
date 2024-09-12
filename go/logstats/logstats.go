@@ -52,12 +52,6 @@ type (
 		SessionUUID    string
 		CachedPlan     bool
 		ActiveKeyspace string // ActiveKeyspace is the selected keyspace `use ks`
-		PrimitiveStats map[int]PrimitiveStats
-	}
-
-	PrimitiveStats struct {
-		NoOfCalls int
-		Rows      []int
 	}
 )
 
@@ -72,14 +66,6 @@ func NewLogStats(ctx context.Context, methodName, sql, sessionUUID string, bindV
 		BindVariables: bindVars,
 		StartTime:     time.Now(),
 	}
-}
-
-func (stats *LogStats) EnableOpStats() {
-	stats.PrimitiveStats = make(map[int]PrimitiveStats)
-}
-
-func (stats *LogStats) LogOpStats() bool {
-	return stats.PrimitiveStats != nil
 }
 
 // SaveEndTime sets the end time of this request to now
@@ -192,10 +178,6 @@ func (stats *LogStats) Logf(w io.Writer, params url.Values) error {
 	log.Strings(stats.TablesUsed)
 	log.Key("ActiveKeyspace")
 	log.String(stats.ActiveKeyspace)
-	if len(stats.PrimitiveStats) > 0 {
-		log.Key("PrimitiveStats")
-		log.OpStats(stats.PrimitiveStats)
-	}
 
 	return log.Flush(w)
 }

@@ -18,6 +18,8 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
+	"vitess.io/vitess/go/mysql/collations"
 
 	"vitess.io/vitess/go/sqltypes"
 	querypb "vitess.io/vitess/go/vt/proto/query"
@@ -42,23 +44,80 @@ func (t *Trace) GetTableName() string {
 	return t.Inner.GetTableName()
 }
 
-func (t *Trace) GetFields(ctx context.Context, vcursor VCursor, bindVars map[string]*querypb.BindVariable) (*sqltypes.Result, error) {
-	vcursor.EnableOperatorTracing()
-	return t.Inner.GetFields(ctx, vcursor, bindVars)
+func getFields() []*querypb.Field {
+	return []*querypb.Field{{
+		Name:    "Trace",
+		Type:    sqltypes.VarChar,
+		Charset: uint32(collations.SystemCollation.Collation),
+		Flags:   uint32(querypb.MySqlFlag_NOT_NULL_FLAG),
+	}}
+}
+
+func (t *Trace) GetFields(context.Context, VCursor, map[string]*querypb.BindVariable) (*sqltypes.Result, error) {
+	return &sqltypes.Result{Fields: getFields()}, nil
 }
 
 func (t *Trace) NeedsTransaction() bool {
 	return t.Inner.NeedsTransaction()
 }
 
+func preWalk(desc PrimitiveDescription, f func(PrimitiveDescription)) {
+	f(desc)
+	for _, input := range desc.Inputs {
+		preWalk(input, f)
+	}
+}
+
 func (t *Trace) TryExecute(ctx context.Context, vcursor VCursor, bindVars map[string]*querypb.BindVariable, wantfields bool) (*sqltypes.Result, error) {
-	vcursor.EnableOperatorTracing()
-	return t.Inner.TryExecute(ctx, vcursor, bindVars, wantfields)
+	getOpStats := vcursor.EnableOperatorTracing()
+	_, err := t.Inner.TryExecute(ctx, vcursor, bindVars, wantfields)
+	if err != nil {
+		return nil, err
+	}
+
+	return t.getExplainTraceOutput(getOpStats)
+}
+
+func (t *Trace) getExplainTraceOutput(getOpStats func() map[int]PrimitiveStats) (*sqltypes.Result, error) {
+	description := PrimitiveToPlanDescription(t.Inner)
+	statsMap := getOpStats()
+
+	// let's add the stats to the description
+	preWalk(description, func(desc PrimitiveDescription) {
+		stats, found := statsMap[int(desc.ID)]
+		if !found {
+			return
+		}
+		desc.Stats = &stats
+	})
+
+	output, err := json.MarshalIndent(description, "", "\t")
+	if err != nil {
+		return nil, err
+	}
+
+	return &sqltypes.Result{
+		Fields: getFields(),
+		Rows: []sqltypes.Row{{
+			sqltypes.NewVarChar(string(output)),
+		}},
+	}, nil
 }
 
 func (t *Trace) TryStreamExecute(ctx context.Context, vcursor VCursor, bindVars map[string]*querypb.BindVariable, wantfields bool, callback func(*sqltypes.Result) error) error {
-	vcursor.EnableOperatorTracing()
-	return t.Inner.TryStreamExecute(ctx, vcursor, bindVars, wantfields, callback)
+	getOpsStats := vcursor.EnableOperatorTracing()
+	noop := func(result *sqltypes.Result) error { return nil }
+	err := t.Inner.TryStreamExecute(ctx, vcursor, bindVars, wantfields, noop)
+	if err != nil {
+		return err
+	}
+
+	res, err := t.getExplainTraceOutput(getOpsStats)
+	if err != nil {
+		return err
+	}
+
+	return callback(res)
 }
 
 func (t *Trace) Inputs() ([]Primitive, []map[string]any) {
