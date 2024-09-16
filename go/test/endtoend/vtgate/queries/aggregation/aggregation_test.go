@@ -107,6 +107,32 @@ func TestAggregateTypes(t *testing.T) {
 	})
 }
 
+func TestTraceAggregateTypes(t *testing.T) {
+	mcmp, closer := start(t)
+	defer closer()
+	test := func(q string) {
+		res := utils.Exec(t, mcmp.VtConn, "vexplain trace "+q)
+		fmt.Printf("Query: %s\n", q)
+		fmt.Printf("Result: %s\n", res.Rows[0][0].ToString())
+	}
+	mcmp.Exec("insert into aggr_test(id, val1, val2) values(1,'a',1), (2,'A',1), (3,'b',1), (4,'c',3), (5,'c',4)")
+	mcmp.Exec("insert into aggr_test(id, val1, val2) values(6,'d',null), (7,'e',null), (8,'E',1)")
+	test("select val1, count(distinct val2), count(*) from aggr_test group by val1")
+	test("select val1, count(distinct val2), count(*) from aggr_test group by val1")
+	test("select val1, sum(distinct val2), sum(val2) from aggr_test group by val1")
+	test("select val1, count(distinct val2) k, count(*) from aggr_test group by val1 order by k desc, val1")
+	test("select val1, count(distinct val2) k, count(*) from aggr_test group by val1 order by k desc, val1 limit 4")
+
+	test("select ascii(val1) as a, count(*) from aggr_test group by a")
+	test("select ascii(val1) as a, count(*) from aggr_test group by a order by a")
+	test("select ascii(val1) as a, count(*) from aggr_test group by a order by 2, a")
+
+	test("select val1 as a, count(*) from aggr_test group by a")
+	test("select val1 as a, count(*) from aggr_test group by a order by a")
+	test("select val1 as a, count(*) from aggr_test group by a order by 2, a")
+	test("select sum(val1) from aggr_test")
+}
+
 func TestGroupBy(t *testing.T) {
 	mcmp, closer := start(t)
 	defer closer()
