@@ -516,9 +516,9 @@
 			"RetryMax": 2,
 			"Tags": []
 		},
-		"vtgate_queries_derived": {
+		"vtgate_queries_simple_keyspace": {
 			"File": "unused.go",
-			"Args": ["vitess.io/vitess/go/test/endtoend/vtgate/queries/derived"],
+			"Args": ["vitess.io/vitess/go/test/endtoend/vtgate/queries/simple_keyspace"],
 			"Command": [],
 			"Manual": false,
 			"Shard": "vtgate_queries",

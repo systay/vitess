@@ -23,8 +23,6 @@ import (
 	"strconv"
 	"sync"
 
-	"vitess.io/vitess/go/vt/log"
-
 	"vitess.io/vitess/go/vt/sqlparser"
 	"vitess.io/vitess/go/vt/vtgate/evalengine"
 
@@ -108,7 +106,6 @@ func (l *Limit) TryStreamExecute(ctx context.Context, vcursor VCursor, bindVars 
 	err = vcursor.StreamExecutePrimitive(ctx, l.Input, bindVars, wantfields, func(qr *sqltypes.Result) error {
 		mu.Lock()
 		defer mu.Unlock()
-		log.Errorf("LastInsertID: %d InsertIDChanged %t\n", qr.InsertID, qr.InsertIDChanged)
 		if wantfields && len(qr.Fields) != 0 {
 			if err := callback(&sqltypes.Result{Fields: qr.Fields}); err != nil {
 				return err
@@ -128,6 +125,14 @@ func (l *Limit) TryStreamExecute(ctx context.Context, vcursor VCursor, bindVars 
 			}
 			qr.Rows = qr.Rows[offset:]
 			offset = 0
+		}
+
+		if count == 0 {
+			if !l.RequireCompleteInput && !vcursor.Session().InTransaction() {
+				return io.EOF
+			}
+			qr.Rows = nil
+			return callback(qr)
 		}
 
 		// reduce count till 0.

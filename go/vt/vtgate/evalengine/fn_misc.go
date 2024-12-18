@@ -20,6 +20,7 @@ import (
 	"encoding/binary"
 	"math"
 	"net/netip"
+	"vitess.io/vitess/go/vt/log"
 
 	"github.com/google/uuid"
 
@@ -210,6 +211,7 @@ func (call *builtinLastInsertID) eval(env *ExpressionEnv) (eval, error) {
 		return nil, err
 	}
 	insertID := uint64(evalToInt64(arg).i)
+	log.Errorf(">>>>>>>>>last insert id: %d", insertID)
 	env.VCursor().SetLastInsertID(insertID)
 	return newEvalUint64(insertID), nil
 }
