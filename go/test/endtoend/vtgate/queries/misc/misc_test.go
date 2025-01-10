@@ -687,3 +687,10 @@ func TestSemiJoin(t *testing.T) {
 		})
 	}
 }
+
+func TestValues(t *testing.T) {
+	mcmp, closer := start(t)
+	defer closer()
+
+	mcmp.Exec("VALUES ROW(1, 2, 3), ROW(4, 5, 6)")
+}

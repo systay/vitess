@@ -56,7 +56,10 @@ type (
 
 	OrderAndLimit interface {
 		AddOrder(*Order)
+		GetOrderBy() OrderBy
+		SetOrderBy(OrderBy)
 		SetLimit(*Limit)
+		GetLimit() *Limit
 	}
 
 	// SelectStatement any SELECT statement.
@@ -64,19 +67,28 @@ type (
 		Statement
 		InsertRows
 		OrderAndLimit
+		Commented
+		Lockable
+		ReturnsResults
+		Distinctable
 		iSelectStatement()
-		GetLock() Lock
-		SetLock(lock Lock)
 		SetInto(into *SelectInto)
 		SetWith(with *With)
-		MakeDistinct()
+	}
+
+	Lockable interface {
+		GetLock() Lock
+		SetLock(lock Lock)
+	}
+
+	ReturnsResults interface {
 		GetColumnCount() int
 		GetColumns() SelectExprs
-		Commented
+	}
+
+	Distinctable interface {
+		MakeDistinct()
 		IsDistinct() bool
-		GetOrderBy() OrderBy
-		SetOrderBy(OrderBy)
-		GetLimit() *Limit
 	}
 
 	// DDLStatement represents any DDL Statement
@@ -3581,7 +3593,6 @@ type Values []ValTuple
 
 // ValuesStatement represents a VALUES statement, as in VALUES ROW(1, 2), ROW(3, 4)
 type ValuesStatement struct {
-	With *With
 	// One but not both of these fields can be set.
 	Rows    Values
 	ListArg ListArg

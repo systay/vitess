@@ -2875,12 +2875,36 @@ func (node *Update) SetLimit(limit *Limit) {
 	node.Limit = limit
 }
 
+func (node *Update) GetOrderBy() OrderBy {
+	return node.OrderBy
+}
+
+func (node *Update) SetOrderBy(by OrderBy) {
+	node.OrderBy = by
+}
+
+func (node *Update) GetLimit() *Limit {
+	return node.Limit
+}
+
 func (node *Delete) AddOrder(order *Order) {
 	node.OrderBy = append(node.OrderBy, order)
 }
 
 func (node *Delete) SetLimit(limit *Limit) {
 	node.Limit = limit
+}
+
+func (node *Delete) GetOrderBy() OrderBy {
+	return node.OrderBy
+}
+
+func (node *Delete) SetOrderBy(by OrderBy) {
+	node.OrderBy = by
+}
+
+func (node *Delete) GetLimit() *Limit {
+	return node.Limit
 }
 
 func (node *Select) GetFrom() []TableExpr {
@@ -2980,30 +3004,6 @@ func ExtractAllTables(stmt Statement) []string {
 		return true, nil
 	}, stmt)
 	return tables
-}
-
-var _ SelectStatement = (*ValuesStatement)(nil)
-
-func (node *ValuesStatement) GetLock() Lock {
-	return NoLock
-}
-
-func (node *ValuesStatement) SetLock(lock Lock) {
-	if lock != NoLock {
-		panic("cannot set lock on Values statement")
-	}
-}
-
-func (node *ValuesStatement) SetInto(into *SelectInto) {
-	panic("cannot set Into on Values statement")
-}
-
-func (node *ValuesStatement) SetWith(with *With) {
-	node.With = with
-}
-
-func (node *ValuesStatement) MakeDistinct() {
-	panic("cannot set Distinct on Values statement")
 }
 
 func (node *ValuesStatement) GetColumnCount() int {
