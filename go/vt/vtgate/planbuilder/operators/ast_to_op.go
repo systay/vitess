@@ -164,17 +164,23 @@ func (jpc *joinPredicateCollector) inspectPredicate(
 }
 
 func createOperatorFromUnion(ctx *plancontext.PlanningContext, node *sqlparser.Union) Operator {
-	_, isRHSUnion := node.Right.(*sqlparser.Union)
-	if isRHSUnion {
-		panic(vterrors.VT12001("nesting of UNIONs on the right-hand side"))
+	var inputOps []Operator
+	var exprs []sqlparser.SelectExprs
+	for i, stmt := range node.Selects {
+		if i > 0 {
+			_, isRHSUnion := stmt.(*sqlparser.Union)
+			if isRHSUnion {
+				panic(vterrors.VT12001("nesting of UNIONs on the right-hand side"))
+			}
+		}
+
+		op := translateQueryToOpForUnion(ctx, stmt)
+		inputOps = append(inputOps, op)
+		exprs = append(exprs, ctx.SemTable.SelectExprs(stmt))
 	}
-	opLHS := translateQueryToOpForUnion(ctx, node.Left)
-	opRHS := translateQueryToOpForUnion(ctx, node.Right)
-	lexprs := ctx.SemTable.SelectExprs(node.Left)
-	rexprs := ctx.SemTable.SelectExprs(node.Right)
 
 	unionCols := ctx.SemTable.SelectExprs(node)
-	union := newUnion([]Operator{opLHS, opRHS}, []sqlparser.SelectExprs{lexprs, rexprs}, unionCols, node.Distinct)
+	union := newUnion(inputOps, exprs, unionCols, node.Distinct)
 	return newHorizon(union, node)
 }
 
@@ -354,12 +360,22 @@ func createRecursiveCTE(ctx *plancontext.PlanningContext, def *semantics.CTE, ou
 		panic(vterrors.VT13001("expected UNION in recursive CTE"))
 	}
 
-	seed := translateQueryToOp(ctx, union.Left)
+	seed := translateQueryToOp(ctx, union.Selects[0])
 
 	// Push the CTE definition to the stack so that it can be used in the recursive part of the query
 	ctx.PushCTE(def, *def.IDForRecurse)
 
-	term := translateQueryToOp(ctx, union.Right)
+	var term Operator
+	if len(union.Selects) == 2 {
+		term = translateQueryToOp(ctx, union.Selects[1])
+	} else {
+		// if we have more than two SELECTs in this UNION, we'll treat the tail as an UNION
+		head := union.Selects[0]
+		union.Selects = union.Selects[1:]
+		term = translateQueryToOp(ctx, union)
+		union.Selects = append([]sqlparser.TableStatement{head}, union.Selects...)
+	}
+
 	horizon, ok := term.(*Horizon)
 	if !ok {
 		panic(vterrors.VT09027(def.Name))
@@ -372,6 +388,7 @@ func createRecursiveCTE(ctx *plancontext.PlanningContext, def *semantics.CTE, ou
 	}
 
 	return newRecurse(ctx, def, seed, term, activeCTE.Predicates, horizon, idForRecursiveTable(ctx, def), outerID, union.Distinct)
+
 }
 
 func idForRecursiveTable(ctx *plancontext.PlanningContext, def *semantics.CTE) semantics.TableSet {

@@ -66,7 +66,12 @@ func isMergeable(ctx *plancontext.PlanningContext, query sqlparser.TableStatemen
 
 		return true
 	case *sqlparser.Union:
-		return isMergeable(ctx, node.Left, op) && isMergeable(ctx, node.Right, op)
+		for _, stmt := range node.Selects {
+			if !isMergeable(ctx, stmt, op) {
+				return false
+			}
+		}
+		return true
 	default:
 		panic(vterrors.VT13001(fmt.Sprintf("Unknown SelectStatement type - %T", node)))
 	}

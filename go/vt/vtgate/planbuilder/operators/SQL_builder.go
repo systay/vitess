@@ -239,16 +239,20 @@ func (qb *queryBuilder) clearProjections() {
 
 func (qb *queryBuilder) unionWith(other *queryBuilder, distinct bool) {
 	qb.stmt = &sqlparser.Union{
-		Left:     qb.asSelectStatement(),
-		Right:    other.asSelectStatement(),
+		Selects: []sqlparser.TableStatement{
+			qb.asSelectStatement(),
+			other.asSelectStatement(),
+		},
 		Distinct: distinct,
 	}
 }
 
 func (qb *queryBuilder) recursiveCteWith(other *queryBuilder, name, alias string, distinct bool, columns sqlparser.Columns) {
 	cteUnion := &sqlparser.Union{
-		Left:     qb.stmt.(sqlparser.TableStatement),
-		Right:    other.stmt.(sqlparser.TableStatement),
+		Selects: []sqlparser.TableStatement{
+			qb.stmt.(sqlparser.TableStatement),
+			other.stmt.(sqlparser.TableStatement),
+		},
 		Distinct: distinct,
 	}
 
@@ -418,8 +422,9 @@ func stripDownQuery(from, to sqlparser.TableStatement) {
 		if !ok {
 			panic(vterrors.VT13001("AST did not match"))
 		}
-		stripDownQuery(node.Left, toNode.Left)
-		stripDownQuery(node.Right, toNode.Right)
+		for i, statement := range node.Selects {
+			stripDownQuery(statement, toNode.Selects[i])
+		}
 		toNode.OrderBy = node.OrderBy
 	default:
 		panic(vterrors.VT13001(fmt.Sprintf("this should not happen - we have covered all implementations of SelectStatement %T", from)))

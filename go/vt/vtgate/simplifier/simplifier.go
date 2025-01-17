@@ -143,12 +143,10 @@ func trySimplifyExpressions(in sqlparser.TableStatement, test func(sqlparser.Tab
 
 func trySimplifyUnions(in sqlparser.TableStatement, test func(subquery sqlparser.TableStatement) bool) (res sqlparser.TableStatement) {
 	if union, ok := in.(*sqlparser.Union); ok {
-		// the root object is an UNION
-		if test(sqlparser.Clone(union.Left)) {
-			return union.Left
-		}
-		if test(sqlparser.Clone(union.Right)) {
-			return union.Right
+		for _, stmt := range union.Selects {
+			if test(sqlparser.Clone(stmt)) {
+				return stmt
+			}
 		}
 	}
 
@@ -164,20 +162,17 @@ func trySimplifyUnions(in sqlparser.TableStatement, test func(subquery sqlparser
 				// we have already checked the root node
 				return true
 			}
-			cursor.Replace(node.Left)
-			clone := sqlparser.Clone(in)
-			if test(clone) {
-				log.Errorf("replaced UNION with its left child: %s -> %s", sqlparser.String(node), sqlparser.String(node.Left))
-				simplified = true
-				return true
+			for _, stmt := range node.Selects {
+				cursor.Replace(stmt)
+				clone := sqlparser.Clone(in)
+				if test(clone) {
+					log.Errorf("replaced UNION with its child: %s -> %s", sqlparser.String(node), sqlparser.String(stmt))
+					simplified = true
+					return true
+				}
 			}
-			cursor.Replace(node.Right)
-			clone = sqlparser.Clone(in)
-			if test(clone) {
-				log.Errorf("replaced UNION with its right child: %s -> %s", sqlparser.String(node), sqlparser.String(node.Right))
-				simplified = true
-				return true
-			}
+
+			// put back the original
 			cursor.Replace(node)
 		}
 		return true
@@ -186,7 +181,6 @@ func trySimplifyUnions(in sqlparser.TableStatement, test func(subquery sqlparser
 	sqlparser.SafeRewrite(in, alwaysVisitChildren, up)
 
 	if simplified {
-
 		return in
 	}
 	// we found no simplifications

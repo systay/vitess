@@ -116,14 +116,17 @@ func createSubqueryOp(
 // and extracts subqueries into operators
 func (sqb *SubQueryBuilder) inspectStatement(ctx *plancontext.PlanningContext,
 	stmt sqlparser.TableStatement,
-) (sqlparser.Exprs, []applyJoinColumn) {
+) (exprs sqlparser.Exprs, joincols []applyJoinColumn) {
 	switch stmt := stmt.(type) {
 	case *sqlparser.Select:
 		return sqb.inspectSelect(ctx, stmt)
 	case *sqlparser.Union:
-		exprs1, cols1 := sqb.inspectStatement(ctx, stmt.Left)
-		exprs2, cols2 := sqb.inspectStatement(ctx, stmt.Right)
-		return append(exprs1, exprs2...), append(cols1, cols2...)
+		for _, in := range stmt.Selects {
+			theseExprs, theseCols := sqb.inspectStatement(ctx, in)
+			exprs = append(exprs, theseExprs...)
+			joincols = append(joincols, theseCols...)
+		}
+		return exprs, joincols
 	}
 	panic("unknown type")
 }
