@@ -41,24 +41,21 @@ func FormatImpossibleQuery(buf *TrackedBuffer, node SQLNode) {
 			node.GroupBy.Format(buf)
 		}
 	case *Union:
-		if requiresParen(node.Left) {
-			buf.astPrintf(node, "(%v)", node.Left)
-		} else {
-			buf.astPrintf(node, "%v", node.Left)
-		}
-
-		buf.WriteString(" ")
-		if node.Distinct {
-			buf.WriteString(UnionStr)
-		} else {
-			buf.WriteString(UnionAllStr)
-		}
-		buf.WriteString(" ")
-
-		if requiresParen(node.Right) {
-			buf.astPrintf(node, "(%v)", node.Right)
-		} else {
-			buf.astPrintf(node, "%v", node.Right)
+		for idx, stmt := range node.Selects {
+			if requiresParen(stmt) {
+				buf.astPrintf(node, "(%v)", stmt)
+			} else {
+				buf.astPrintf(node, "%v", stmt)
+			}
+			if idx < len(node.Selects)-1 {
+				buf.WriteByte(' ')
+				if node.Distinct {
+					_, _ = buf.literal(UnionStr)
+				} else {
+					_, _ = buf.literal(UnionAllStr)
+				}
+				buf.WriteByte(' ')
+			}
 		}
 	default:
 		node.Format(buf)

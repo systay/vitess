@@ -102,28 +102,23 @@ func (node *Union) FormatFast(buf *TrackedBuffer) {
 		node.With.FormatFast(buf)
 	}
 
-	if requiresParen(node.Left) {
-		buf.WriteByte('(')
-		node.Left.FormatFast(buf)
-		buf.WriteByte(')')
-	} else {
-		node.Left.FormatFast(buf)
-	}
-
-	buf.WriteByte(' ')
-	if node.Distinct {
-		buf.WriteString(UnionStr)
-	} else {
-		buf.WriteString(UnionAllStr)
-	}
-	buf.WriteByte(' ')
-
-	if requiresParen(node.Right) {
-		buf.WriteByte('(')
-		node.Right.FormatFast(buf)
-		buf.WriteByte(')')
-	} else {
-		node.Right.FormatFast(buf)
+	for idx, stmt := range node.Selects {
+		if requiresParen(stmt) {
+			buf.WriteByte('(')
+			stmt.FormatFast(buf)
+			buf.WriteByte(')')
+		} else {
+			stmt.FormatFast(buf)
+		}
+		if idx < len(node.Selects)-1 {
+			buf.WriteByte(' ')
+			if node.Distinct {
+				buf.WriteString(UnionStr)
+			} else {
+				buf.WriteString(UnionAllStr)
+			}
+			buf.WriteByte(' ')
+		}
 	}
 
 	node.OrderBy.FormatFast(buf)

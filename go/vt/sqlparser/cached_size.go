@@ -4320,15 +4320,6 @@ func (cached *Union) CachedSize(alloc bool) int64 {
 	}
 	// field With *vitess.io/vitess/go/vt/sqlparser.With
 	size += cached.With.CachedSize(true)
-	// field Left vitess.io/vitess/go/vt/sqlparser.TableStatement
-	if cc, ok := cached.Left.(cachedObject); ok {
-		size += cc.CachedSize(true)
-	}
-	// field Right vitess.io/vitess/go/vt/sqlparser.TableStatement
-	if cc, ok := cached.Right.(cachedObject); ok {
-		size += cc.CachedSize(true)
-	}
-	// field OrderBy vitess.io/vitess/go/vt/sqlparser.OrderBy
 	{
 		size += hack.RuntimeAllocSize(int64(cap(cached.OrderBy)) * int64(8))
 		for _, elem := range cached.OrderBy {

@@ -326,8 +326,7 @@ type (
 	// Union represents a UNION statement.
 	Union struct {
 		With     *With
-		Left     TableStatement
-		Right    TableStatement
+		Selects  []TableStatement
 		Distinct bool
 		OrderBy  OrderBy
 		Limit    *Limit

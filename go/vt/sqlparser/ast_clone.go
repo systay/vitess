@@ -3184,8 +3184,7 @@ func CloneRefOfUnion(n *Union) *Union {
 	}
 	out := *n
 	out.With = CloneRefOfWith(n.With)
-	out.Left = CloneTableStatement(n.Left)
-	out.Right = CloneTableStatement(n.Right)
+	out.Selects = CloneSliceOfTableStatement(n.Selects)
 	out.OrderBy = CloneOrderBy(n.OrderBy)
 	out.Limit = CloneRefOfLimit(n.Limit)
 	out.Into = CloneRefOfSelectInto(n.Into)
@@ -4722,6 +4721,18 @@ func CloneSliceOfRefOfConstraintDefinition(n []*ConstraintDefinition) []*Constra
 	res := make([]*ConstraintDefinition, len(n))
 	for i, x := range n {
 		res[i] = CloneRefOfConstraintDefinition(x)
+	}
+	return res
+}
+
+// CloneSliceOfTableStatement creates a deep clone of the input.
+func CloneSliceOfTableStatement(n []TableStatement) []TableStatement {
+	if n == nil {
+		return nil
+	}
+	res := make([]TableStatement, len(n))
+	for i, x := range n {
+		res[i] = CloneTableStatement(x)
 	}
 	return res
 }

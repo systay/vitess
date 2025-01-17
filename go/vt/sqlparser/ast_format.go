@@ -91,24 +91,21 @@ func (node *Union) Format(buf *TrackedBuffer) {
 		buf.astPrintf(node, "%v", node.With)
 	}
 
-	if requiresParen(node.Left) {
-		buf.astPrintf(node, "(%v)", node.Left)
-	} else {
-		buf.astPrintf(node, "%v", node.Left)
-	}
-
-	buf.WriteByte(' ')
-	if node.Distinct {
-		buf.literal(UnionStr)
-	} else {
-		buf.literal(UnionAllStr)
-	}
-	buf.WriteByte(' ')
-
-	if requiresParen(node.Right) {
-		buf.astPrintf(node, "(%v)", node.Right)
-	} else {
-		buf.astPrintf(node, "%v", node.Right)
+	for idx, stmt := range node.Selects {
+		if requiresParen(stmt) {
+			buf.astPrintf(node, "(%v)", stmt)
+		} else {
+			buf.astPrintf(node, "%v", stmt)
+		}
+		if idx < len(node.Selects)-1 {
+			buf.WriteByte(' ')
+			if node.Distinct {
+				buf.literal(UnionStr)
+			} else {
+				buf.literal(UnionAllStr)
+			}
+			buf.WriteByte(' ')
+		}
 	}
 
 	buf.astPrintf(node, "%v%v%s", node.OrderBy, node.Limit, node.Lock.ToString())

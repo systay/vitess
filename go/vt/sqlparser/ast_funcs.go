@@ -1363,7 +1363,7 @@ func (node *Union) GetLimit() *Limit {
 
 // GetColumns gets the columns
 func (node *Union) GetColumns() SelectExprs {
-	return node.Left.GetColumns()
+	return node.Selects[0].GetColumns()
 }
 
 // GetLock returns the lock clause
@@ -1398,17 +1398,17 @@ func (node *Union) IsDistinct() bool {
 
 // GetColumnCount implements the SelectStatement interface
 func (node *Union) GetColumnCount() int {
-	return node.Left.GetColumnCount()
+	return node.Selects[0].GetColumnCount()
 }
 
 // SetComments implements the SelectStatement interface
 func (node *Union) SetComments(comments Comments) {
-	node.Left.SetComments(comments)
+	node.Selects[0].SetComments(comments)
 }
 
 // GetParsedComments implements the SelectStatement interface
 func (node *Union) GetParsedComments() *ParsedComments {
-	return node.Left.GetParsedComments()
+	return node.Selects[0].GetParsedComments()
 }
 
 func requiresParen(stmt TableStatement) bool {
@@ -2371,7 +2371,7 @@ func GetFirstSelect(selStmt TableStatement) (*Select, error) {
 	case *ValuesStatement:
 		return nil, vterrors.VT12001("first table_reference as VALUES")
 	case *Union:
-		return GetFirstSelect(node.Left)
+		return GetFirstSelect(node.Selects[0])
 	}
 	return nil, vterrors.VT13001(fmt.Sprintf("unknown type for SelectStatement: %T", selStmt))
 }
@@ -2382,7 +2382,11 @@ func GetAllSelects(selStmt TableStatement) []TableStatement {
 	case *Select:
 		return []TableStatement{node}
 	case *Union:
-		return append(GetAllSelects(node.Left), GetAllSelects(node.Right)...)
+		var result []TableStatement
+		for _, stmt := range node.Selects {
+			result = append(result, GetAllSelects(stmt)...)
+		}
+		return result
 	case *ValuesStatement:
 		return []TableStatement{node}
 	}
@@ -2798,11 +2802,13 @@ func (v *visitor) visitAllSelects(in TableStatement, f func(p *Select, idx int) 
 		v.idx++
 		return err
 	case *Union:
-		err := v.visitAllSelects(sel.Left, f)
-		if err != nil {
-			return err
+		for _, stmt := range sel.Selects {
+			err := v.visitAllSelects(stmt, f)
+			if err != nil {
+				return err
+			}
 		}
-		return v.visitAllSelects(sel.Right, f)
+		return nil
 	}
 	panic("switch should be exhaustive")
 }
@@ -3062,3 +3068,24 @@ func (node *ValuesStatement) GetColumns() (result SelectExprs) {
 func (node *ValuesStatement) SetComments(comments Comments) {}
 
 func (node *ValuesStatement) GetParsedComments() *ParsedComments { return nil }
+
+func NewUnion(lft, rgt TableStatement, distinct bool) *Union {
+	lftUnion, lok := lft.(*Union)
+	rgtUnion, rok := rgt.(*Union)
+	switch {
+	case rok && lok && lftUnion.Distinct == rgtUnion.Distinct && lftUnion.Distinct == distinct:
+		lftUnion.Selects = append(lftUnion.Selects, rgtUnion.Selects...)
+		return lftUnion
+	case lok && lftUnion.Distinct == distinct:
+		lftUnion.Selects = append(lftUnion.Selects, rgt)
+		return lftUnion
+	case rok && rgtUnion.Distinct == distinct:
+		rgtUnion.Selects = append([]TableStatement{lft}, rgtUnion.Selects...)
+		return rgtUnion
+	default:
+		return &Union{
+			Selects:  []TableStatement{lft, rgt},
+			Distinct: distinct,
+		}
+	}
+}

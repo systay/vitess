@@ -10617,7 +10617,7 @@ yydefault:
 		var yyLOCAL TableStatement
 //line sql.y:847
 		{
-			yyLOCAL = &Union{Left: yyDollar[1].tableStmtUnion(), Distinct: yyDollar[2].booleanUnion(), Right: yyDollar[3].tableStmtUnion()}
+			yyLOCAL = NewUnion(yyDollar[1].tableStmtUnion(), yyDollar[3].tableStmtUnion(), yyDollar[2].booleanUnion())
 		}
 		yyVAL.union = yyLOCAL
 	case 67:
@@ -10625,7 +10625,7 @@ yydefault:
 		var yyLOCAL TableStatement
 //line sql.y:851
 		{
-			yyLOCAL = &Union{Left: yyDollar[1].tableStmtUnion(), Distinct: yyDollar[2].booleanUnion(), Right: yyDollar[3].tableStmtUnion()}
+			yyLOCAL = NewUnion(yyDollar[1].tableStmtUnion(), yyDollar[3].tableStmtUnion(), yyDollar[2].booleanUnion())
 		}
 		yyVAL.union = yyLOCAL
 	case 68:
@@ -10633,7 +10633,7 @@ yydefault:
 		var yyLOCAL TableStatement
 //line sql.y:855
 		{
-			yyLOCAL = &Union{Left: yyDollar[1].tableStmtUnion(), Distinct: yyDollar[2].booleanUnion(), Right: yyDollar[3].tableStmtUnion()}
+			yyLOCAL = NewUnion(yyDollar[1].tableStmtUnion(), yyDollar[3].tableStmtUnion(), yyDollar[2].booleanUnion())
 		}
 		yyVAL.union = yyLOCAL
 	case 69:
@@ -10641,7 +10641,7 @@ yydefault:
 		var yyLOCAL TableStatement
 //line sql.y:859
 		{
-			yyLOCAL = &Union{Left: yyDollar[1].tableStmtUnion(), Distinct: yyDollar[2].booleanUnion(), Right: yyDollar[3].tableStmtUnion()}
+			yyLOCAL = NewUnion(yyDollar[1].tableStmtUnion(), yyDollar[3].tableStmtUnion(), yyDollar[2].booleanUnion())
 		}
 		yyVAL.union = yyLOCAL
 	case 70:

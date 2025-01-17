@@ -4077,11 +4077,10 @@ func VisitRefOfUnion(in *Union, f Visit) error {
 	if err := VisitRefOfWith(in.With, f); err != nil {
 		return err
 	}
-	if err := VisitTableStatement(in.Left, f); err != nil {
-		return err
-	}
-	if err := VisitTableStatement(in.Right, f); err != nil {
-		return err
+	for _, el := range in.Selects {
+		if err := VisitTableStatement(el, f); err != nil {
+			return err
+		}
 	}
 	if err := VisitOrderBy(in.OrderBy, f); err != nil {
 		return err

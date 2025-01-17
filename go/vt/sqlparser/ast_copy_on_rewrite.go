@@ -6103,16 +6103,22 @@ func (c *cow) copyOnRewriteRefOfUnion(n *Union, parent SQLNode) (out SQLNode, ch
 	out = n
 	if c.pre == nil || c.pre(n, parent) {
 		_With, changedWith := c.copyOnRewriteRefOfWith(n.With, n)
-		_Left, changedLeft := c.copyOnRewriteTableStatement(n.Left, n)
-		_Right, changedRight := c.copyOnRewriteTableStatement(n.Right, n)
+		var changedSelects bool
+		_Selects := make([]TableStatement, len(n.Selects))
+		for x, el := range n.Selects {
+			this, changed := c.copyOnRewriteTableStatement(el, n)
+			_Selects[x] = this.(TableStatement)
+			if changed {
+				changedSelects = true
+			}
+		}
 		_OrderBy, changedOrderBy := c.copyOnRewriteOrderBy(n.OrderBy, n)
 		_Limit, changedLimit := c.copyOnRewriteRefOfLimit(n.Limit, n)
 		_Into, changedInto := c.copyOnRewriteRefOfSelectInto(n.Into, n)
-		if changedWith || changedLeft || changedRight || changedOrderBy || changedLimit || changedInto {
+		if changedWith || changedSelects || changedOrderBy || changedLimit || changedInto {
 			res := *n
 			res.With, _ = _With.(*With)
-			res.Left, _ = _Left.(TableStatement)
-			res.Right, _ = _Right.(TableStatement)
+			res.Selects = _Selects
 			res.OrderBy, _ = _OrderBy.(OrderBy)
 			res.Limit, _ = _Limit.(*Limit)
 			res.Into, _ = _Into.(*SelectInto)

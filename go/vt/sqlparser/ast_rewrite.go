@@ -8799,15 +8799,14 @@ func (a *application) rewriteRefOfUnion(parent SQLNode, node *Union, replacer re
 	}) {
 		return false
 	}
-	if !a.rewriteTableStatement(node, node.Left, func(newNode, parent SQLNode) {
-		parent.(*Union).Left = newNode.(TableStatement)
-	}) {
-		return false
-	}
-	if !a.rewriteTableStatement(node, node.Right, func(newNode, parent SQLNode) {
-		parent.(*Union).Right = newNode.(TableStatement)
-	}) {
-		return false
+	for x, el := range node.Selects {
+		if !a.rewriteTableStatement(node, el, func(idx int) replacerFunc {
+			return func(newNode, parent SQLNode) {
+				parent.(*Union).Selects[idx] = newNode.(TableStatement)
+			}
+		}(x)) {
+			return false
+		}
 	}
 	if !a.rewriteOrderBy(node, node.OrderBy, func(newNode, parent SQLNode) {
 		parent.(*Union).OrderBy = newNode.(OrderBy)

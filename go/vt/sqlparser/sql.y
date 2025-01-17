@@ -845,19 +845,19 @@ query_expression_body:
   }
 | query_expression_body union_op query_primary
   {
-    $$ = &Union{Left: $1, Distinct: $2, Right: $3}
+    $$ = NewUnion($1, $3, $2)
   }
 | query_expression_parens union_op query_primary
   {
-    $$ = &Union{Left: $1, Distinct: $2, Right: $3}
+    $$ = NewUnion($1, $3, $2)
   }
 | query_expression_body union_op query_expression_parens
   {
-    $$ = &Union{Left: $1, Distinct: $2, Right: $3}
+    $$ = NewUnion($1, $3, $2)
   }
 | query_expression_parens union_op query_expression_parens
   {
-    $$ = &Union{Left: $1, Distinct: $2, Right: $3}
+    $$ = NewUnion($1, $3, $2)
   }
 
 select_statement:

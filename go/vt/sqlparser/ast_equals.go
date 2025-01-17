@@ -4691,8 +4691,7 @@ func (cmp *Comparator) RefOfUnion(a, b *Union) bool {
 	}
 	return a.Distinct == b.Distinct &&
 		cmp.RefOfWith(a.With, b.With) &&
-		cmp.TableStatement(a.Left, b.Left) &&
-		cmp.TableStatement(a.Right, b.Right) &&
+		cmp.SliceOfTableStatement(a.Selects, b.Selects) &&
 		cmp.OrderBy(a.OrderBy, b.OrderBy) &&
 		cmp.RefOfLimit(a.Limit, b.Limit) &&
 		a.Lock == b.Lock &&
@@ -7673,6 +7672,19 @@ func (cmp *Comparator) SliceOfRefOfConstraintDefinition(a, b []*ConstraintDefini
 	}
 	for i := 0; i < len(a); i++ {
 		if !cmp.RefOfConstraintDefinition(a[i], b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// SliceOfTableStatement does deep equals between the two objects.
+func (cmp *Comparator) SliceOfTableStatement(a, b []TableStatement) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := 0; i < len(a); i++ {
+		if !cmp.TableStatement(a[i], b[i]) {
 			return false
 		}
 	}
