@@ -416,17 +416,21 @@ func checkValidRecursiveCTE(cteDef *CTE) error {
 		return vterrors.VT09026(cteDef.Name)
 	}
 
-	firstSelect, err := sqlparser.GetFirstSelect(union.Right)
-	if err != nil {
-		return err
-	}
-	if firstSelect.GroupBy != nil {
-		return vterrors.VT09027(cteDef.Name)
-	}
-
-	for _, expr := range firstSelect.GetColumns() {
-		if sqlparser.ContainsAggregation(expr) {
+	for i, stmt := range union.Selects {
+		if i == 0 {
+			continue
+		}
+		sel, err := sqlparser.GetFirstSelect(stmt)
+		if err != nil {
+			return err
+		}
+		if sel.GroupBy != nil {
 			return vterrors.VT09027(cteDef.Name)
+		}
+		for _, expr := range sel.GetColumns() {
+			if sqlparser.ContainsAggregation(expr) {
+				return vterrors.VT09027(cteDef.Name)
+			}
 		}
 	}
 	return nil

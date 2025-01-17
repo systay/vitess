@@ -286,28 +286,24 @@ func containsStar(s sqlparser.SelectExprs) bool {
 }
 
 func checkUnionColumns(union *sqlparser.Union) error {
-	lft, err := sqlparser.GetFirstSelect(union)
-	if err != nil {
-		return err
-	}
-	firstProj := lft.GetColumns()
-	if containsStar(firstProj) {
-		// if we still have *, we can't figure out if the query is invalid or not
-		// we'll fail it at run time instead
-		return nil
-	}
+	allSelects := sqlparser.GetAllSelects(union)
 
-	rgt, err := sqlparser.GetFirstSelect(union.Right)
-	if err != nil {
-		return err
-	}
-	secondProj := rgt.GetColumns()
-	if containsStar(secondProj) {
-		return nil
-	}
+	var firstProj sqlparser.SelectExprs
+	for i, sel := range allSelects {
+		cols := sel.GetColumns()
+		if containsStar(cols) {
+			// if we still have *, we can't figure out if the query is invalid or not
+			// we'll fail it at run time instead
+			return nil
+		}
+		if i == 0 {
+			firstProj = cols
+			continue
+		}
 
-	if len(secondProj) != len(firstProj) {
-		return &UnionColumnsDoNotMatchError{FirstProj: len(firstProj), SecondProj: len(secondProj)}
+		if len(cols) != len(firstProj) {
+			return &UnionColumnsDoNotMatchError{FirstProj: len(firstProj), SecondProj: len(cols)}
+		}
 	}
 
 	return nil

@@ -888,8 +888,8 @@ func TestUnionCheckFirstAndLastSelectsDeps(t *testing.T) {
 
 	stmt, semTable := parseAndAnalyze(t, query, "")
 	union, _ := stmt.(*sqlparser.Union)
-	sel1 := union.Left.(*sqlparser.Select)
-	sel2 := union.Right.(*sqlparser.Select)
+	sel1 := union.Selects[0].(*sqlparser.Select)
+	sel2 := union.Selects[1].(*sqlparser.Select)
 
 	t1 := sel1.From[0].(*sqlparser.AliasedTableExpr)
 	t2 := sel2.From[0].(*sqlparser.AliasedTableExpr)
@@ -1005,7 +1005,7 @@ func TestUnionWithOrderBy(t *testing.T) {
 	union, _ := stmt.(*sqlparser.Union)
 	sel1, err := sqlparser.GetFirstSelect(union)
 	require.NoError(t, err)
-	sel2, err := sqlparser.GetFirstSelect(union.Right)
+	sel2, err := sqlparser.GetFirstSelect(union.Selects[1])
 	require.NoError(t, err)
 
 	t1 := sel1.From[0].(*sqlparser.AliasedTableExpr)
