@@ -133,8 +133,7 @@ type (
 		// DMLTargets contains the TableSet of each table getting modified by the update/delete statement.
 		DMLTargets TableSet
 
-		// ColumnEqualities is used for transitive closures (e.g., if a == b and b == c, then a == c).
-		ColumnEqualities map[columnName][]sqlparser.Expr
+		ExprEqualities *TransitiveClosures
 
 		// ExpandedColumns is a map of all the added columns for a given table.
 		// The columns were added because of the use of `*` in the query
@@ -571,11 +570,11 @@ func (st *SemTable) Cloned(from, to sqlparser.SQLNode) {
 // EmptySemTable creates a new empty SemTable
 func EmptySemTable() *SemTable {
 	return &SemTable{
-		Recursive:        map[sqlparser.Expr]TableSet{},
-		Direct:           map[sqlparser.Expr]TableSet{},
-		ColumnEqualities: map[columnName][]sqlparser.Expr{},
-		columns:          map[*sqlparser.Union][]sqlparser.SelectExpr{},
-		ExprTypes:        make(map[sqlparser.Expr]evalengine.Type),
+		Recursive:      map[sqlparser.Expr]TableSet{},
+		Direct:         map[sqlparser.Expr]TableSet{},
+		ExprEqualities: NewTransitiveClosures(),
+		columns:        map[*sqlparser.Union][]sqlparser.SelectExpr{},
+		ExprTypes:      make(map[sqlparser.Expr]evalengine.Type),
 	}
 }
 
@@ -631,39 +630,21 @@ func (st *SemTable) DirectDeps(expr sqlparser.Expr) TableSet {
 }
 
 // AddColumnEquality adds a relation of the given colName to the ColumnEqualities map
-func (st *SemTable) AddColumnEquality(colName *sqlparser.ColName, expr sqlparser.Expr) {
-	ts := st.Direct.dependencies(colName)
-	columnName := columnName{
-		Table:      ts,
-		ColumnName: colName.Name.String(),
-	}
-	elem := st.ColumnEqualities[columnName]
-	elem = append(elem, expr)
-	st.ColumnEqualities[columnName] = elem
+func (st *SemTable) AddColumnEquality(a, b sqlparser.Expr) {
+	st.ExprEqualities.Add(a, b)
 }
 
 // GetExprAndEqualities returns a slice containing the given expression, and it's known equalities if any
 func (st *SemTable) GetExprAndEqualities(expr sqlparser.Expr) []sqlparser.Expr {
-	result := []sqlparser.Expr{expr}
-	switch expr := expr.(type) {
-	case *sqlparser.ColName:
-		table := st.DirectDeps(expr)
-		k := columnName{Table: table, ColumnName: expr.Name.String()}
-		result = append(result, st.ColumnEqualities[k]...)
-	}
-	return result
+	return st.ExprEqualities.Get(expr)
 }
 
 // ForEachExprEquality returns a slice containing the given expression, and it's known equalities if any
 func (st *SemTable) ForEachExprEquality(in sqlparser.Expr, forEach func(sqlparser.Expr) error) error {
-	switch expr := in.(type) {
-	case *sqlparser.ColName:
-		table := st.DirectDeps(expr)
-		k := columnName{Table: table, ColumnName: expr.Name.String()}
-		for _, expr := range st.ColumnEqualities[k] {
-			if err := forEach(expr); err != nil {
-				return err
-			}
+	for _, expr := range st.ExprEqualities.Get(in) {
+		err := forEach(expr)
+		if err != nil {
+			return err
 		}
 	}
 	return nil

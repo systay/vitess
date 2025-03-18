@@ -439,13 +439,7 @@ func addColumnEquality(ctx *plancontext.PlanningContext, expr sqlparser.Expr) {
 		if expr.Operator != sqlparser.EqualOp {
 			return
 		}
-
-		if left, isCol := expr.Left.(*sqlparser.ColName); isCol {
-			ctx.SemTable.AddColumnEquality(left, expr.Right)
-		}
-		if right, isCol := expr.Right.(*sqlparser.ColName); isCol {
-			ctx.SemTable.AddColumnEquality(right, expr.Left)
-		}
+		ctx.SemTable.ExprEqualities.Add(expr.Left, expr.Right)
 	}
 }
 

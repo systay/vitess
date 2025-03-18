@@ -801,12 +801,13 @@ func tryMergeShardedRouting(
 
 // makeEvalEngineExpr transforms the given sqlparser.Expr into an evalengine expression
 func makeEvalEngineExpr(ctx *plancontext.PlanningContext, n sqlparser.Expr) evalengine.Expr {
+	cfg := &evalengine.Config{
+		Collation:   ctx.SemTable.Collation,
+		ResolveType: ctx.TypeForExpr,
+		Environment: ctx.VSchema.Environment(),
+	}
 	for _, expr := range ctx.SemTable.GetExprAndEqualities(n) {
-		ee, _ := evalengine.Translate(expr, &evalengine.Config{
-			Collation:   ctx.SemTable.Collation,
-			ResolveType: ctx.TypeForExpr,
-			Environment: ctx.VSchema.Environment(),
-		})
+		ee, _ := evalengine.Translate(expr, cfg)
 		if ee != nil {
 			return ee
 		}
