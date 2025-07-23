@@ -35,7 +35,12 @@ import (
 // It contains the opcode and input column number.
 type AggregateParams struct {
 	Opcode opcode.AggregateOpcode
-	Col    int
+
+	// Input source specification - exactly one of these should be set:
+	// Col: Column index for simple column references (e.g., SUM(column_name))
+	// EExpr: Evaluated expression for literals, parameters
+	Col   int
+	EExpr evalengine.Expr
 
 	// These are used only for distinct opcodes.
 	KeyCol int
@@ -53,10 +58,17 @@ type AggregateParams struct {
 	CollationEnv *collations.Environment
 }
 
-func NewAggregateParam(opcode opcode.AggregateOpcode, col int, alias string, collationEnv *collations.Environment) *AggregateParams {
+func NewAggregateParam(
+	opcode opcode.AggregateOpcode,
+	col int,
+	expr evalengine.Expr,
+	alias string,
+	collationEnv *collations.Environment,
+) *AggregateParams {
 	out := &AggregateParams{
 		Opcode:       opcode,
 		Col:          col,
+		EExpr:        expr,
 		Alias:        alias,
 		WCol:         -1,
 		CollationEnv: collationEnv,
@@ -73,6 +85,9 @@ func (ap *AggregateParams) WAssigned() bool {
 
 func (ap *AggregateParams) String() string {
 	keyCol := strconv.Itoa(ap.Col)
+	if ap.Col == -1 {
+		keyCol = sqlparser.String(ap.EExpr)
+	}
 	if ap.WAssigned() {
 		keyCol = fmt.Sprintf("%s|%d", keyCol, ap.WCol)
 	}
@@ -97,8 +112,8 @@ func (ap *AggregateParams) typ(inputType querypb.Type) querypb.Type {
 }
 
 type aggregator interface {
-	add(row []sqltypes.Value) error
-	finish() sqltypes.Value
+	add(row []sqltypes.Value, env *evalengine.ExpressionEnv) error
+	finish(*evalengine.ExpressionEnv) (sqltypes.Value, error)
 	reset()
 }
 
@@ -140,7 +155,7 @@ type aggregatorCount struct {
 	distinct aggregatorDistinct
 }
 
-func (a *aggregatorCount) add(row []sqltypes.Value) error {
+func (a *aggregatorCount) add(row []sqltypes.Value, _ *evalengine.ExpressionEnv) error {
 	if row[a.from].IsNull() {
 		return nil
 	}
@@ -151,8 +166,8 @@ func (a *aggregatorCount) add(row []sqltypes.Value) error {
 	return nil
 }
 
-func (a *aggregatorCount) finish() sqltypes.Value {
-	return sqltypes.NewInt64(a.n)
+func (a *aggregatorCount) finish(*evalengine.ExpressionEnv) (sqltypes.Value, error) {
+	return sqltypes.NewInt64(a.n), nil
 }
 
 func (a *aggregatorCount) reset() {
@@ -164,13 +179,13 @@ type aggregatorCountStar struct {
 	n int64
 }
 
-func (a *aggregatorCountStar) add(_ []sqltypes.Value) error {
+func (a *aggregatorCountStar) add([]sqltypes.Value, *evalengine.ExpressionEnv) error {
 	a.n++
 	return nil
 }
 
-func (a *aggregatorCountStar) finish() sqltypes.Value {
-	return sqltypes.NewInt64(a.n)
+func (a *aggregatorCountStar) finish(*evalengine.ExpressionEnv) (sqltypes.Value, error) {
+	return sqltypes.NewInt64(a.n), nil
 }
 
 func (a *aggregatorCountStar) reset() {
@@ -186,7 +201,7 @@ type aggregatorMin struct {
 	aggregatorMinMax
 }
 
-func (a *aggregatorMin) add(row []sqltypes.Value) (err error) {
+func (a *aggregatorMin) add(row []sqltypes.Value, _ *evalengine.ExpressionEnv) (err error) {
 	return a.minmax.Min(row[a.from])
 }
 
@@ -194,12 +209,12 @@ type aggregatorMax struct {
 	aggregatorMinMax
 }
 
-func (a *aggregatorMax) add(row []sqltypes.Value) (err error) {
+func (a *aggregatorMax) add(row []sqltypes.Value, _ *evalengine.ExpressionEnv) (err error) {
 	return a.minmax.Max(row[a.from])
 }
 
-func (a *aggregatorMinMax) finish() sqltypes.Value {
-	return a.minmax.Result()
+func (a *aggregatorMinMax) finish(*evalengine.ExpressionEnv) (sqltypes.Value, error) {
+	return a.minmax.Result(), nil
 }
 
 func (a *aggregatorMinMax) reset() {
@@ -212,7 +227,7 @@ type aggregatorSum struct {
 	distinct aggregatorDistinct
 }
 
-func (a *aggregatorSum) add(row []sqltypes.Value) error {
+func (a *aggregatorSum) add(row []sqltypes.Value, _ *evalengine.ExpressionEnv) error {
 	if row[a.from].IsNull() {
 		return nil
 	}
@@ -222,8 +237,8 @@ func (a *aggregatorSum) add(row []sqltypes.Value) error {
 	return a.sum.Add(row[a.from])
 }
 
-func (a *aggregatorSum) finish() sqltypes.Value {
-	return a.sum.Result()
+func (a *aggregatorSum) finish(*evalengine.ExpressionEnv) (sqltypes.Value, error) {
+	return a.sum.Result(), nil
 }
 
 func (a *aggregatorSum) reset() {
@@ -231,27 +246,58 @@ func (a *aggregatorSum) reset() {
 	a.distinct.reset()
 }
 
-type aggregatorScalar struct {
-	from    int
-	current sqltypes.Value
-	init    bool
+// aggregatorAnyValue executes the expression once on the first row, and saves the result
+type aggregatorAnyValue struct {
+	vcursor  VCursor
+	from     evalengine.Expr
+	current  sqltypes.Value
+	hasValue bool
 }
 
-func (a *aggregatorScalar) add(row []sqltypes.Value) error {
-	if !a.init {
-		a.current = row[a.from]
-		a.init = true
+func (a *aggregatorAnyValue) add(row []sqltypes.Value, env *evalengine.ExpressionEnv) error {
+	if !a.hasValue {
+		v, err := a.eval(row, env)
+		if err != nil {
+			return err
+		}
+		a.current = v
+		a.hasValue = true
 	}
 	return nil
 }
 
-func (a *aggregatorScalar) finish() sqltypes.Value {
-	return a.current
+func (a *aggregatorAnyValue) eval(row []sqltypes.Value, env *evalengine.ExpressionEnv) (sqltypes.Value, error) {
+	env.Row = row
+	v, err := env.Evaluate(a.from)
+	if err != nil {
+		return sqltypes.Value{}, err
+	}
+	return v.Value(collations.Unknown), nil
 }
 
-func (a *aggregatorScalar) reset() {
+func (a *aggregatorAnyValue) finish(env *evalengine.ExpressionEnv) (sqltypes.Value, error) {
+	// If we processed at least one row, return the saved value
+	if a.hasValue {
+		return a.current, nil
+	}
+
+	// Handle case where no rows were processed (empty result set):
+	// - For column references: return NULL (traditional behavior)
+	// - For expressions/literals/parameters: evaluate without a row context
+	// This ensures queries like "SELECT 1, COUNT(*) FROM (empty_subquery)"
+	// return (1, 0) instead of (NULL, 0)
+	_, isColumn := a.from.(*evalengine.Column)
+	if isColumn {
+		return sqltypes.NULL, nil
+	}
+
+	// Evaluate literals, parameters, and expressions that don't depend on row data
+	return a.eval(nil, env)
+}
+
+func (a *aggregatorAnyValue) reset() {
 	a.current = sqltypes.NULL
-	a.init = false
+	a.hasValue = false
 }
 
 type aggregatorGroupConcat struct {
@@ -263,7 +309,7 @@ type aggregatorGroupConcat struct {
 	n      int
 }
 
-func (a *aggregatorGroupConcat) add(row []sqltypes.Value) error {
+func (a *aggregatorGroupConcat) add(row []sqltypes.Value, _ *evalengine.ExpressionEnv) error {
 	if row[a.from].IsNull() {
 		return nil
 	}
@@ -275,11 +321,11 @@ func (a *aggregatorGroupConcat) add(row []sqltypes.Value) error {
 	return nil
 }
 
-func (a *aggregatorGroupConcat) finish() sqltypes.Value {
+func (a *aggregatorGroupConcat) finish(*evalengine.ExpressionEnv) (sqltypes.Value, error) {
 	if a.n == 0 {
-		return sqltypes.NULL
+		return sqltypes.NULL, nil
 	}
-	return sqltypes.MakeTrusted(a.type_, a.concat)
+	return sqltypes.MakeTrusted(a.type_, a.concat), nil
 }
 
 func (a *aggregatorGroupConcat) reset() {
@@ -292,7 +338,7 @@ type aggregatorGtid struct {
 	shards []*binlogdatapb.ShardGtid
 }
 
-func (a *aggregatorGtid) add(row []sqltypes.Value) error {
+func (a *aggregatorGtid) add(row []sqltypes.Value, _ *evalengine.ExpressionEnv) error {
 	a.shards = append(a.shards, &binlogdatapb.ShardGtid{
 		Keyspace: row[a.from-1].ToString(),
 		Shard:    row[a.from+1].ToString(),
@@ -301,9 +347,9 @@ func (a *aggregatorGtid) add(row []sqltypes.Value) error {
 	return nil
 }
 
-func (a *aggregatorGtid) finish() sqltypes.Value {
+func (a *aggregatorGtid) finish(*evalengine.ExpressionEnv) (sqltypes.Value, error) {
 	gtid := binlogdatapb.VGtid{ShardGtids: a.shards}
-	return sqltypes.NewVarChar(gtid.String())
+	return sqltypes.NewVarChar(gtid.String()), nil
 }
 
 func (a *aggregatorGtid) reset() {
@@ -312,21 +358,25 @@ func (a *aggregatorGtid) reset() {
 
 type aggregationState []aggregator
 
-func (a aggregationState) add(row []sqltypes.Value) error {
+func (a aggregationState) add(row []sqltypes.Value, env *evalengine.ExpressionEnv) error {
 	for _, st := range a {
-		if err := st.add(row); err != nil {
+		if err := st.add(row, env); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (a aggregationState) finish() (row []sqltypes.Value) {
-	row = make([]sqltypes.Value, 0, len(a))
+func (a aggregationState) finish(env *evalengine.ExpressionEnv) ([]sqltypes.Value, error) {
+	row := make([]sqltypes.Value, 0, len(a))
 	for _, st := range a {
-		row = append(row, st.finish())
+		v, err := st.finish(env)
+		if err != nil {
+			return nil, err
+		}
+		row = append(row, v)
 	}
-	return
+	return row, nil
 }
 
 func (a aggregationState) reset() {
@@ -433,7 +483,7 @@ func newAggregation(fields []*querypb.Field, aggregates []*AggregateParams) (agg
 			ag = &aggregatorGtid{from: aggr.Col}
 
 		case opcode.AggregateAnyValue:
-			ag = &aggregatorScalar{from: aggr.Col}
+			ag = &aggregatorAnyValue{from: aggr.EExpr}
 
 		case opcode.AggregateGroupConcat:
 			gcFunc := aggr.Func.(*sqlparser.GroupConcatExpr)
@@ -457,7 +507,7 @@ func newAggregation(fields []*querypb.Field, aggregates []*AggregateParams) (agg
 
 	for i, a := range agstate {
 		if a == nil {
-			agstate[i] = &aggregatorScalar{from: i}
+			agstate[i] = &aggregatorAnyValue{from: evalengine.NewColumn(i, evalengine.NewType(sqltypes.Unknown, collations.Unknown), nil)}
 		}
 	}
 

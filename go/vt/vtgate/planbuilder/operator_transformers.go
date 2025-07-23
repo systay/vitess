@@ -323,6 +323,10 @@ func transformFkVerify(ctx *plancontext.PlanningContext, fkv *operators.FkVerify
 	}, nil
 }
 
+type staticColumnResolver struct {
+	col int
+}
+
 func transformAggregator(ctx *plancontext.PlanningContext, op *operators.Aggregator) (engine.Primitive, error) {
 	if op.WithRollup {
 		return nil, vterrors.VT12001("GROUP BY WITH ROLLUP not supported for sharded queries")
@@ -342,9 +346,26 @@ func transformAggregator(ctx *plancontext.PlanningContext, op *operators.Aggrega
 		case opcode.AggregateUDF:
 			message := fmt.Sprintf("Aggregate UDF '%s' must be pushed down to MySQL", sqlparser.String(aggr.Original.Expr))
 			return nil, vterrors.VT12001(message)
+		case opcode.AggregateAnyValue:
+			if aggr.Func == nil {
+				break
+			}
+			// For AnyValue aggregations (literals, parameters), translate to evalengine
+			// This allows evaluation even when no input rows are present (empty result sets)
+			cfg := &evalengine.Config{
+				Collation:     ctx.VSchema.ConnCollation(),
+				Environment:   ctx.VSchema.Environment(),
+				ResolveColumn: func(name *sqlparser.ColName) (int, error) { return aggr.ColOffset, nil },
+			}
+			expr, err := evalengine.Translate(aggr.Func.GetArg(), cfg)
+			if err != nil {
+				return nil, err
+			}
+			aggregates = append(aggregates, engine.NewAggregateParam(aggr.OpCode, aggr.ColOffset, expr, aggr.Alias, ctx.VSchema.Environment().CollationEnv()))
+			continue
 		}
 
-		aggrParam := engine.NewAggregateParam(aggr.OpCode, aggr.ColOffset, aggr.Alias, ctx.VSchema.Environment().CollationEnv())
+		aggrParam := engine.NewAggregateParam(aggr.OpCode, aggr.ColOffset, nil, aggr.Alias, ctx.VSchema.Environment().CollationEnv())
 		aggrParam.Func = aggr.Func
 		if gcFunc, isGc := aggrParam.Func.(*sqlparser.GroupConcatExpr); isGc && gcFunc.Separator == "" {
 			gcFunc.Separator = sqlparser.GroupConcatDefaultSeparator

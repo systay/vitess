@@ -404,28 +404,24 @@ func (qp *QueryProjection) AggregationExpressions(ctx *plancontext.PlanningConte
 	// Here we go over the expressions we are returning. Since we know we are aggregating,
 	// all expressions have to be either grouping expressions or aggregate expressions.
 	// If we find an expression that is neither, we treat is as a special aggregation function AggrRandom
-	for _, expr := range qp.SelectExprs {
-		aliasedExpr, err := expr.GetAliasedExpr()
+	for _, selectExpr := range qp.SelectExprs {
+		aliasedExpr, err := selectExpr.GetAliasedExpr()
 		if err != nil {
 			panic(err)
 		}
 
-		if !ctx.ContainsAggr(expr.Col) {
-			getExpr, err := expr.GetExpr()
-			if err != nil {
-				panic(err)
-			}
-			if !qp.isExprInGroupByExprs(ctx, getExpr) {
-				aggr := NewAggr(opcode.AggregateAnyValue, nil, aliasedExpr, aliasedExpr.ColumnName())
-				out = append(out, aggr)
+		expr := aliasedExpr.Expr
+		if !ctx.ContainsAggr(expr) {
+			if !qp.isExprInGroupByExprs(ctx, expr) {
+				out = append(out, newAnyValAggr(aliasedExpr))
 			}
 			continue
 		}
-		if !ctx.IsAggr(aliasedExpr.Expr) && !allowComplexExpression {
+		if !ctx.IsAggr(expr) && !allowComplexExpression {
 			panic(vterrors.VT12001("in scatter query: complex aggregate expression"))
 		}
 
-		sqlparser.CopyOnRewrite(aliasedExpr.Expr, qp.extractAggr(ctx, aliasedExpr, addAggr, makeComplex), nil, nil)
+		sqlparser.CopyOnRewrite(expr, qp.extractAggr(ctx, aliasedExpr, addAggr, makeComplex), nil, nil)
 	}
 	return
 }

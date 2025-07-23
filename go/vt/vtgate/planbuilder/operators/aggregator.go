@@ -95,16 +95,22 @@ func (a *Aggregator) addColumnWithoutPushing(ctx *plancontext.PlanningContext, e
 		case *sqlparser.FuncExpr:
 			if ctx.IsAggr(e) {
 				aggr = NewAggr(opcode.AggregateUDF, nil, expr, expr.As.String())
-			} else {
-				aggr = NewAggr(opcode.AggregateAnyValue, nil, expr, expr.As.String())
+				break
 			}
-		default:
-			aggr = NewAggr(opcode.AggregateAnyValue, nil, expr, expr.As.String())
+		}
+		if aggr.OpCode == opcode.AggregateUnassigned {
+			newAggr := newAnyValAggr(expr)
+			aggr = newAggr
 		}
 		aggr.ColOffset = offset
 		a.Aggregations = append(a.Aggregations, aggr)
 	}
 	return offset
+}
+
+func newAnyValAggr(expr *sqlparser.AliasedExpr) Aggr {
+	anyval := &sqlparser.AnyValue{Arg: expr.Expr}
+	return NewAggr(opcode.AggregateAnyValue, anyval, expr, expr.As.String())
 }
 
 func (a *Aggregator) isDerived() bool {
